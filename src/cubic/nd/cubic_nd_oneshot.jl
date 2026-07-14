@@ -90,7 +90,7 @@ function _cubic_interp_nd_oneshot_alloc(
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
+    output = _alloc_query_output(Tr, queries)
     _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
@@ -182,7 +182,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
 `extraps_val` must be a pre-resolved tuple of concrete `AbstractExtrap` instances.
 """
 @with_pool pool function _cubic_interp_nd_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
@@ -195,7 +195,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     _query_validate(queries)
 
     # Build phase (same as scalar, done once)
@@ -246,11 +246,11 @@ Writes results into pre-allocated `output` vector.
 """
 # Public ND in-place batch one-shot (N≥2; N=1 is intercepted by the collapse method
 # below and only reaches here via the OnTheFly branch, which has no 1D equivalent).
-@inline cubic_interp!(output::AbstractVector, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N} =
+@inline cubic_interp!(output::AbstractArray, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N} =
     _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
 
 function _cubic_interp_nd_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;

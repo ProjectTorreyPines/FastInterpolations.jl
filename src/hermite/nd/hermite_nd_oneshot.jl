@@ -65,7 +65,7 @@ function hermite_interp(
     Tg = _promote_grid_float(_promote_grid_eltype(grids), promote_type(Tv, Tv_part))
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, promote_type(Tv, Tv_part), Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
+    output = _alloc_query_output(Tr, queries)
     hermite_interp!(
         output, grids, data, partials, queries;
         deriv, bc, extrap, search, hint
@@ -79,7 +79,7 @@ end
 In-place batch ND cubic Hermite one-shot. Zero-alloc workspace after warmup.
 """
 function hermite_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{<:Any, N},
         partials::HermitePartials{N},
@@ -184,7 +184,7 @@ end
 # Build pass (pack + extend + per-axis extrap resolution + InBounds promotion)
 # happens ONCE; then a tight per-query eval loop writes into `output`.
 @with_pool pool function _hermite_interp_nd_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         partials::HermitePartials{N, Tv, K},
@@ -197,7 +197,7 @@ end
     ) where {Tv, N, K}
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     _query_validate(queries)
 
     # `bcs_post` (3rd return) is unused here — see the scalar path note.

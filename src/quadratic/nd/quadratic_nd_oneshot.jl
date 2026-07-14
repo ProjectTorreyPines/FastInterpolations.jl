@@ -74,7 +74,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
 """
 @with_pool pool function _quadratic_interp_nd_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
@@ -87,7 +87,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     _query_validate(queries)
 
     # Pool-backed per-axis cache — build phase + eval loop reuse h/inv_h.
@@ -201,7 +201,7 @@ function quadratic_interp(
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
+    output = _alloc_query_output(Tr, queries)
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
@@ -218,7 +218,7 @@ Accepts any query format implementing the query protocol.
 Writes results into pre-allocated `output` vector.
 """
 function quadratic_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;

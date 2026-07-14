@@ -65,7 +65,7 @@ end
 # ========================================
 
 @with_pool pool function _interp_nd_hetero_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{<:Any, N},
         queries,
@@ -454,19 +454,23 @@ function _interp_nd_oneshot_batch_public!(
         hint,
     ) where {N}
     method_tuple = _method_tuple(method, Val(N))
-    # Separable fast path (before any flattening, so the N-D output reaches the
-    # gridded kernel without a reshape): true iff a gridded evaluator exists for
-    # this (query, method) tuple.
+    # A GridIdx query mixes free arrays with pinned scalar indices, so `_query_size`
+    # does not describe it; the GridIdx branch pre-slices the pinned axes and its
+    # reduced sub-problem validates its own length. Every other query gets the exact-
+    # size gate before any write (including the separable fast path): a shaped query
+    # requires a matching-shape output, and a length-only match that silently flattened
+    # a matrix query into a vector sink is rejected.
+    is_grididx = queries isa Tuple && _has_grididx(typeof(queries))
+    is_grididx || _check_query_output_size(output, queries)
+    # Separable fast path: fills the N-D output directly (no reshape). True iff a
+    # gridded evaluator exists for this (query, method) tuple.
     _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv, coeffs) && return output
-    # The batch cores fill by LINEAR index, so a shaped output (e.g. an N-D array
-    # for a GriddedQuery) is written through a flat 1-D view. `vec`/`reshape`
-    # aliases (never copies), so the caller's array is filled in place; we hand
-    # back the caller's original `output`, not the flat view.
-    flat = output isa AbstractVector ? output : vec(output)
-    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward
-    # `coeffs` so the reduced (post-slice) sub-problem honors and validates the
-    # caller's strategy choice rather than silently falling back to AutoCoeffs.
-    if queries isa Tuple && _has_grididx(typeof(queries))
+    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward `coeffs`
+    # so the reduced (post-slice) sub-problem honors the caller's strategy. That core
+    # is vector-typed, so a shaped output is flattened through a zero-copy `vec` view
+    # HERE only (niche path); the main dispatch below writes the N-D output directly.
+    if is_grididx
+        flat = output isa AbstractVector ? output : vec(output)
         _interp_batch_with_grididx!(
             flat, grids, data, queries;
             method = method, deriv = deriv, extrap = extrap,
@@ -479,7 +483,9 @@ function _interp_nd_oneshot_batch_public!(
     # AutoCoeffs path never trips this because resolution returns OnTheFly for
     # local methods. Mirrors the scalar `interp` validation at line 309.
     _validate_nd_coeffs(coeffs_resolved, method_tuple)
-    _interp_nd_oneshot_batch_dispatch!(flat, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    # Write directly into the (possibly N-D) output — the batch cores fill by linear
+    # index and array/GriddedQuery queries unravel column-major.
+    _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
     return output
 end
 

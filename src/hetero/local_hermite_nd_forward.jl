@@ -106,7 +106,7 @@ end
 end
 
 @inline function pchip_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;
@@ -175,7 +175,7 @@ end
 end
 
 @inline function cardinal_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;
@@ -242,7 +242,7 @@ end
 end
 
 @inline function akima_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;

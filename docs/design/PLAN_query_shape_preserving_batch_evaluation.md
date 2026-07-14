@@ -543,7 +543,7 @@ coverage.
 ## Progress tracking
 
 - Phase 1: ☑ planned ☑ in progress ☑ done
-- Phase 2: ☑ planned ☐ in progress ☐ done
+- Phase 2: ☑ planned ☑ in progress ☑ done
 - Phase 3: ☑ planned ☐ in progress ☐ done
 - Phase 4: ☑ planned ☐ in progress ☐ done
 - Phase 5: ☑ planned ☐ in progress ☐ done
@@ -600,6 +600,25 @@ coverage.
   optimization (min/max scan vs per-query), NOT allocation — SoA-matrix already hits 0 B via the generic
   path (same one AoS uses). "Measure first": add only if Phase 6 shows the SoA-matrix path >10% slower than
   SoA-vector. Avoids unmeasured method surface + a re-Aqua cycle.
+
+### Phase 2 — DONE (one-shot N-D quadrant)
+
+- **Source edits (7 files, runic-clean)**: `hetero/hetero_oneshot.jl` (unified: hetero core sink →
+  `AbstractArray`; exact-size gate at the public entry, SKIPPED for GridIdx queries; `vec(output)` adapter
+  removed from the main dispatch, kept locally only for the vector-typed GridIdx branch);
+  `{linear,constant,quadratic,cubic,hermite}/nd/*_nd_oneshot.jl` (batch-core sinks → `AbstractArray`,
+  `length`-check → `_check_query_output_size`, allocators → `_alloc_query_output`); `hetero/local_hermite_nd_forward.jl`
+  (3 ND in-place forwarders → `AbstractArray`; allocating forwarders already preserved shape via the unified path).
+- **Tests**: one-shot unified 7, dedicated core families 24 (incl. cubic in-place), local-Hermite + user-Hermite
+  23, allocation parity 6 — all green.
+- **Allocation**: every shaped one-shot in-place lane (unified + dedicated, AoS matrix + shaped SoA) = 0 B warm,
+  matching the vector lanes (A/B standalone confirms). The `vec` removal was necessary for the unified 0-B target.
+- **Aqua**: zero new ambiguities. **Regression**: hetero_oneshot, cubic_nd_oneshot, hermite_nd_partials,
+  local_hermite_nd_forward, calltime_extrap_override, nd1_collapse (incl. GridIdx) — all green.
+- **Deviation/finding**: GridIdx queries `(q, GridIdx(i))` mix free arrays with pinned scalar indices, so
+  `_query_size` reports the tuple arity (wrong); the top-level exact-size gate is skipped for them (their
+  pre-slice sub-problem self-validates), preserving master's GridIdx behavior. Full GridIdx shape support is
+  out of scope (adjacent to the §12 pre-anchored-query non-goal). Caught by the existing nd1_collapse regression pin.
 
 - Benchmark results: (Phase 6)
 - Julia 1.10 result: (Phase 6)

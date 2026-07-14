@@ -75,7 +75,7 @@ end
 In-place batch one-shot ND multilinear evaluation.
 """
 function _linear_interp_nd_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
@@ -88,7 +88,7 @@ function _linear_interp_nd_oneshot_batch!(
     # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
@@ -171,7 +171,7 @@ function linear_interp(
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
+    output = _alloc_query_output(Tr, queries)
     linear_interp!(output, grids, data, queries; bc, extrap, search, deriv, hint)
     return output
 end
@@ -188,7 +188,7 @@ Accepts any query format implementing the query protocol.
 Writes results into pre-allocated `output` vector.
 """
 function linear_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;

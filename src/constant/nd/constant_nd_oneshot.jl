@@ -56,7 +56,7 @@ end
 In-place batch one-shot ND constant evaluation.
 """
 function _constant_interp_nd_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
@@ -69,7 +69,7 @@ function _constant_interp_nd_oneshot_batch!(
     ) where {Tg, Tv, N}
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
@@ -108,7 +108,7 @@ function _constant_interp_nd_oneshot_batch(
     ) where {Tg, Tv, N}
     # Buffer eltype via Constant's kernel shape (mirrors 1D oneshot wrapper).
     Tq = _query_eltype(queries)
-    output = Vector{_promote_eltype(_select_op, Tg, Tv, Tq)}(undef, _query_length(queries))
+    output = _alloc_query_output(_promote_eltype(_select_op, Tg, Tv, Tq), queries)
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, ops, hint)
 end
 
@@ -199,7 +199,7 @@ Accepts any query format implementing the query protocol.
 Writes results into pre-allocated `output` vector.
 """
 function constant_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;

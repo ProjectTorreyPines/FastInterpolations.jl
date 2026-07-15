@@ -106,12 +106,12 @@ end
 # N=1 batch one-shot: a plain-vector query on a 1-tuple grid forwards to the lean 1D
 # batch one-shot (bit-identical value; skips the generic-N per-query machinery). Per-axis
 # 1-tuple kwargs unwrap to scalar.
-@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; kwargs...) =
     linear_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-@inline linear_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+@inline linear_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; kwargs...) =
     linear_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 # Single-axis SoA `(xv,)` unwraps to the 1D batch (same vectorized domain check).
-@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
     linear_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
-@inline linear_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+@inline linear_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
     linear_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)

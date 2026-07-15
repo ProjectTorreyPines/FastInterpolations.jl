@@ -167,17 +167,17 @@ end
     cubic_interp(grids, data, (q,); kwargs...)
 
 # Batch one-shot (bare vector; the SoA `(xv,)` form below unwraps into it).
-@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
     coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_alloc(grids, data, q; coeffs, kwargs...)
     return cubic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 end
-@inline function cubic_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+@inline function cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
     coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_batch!(output, grids, data, q; coeffs, kwargs...)
     return cubic_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 end
-@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
     cubic_interp(grids, data, only(q); kwargs...)
-@inline cubic_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+@inline cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
     cubic_interp!(output, grids, data, only(q); kwargs...)
 
 # OnTheFly is handled in cubic_interp() above (delegates to _build_hetero_nd).

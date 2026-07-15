@@ -546,7 +546,7 @@ coverage.
 - Phase 2: ☑ planned ☑ in progress ☑ done
 - Phase 3: ☑ planned ☑ in progress ☑ done
 - Phase 4: ☑ planned ☑ in progress ☑ done
-- Phase 5: ☑ planned ☐ in progress ☐ done
+- Phase 5: ☑ planned ☑ in progress ☑ done
 - Phase 6: ☑ planned ☐ in progress ☐ done
 
 ## Notes / learnings
@@ -653,6 +653,22 @@ coverage.
 - **Allocation**: shaped 1-D one-shot in-place (dense Matrix) = 0 B warm, matching the vector lane (A/B standalone
   confirms both linear and cubic at 0 B — pool-amortized spline build).
 - **Aqua**: zero new ambiguities. **Regression**: cubic, linear, quadratic, allocation suites — green.
+
+### Phase 5 — DONE (local-Hermite one-shot + unified interp + N=1 collapse)
+
+- **Source edits (10 files, runic-clean)**: `{pchip,cardinal,akima}/*_oneshot.jl` (public + OnTheFly/PreCompute
+  helper sinks → `AbstractArray`, `@boundscheck` output check → `_check_query_output_size`, allocators →
+  `_alloc_query_output`) + `core/coeff_policy.jl` (the AutoCoeffs query-length crossover
+  `_resolve_coeffs(::AutoCoeffs, ::AbstractVector, ::AbstractArray)` widened — it drives OnTheFly-vs-PreCompute); `hetero/interp_1d.jl` (unified `interp`/`interp!` widened; delegate through
+  `_interp1d_route` so the dedicated methods size-check); N=1 collapse forwarders in
+  `{linear,constant,quadratic,cubic}/nd/*_nd_interpolant.jl` + `hetero/local_hermite_nd_forward.jl` — the
+  QUERY widens (`AbstractVector{<:Real}`→`AbstractArray{<:Real}`, `Tuple{AbstractVector}`→`Tuple{AbstractArray}`)
+  and the in-place output widens, GRID stays vector-only (`only(grids)` → genuine 1-D). For Cubic this also
+  fixes an AutoCoeffs matrix query that previously mis-routed to the generic `_resolve_coeffs`.
+- **Tests**: local-Hermite 1-D one-shot, unified interp/interp! 1-D, N=1 tuple-grid collapse (bare-grid ==
+  tuple-grid == single-axis-SoA, in-place) across 5 families — all green. Aqua zero new ambiguities.
+- **Coverage note**: OnTheFly + N=1-collapse + matrix query is a narrow untested edge (my tests use the default
+  AutoCoeffs path → native 1-D); flag for Phase 6 if full OnTheFly-collapse coverage is required.
 
 - Benchmark results: (Phase 6)
 - Julia 1.10 result: (Phase 6)

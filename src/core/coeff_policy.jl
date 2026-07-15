@@ -19,7 +19,7 @@
 
 # ── AutoCoeffs: 1D vector query → runtime length check ──
 # Crossover: PreCompute O(n + K) vs OnTheFly O(2K). At K ≈ n, PreCompute wins.
-@inline function _resolve_coeffs(::AutoCoeffs, x::AbstractVector, xq::AbstractVector)
+@inline function _resolve_coeffs(::AutoCoeffs, x::AbstractVector, xq::AbstractArray)
     return length(xq) > length(x) ? PreCompute() : OnTheFly()
 end
 

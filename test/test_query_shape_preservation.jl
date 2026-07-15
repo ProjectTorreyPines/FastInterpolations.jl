@@ -608,3 +608,67 @@ end
     @test mC(om, x, y, q_mat) <= ALLOC_THRESHOLD
     @test mC(ov, x, y, q12) <= ALLOC_THRESHOLD
 end
+
+# ============================================================
+# Phase 5 · One-shot 1-D local-Hermite + unified interp + N=1 collapse
+# ============================================================
+
+@testitem "query shape: one-shot 1-D local-Hermite" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+
+    @testset "$name" for (name, f, f!) in (
+            ("pchip", (q) -> pchip_interp(x, y, q), (o, q) -> pchip_interp!(o, x, y, q)),
+            ("cardinal", (q) -> cardinal_interp(x, y, q), (o, q) -> cardinal_interp!(o, x, y, q)),
+            ("akima", (q) -> akima_interp(x, y, q), (o, q) -> akima_interp!(o, x, y, q)),
+        )
+        ref = reshape(f(q12), 3, 4)
+        r = f(q_mat)
+        @test r isa Matrix && size(r) == (3, 4) && r == ref
+        o = Matrix{Float64}(undef, 3, 4)
+        @test f!(o, q_mat) === o
+        @test o == ref
+        @test_throws DimensionMismatch f!(Vector{Float64}(undef, 12), q_mat)
+    end
+end
+
+@testitem "query shape: unified interp/interp! 1-D" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+    m = CubicInterp()
+
+    ref = reshape(interp(x, y, q12; method = m), 3, 4)
+    r = interp(x, y, q_mat; method = m)
+    @test r isa Matrix && size(r) == (3, 4) && r == ref
+    o = Matrix{Float64}(undef, 3, 4)
+    @test interp!(o, x, y, q_mat; method = m) === o
+    @test o == ref
+    @test_throws DimensionMismatch interp!(Vector{Float64}(undef, 12), x, y, q_mat; method = m)
+end
+
+@testitem "query shape: N=1 tuple-grid collapse (shaped)" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+
+    @testset "$name" for (name, fn, fn!) in (
+            ("linear", linear_interp, linear_interp!),
+            ("constant", constant_interp, constant_interp!),
+            ("quadratic", quadratic_interp, quadratic_interp!),
+            ("cubic", cubic_interp, cubic_interp!),
+            ("pchip", pchip_interp, pchip_interp!),
+        )
+        native = fn(x, y, q_mat)                      # bare-grid shaped 1-D
+        @test native isa Matrix && size(native) == (3, 4)
+        @test fn((x,), y, q_mat) == native            # tuple-grid collapse preserves shape
+        @test fn((x,), y, (q_mat,)) == native         # single-axis SoA collapse
+        o = Matrix{Float64}(undef, 3, 4)
+        fn!(o, (x,), y, q_mat)
+        @test o == native
+    end
+end

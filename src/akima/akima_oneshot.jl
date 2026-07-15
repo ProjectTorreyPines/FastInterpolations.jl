@@ -35,10 +35,10 @@ end
 
 # Vector in-place — bc-aware unified path.
 @inline @with_pool pool function _akima_interp_precompute!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector,
+        x_query::AbstractArray,
         bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -46,7 +46,7 @@ end
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
     # Value-matched width: dy buffer + slope arithmetic run at `Tw` — see pchip_oneshot.jl.
@@ -84,10 +84,10 @@ end
 
 # Vector in-place — bc-aware unified path.
 @inline function _akima_interp_onthefly!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector,
+        x_query::AbstractArray,
         bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -96,7 +96,7 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
 
@@ -146,10 +146,10 @@ end
 In-place Akima interpolation with outlier-robust slopes.
 """
 @inline function akima_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -174,7 +174,7 @@ Akima interpolation at multiple query points. Returns `Vector`.
 function akima_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -183,7 +183,7 @@ function akima_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
-    output = Vector{Tr}(undef, length(x_query))
+    output = _alloc_query_output(Tr, x_query)
     akima_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

@@ -548,3 +548,63 @@ end
     # existing vector lane unchanged: 0 B warm
     @test measure(itp, out_vec, q12) <= ALLOC_THRESHOLD
 end
+
+# ============================================================
+# Phase 4 · One-shot 1-D core families (dedicated)
+# ============================================================
+# Reference = the vector one-shot path, reshaped.
+
+@testitem "query shape: one-shot 1-D core families" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    dy = cos.(x)
+
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+
+    families = (
+        ("linear", q -> linear_interp(x, y, q), (o, q) -> linear_interp!(o, x, y, q)),
+        ("constant", q -> constant_interp(x, y, q), (o, q) -> constant_interp!(o, x, y, q)),
+        ("quadratic", q -> quadratic_interp(x, y, q), (o, q) -> quadratic_interp!(o, x, y, q)),
+        ("cubic", q -> cubic_interp(x, y, q), (o, q) -> cubic_interp!(o, x, y, q)),
+        ("hermite", q -> hermite_interp(x, y, dy, q), (o, q) -> hermite_interp!(o, x, y, dy, q)),
+    )
+
+    @testset "$name" for (name, f, f!) in families
+        ref = reshape(f(q12), 3, 4)
+
+        @testset "allocating preserves shape" begin
+            r = f(q_mat)
+            @test r isa Matrix && size(r) == (3, 4)
+            @test r == ref
+        end
+
+        @testset "in-place preserves shape" begin
+            o = Matrix{Float64}(undef, 3, 4)
+            @test f!(o, q_mat) === o
+            @test o == ref
+        end
+
+        @testset "exact-size rejection" begin
+            @test_throws DimensionMismatch f!(Vector{Float64}(undef, 12), q_mat)
+        end
+    end
+end
+
+@testitem "query shape: one-shot 1-D allocation parity" setup = [AllocConstants] begin
+    mL(o, x, y, q) = (linear_interp!(o, x, y, q); linear_interp!(o, x, y, q); @allocated linear_interp!(o, x, y, q))
+    mC(o, x, y, q) = (cubic_interp!(o, x, y, q); cubic_interp!(o, x, y, q); @allocated cubic_interp!(o, x, y, q))
+
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+    om = Matrix{Float64}(undef, 3, 4)
+    ov = Vector{Float64}(undef, 12)
+
+    # shaped 1-D one-shot in-place: 0 B warm (matrix); vector lane unchanged
+    @test mL(om, x, y, q_mat) <= ALLOC_THRESHOLD
+    @test mL(ov, x, y, q12) <= ALLOC_THRESHOLD
+    @test mC(om, x, y, q_mat) <= ALLOC_THRESHOLD
+    @test mC(ov, x, y, q12) <= ALLOC_THRESHOLD
+end

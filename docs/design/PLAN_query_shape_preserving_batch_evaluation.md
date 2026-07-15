@@ -545,7 +545,7 @@ coverage.
 - Phase 1: ☑ planned ☑ in progress ☑ done
 - Phase 2: ☑ planned ☑ in progress ☑ done
 - Phase 3: ☑ planned ☑ in progress ☑ done
-- Phase 4: ☑ planned ☐ in progress ☐ done
+- Phase 4: ☑ planned ☑ in progress ☑ done
 - Phase 5: ☑ planned ☐ in progress ☐ done
 - Phase 6: ☑ planned ☐ in progress ☐ done
 
@@ -640,6 +640,19 @@ coverage.
   produce 3 Aqua ambiguities; added the full ND tie-breaker set (verified 0). Kept `eachindex(xq,output)` in the
   widened loops rather than switching to linear indexing (§5.4/adj #6) — it is 0-alloc and axes-correct for every
   in-scope case (dense/3-D/contiguous+noncontiguous view); offset axes stay a §12 non-goal either way.
+
+### Phase 4 — DONE (one-shot 1-D core families)
+
+- **Source edits (5 files, runic-clean)**: `{linear,constant,quadratic,cubic,hermite}/*_oneshot.jl` — public
+  allocating/in-place sinks widened `AbstractVector`→`AbstractArray`; allocators → `_alloc_query_output`;
+  `@assert length`/`@boundscheck` output-length check → `_check_query_output_size`. Linear's own one-shot loop
+  widened; constant/quadratic/cubic/hermite reuse the Phase-3-widened persistent family loops; cubic covers both
+  raw-grid and cache in-place entries + the periodic/bcpair batch helpers.
+- **Tests**: one-shot 1-D core families 25 (5 families × Matrix shape / in-place / exact-size rejection) +
+  allocation parity 4 — all green.
+- **Allocation**: shaped 1-D one-shot in-place (dense Matrix) = 0 B warm, matching the vector lane (A/B standalone
+  confirms both linear and cubic at 0 B — pool-amortized spline build).
+- **Aqua**: zero new ambiguities. **Regression**: cubic, linear, quadratic, allocation suites — green.
 
 - Benchmark results: (Phase 6)
 - Julia 1.10 result: (Phase 6)

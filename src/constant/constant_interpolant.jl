@@ -38,10 +38,10 @@ end
 # of RefHint's Ref, causing 16-byte heap allocation per call.
 # ─────────────────────────────────────────────────────────────
 @inline function _constant_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         side::SD,
         deriv::O,

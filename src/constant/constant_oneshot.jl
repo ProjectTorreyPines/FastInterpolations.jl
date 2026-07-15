@@ -255,10 +255,10 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
 # Unified in-place entry. Resolvers normalize inputs; selection kernel
 # preserves `eltype(y)`. No Real/Mixed wrapper needed.
 function constant_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -267,7 +267,7 @@ function constant_interp!(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
+    _check_query_output_size(output, x_targets)
 
     # Surface-level BC-aware resolvers (same template as Linear oneshot);
     # raw Tg — selection kernel keeps natural promotion (no float forcing).
@@ -307,7 +307,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -315,9 +315,7 @@ function constant_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
-    output = Vector{_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets))}(
-        undef, length(x_targets)
-    )
+    output = _alloc_query_output(_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets)), x_targets)
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search, hint)
     return output
 end

@@ -122,11 +122,11 @@ end
 
 "Vector loop for cubic spline. Accepts any Real query type (AD-compatible)."
 @inline function _cubic_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
-        x_query::AbstractVector{<:Real},
+        x_query::AbstractArray{<:Real},
         ev::E,
         op::O,
         searcher::P
@@ -142,11 +142,11 @@ end
 end
 
 @inline function _cubic_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
-        x_query::AbstractVector{<:Real},
+        x_query::AbstractArray{<:Real},
         ev::E,
         op::O,
         searcher::P

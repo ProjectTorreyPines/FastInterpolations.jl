@@ -102,11 +102,11 @@ end
 # more robust than relying on LLVM loop unswitching, which can give up on
 # union splitting when the inner kernel exceeds heuristic size thresholds.
 @inline function _hermite_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
@@ -116,11 +116,11 @@ end
 end
 
 @inline function _hermite_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
@@ -227,11 +227,11 @@ end
 # resolves domain, inner sees concrete `extrap` (see pre-baked-slopes
 # variant above for rationale).
 @inline function _hermite_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
@@ -241,11 +241,11 @@ end
 end
 
 @inline function _hermite_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         deriv::O,
         searcher::P

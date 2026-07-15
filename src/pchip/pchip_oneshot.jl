@@ -39,10 +39,10 @@ end
 
 # Vector in-place
 @inline @with_pool pool function _pchip_interp_precompute!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector,
+        x_query::AbstractArray,
         bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -50,7 +50,7 @@ end
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
     # Value-matched width: the dy buffer AND the slope arithmetic inside the
@@ -91,10 +91,10 @@ end
 
 # Vector in-place
 @inline function _pchip_interp_onthefly!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector,
+        x_query::AbstractArray,
         bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -102,7 +102,7 @@ end
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
 
@@ -157,10 +157,10 @@ end
 In-place PCHIP interpolation with monotone-preserving slopes.
 """
 @inline function pchip_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -180,12 +180,13 @@ end
 """
     pchip_interp(x, y, x_query; coeffs=PreCompute(), ...)
 
-PCHIP interpolation at multiple query points. Returns `Vector`.
+PCHIP interpolation at multiple query points. Returns an `Array`
+matching the query's shape (a `Vector` for a vector query).
 """
 function pchip_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -194,7 +195,7 @@ function pchip_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
-    output = Vector{Tr}(undef, length(x_query))
+    output = _alloc_query_output(Tr, x_query)
     pchip_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

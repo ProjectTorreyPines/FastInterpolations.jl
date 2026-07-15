@@ -29,16 +29,16 @@ Thread-safe: workspaces allocated from task-local pool.
 - `search::AbstractSearchPolicy=AutoSearch()`: Search algorithm for interval finding
 """
 @inline @with_pool pool function cubic_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         cache::CubicSplineCache{Tg, X, F, BC},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv, Tq <: Real, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    _check_query_output_size(output, x_query)
 
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
@@ -72,10 +72,10 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 - Solve uses original BC for proper RHS materialization (PolyFit materializes via compute_rhs!)
 """
 @inline @with_pool pool function _cubic_interp_bcpair!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_query::AbstractVector{<:Real},
+        x_query::AbstractArray{<:Real},
         bc::BCPair{L, R},
         extrap::AbstractExtrap,
         autocache::Bool,
@@ -83,7 +83,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
         searcher::S
     ) where {Tg, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
     @assert length(y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    _check_query_output_size(output, x_query)
 
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally).
     # Value-matched `Tg_eff` (Int grid + Float32 data → Float32) selects the data-aware
@@ -183,16 +183,16 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 Pool-based exclusive extension: zero-alloc after warmup.
 """
 @inline @with_pool pool function _cubic_interp_periodic!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_query::AbstractVector{<:Real},
+        x_query::AbstractArray{<:Real},
         bc::PeriodicBC,
         autocache::Bool,
         op::O,
         searcher::S
     ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    @assert length(output) == length(x_query) "output length must match x_query"
+    _check_query_output_size(output, x_query)
 
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
@@ -237,10 +237,10 @@ end
 In-place cubic spline interpolation with optional automatic caching.
 """
 @inline function cubic_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{<:Real};
+        x_query::AbstractArray{<:Real};
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
@@ -291,13 +291,13 @@ vals = cubic_interp(cache, y, sorted_queries; search=LinearBinarySearch(linear_w
 function cubic_interp(
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv, Tq <: Real}
     Tr = _promote_eltype(_interp_op, eltype(cache.x), Tv, Tq)
-    output = Vector{Tr}(undef, length(x_query))
+    output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
 end
@@ -332,7 +332,7 @@ vals = cubic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_windo
 function cubic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{<:Real};
+        x_query::AbstractArray{<:Real};
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
@@ -342,7 +342,7 @@ function cubic_interp(
     ) where {Tg, Tv}
     Tq = eltype(x_query)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
-    output = Vector{Tr}(undef, length(x_query))
+    output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search, hint)
     return output
 end

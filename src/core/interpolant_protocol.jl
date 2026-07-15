@@ -159,6 +159,45 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     return output
 end
 
+# ========================================
+# 1D Shaped Array Call — Allocating + In-Place
+# ========================================
+# A real array query (Matrix, 3-D, noncontiguous view) yields an array of the same
+# shape; the `AbstractVector` methods above stay more specific, so the vector hot path
+# is unchanged. Both reuse the extrap/searcher resolution and the (array-widened) family
+# loop, which fills by `eachindex(xq, output)` — column-major for same-shape arrays.
+
+function (itp::AbstractInterpolant1D{Tg, Tv})(
+        q::AbstractArray{Tq};
+        deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
+        search::AbstractSearchPolicy = _itp_search(itp),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv, Tq <: Real}
+    grid = _itp_grid(itp)
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
+    output = _alloc_query_output(_promote_eltype(itp, Tq), q)
+    searcher = _resolve_search(grid, q, search, hint)
+    _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
+    return output
+end
+
+function (itp::AbstractInterpolant1D{Tg, Tv})(
+        output::AbstractArray,
+        q::AbstractArray{Tq};
+        deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
+        search::AbstractSearchPolicy = _itp_search(itp),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv, Tq <: Real}
+    _check_query_output_size(output, q)
+    grid = _itp_grid(itp)
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
+    searcher = _resolve_search(grid, q, search, hint)
+    _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
+    return output
+end
+
 # ── ND-style tuple queries on a 1D interpolant ──
 # A 1-axis grid collapses to the 1D path (see the `*_interp((x,), y)` forwarders),
 # so generic tensor code that issues tuple queries stays transparent: `itp((x,))`
@@ -170,6 +209,13 @@ end
 @inline (itp::AbstractInterpolant1D)(output::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
     itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 @inline (itp::AbstractInterpolant1D)(q::Tuple{AbstractVector}; kwargs...) =
+    itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
+# Shaped single-axis SoA: `(q_matrix,)` collapses to the shaped 1D path (vector
+# forms above stay more specific), so generic tensor code that issues `(q,)` is
+# transparent for array queries too.
+@inline (itp::AbstractInterpolant1D)(output::AbstractArray, q::Tuple{AbstractArray}; kwargs...) =
+    itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)
+@inline (itp::AbstractInterpolant1D)(q::Tuple{AbstractArray}; kwargs...) =
     itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 
 # ╔══════════════════════════════════════╗
@@ -188,7 +234,7 @@ end
 # Query extraction dispatches via _query_extract on query container type.
 
 @inline function _interp_nd_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         itp::AbstractInterpolantND{Tg, Tv, N},
         queries,
         extraps_eff::Tuple{Vararg{AbstractExtrap, N}},
@@ -317,6 +363,21 @@ end
 # Protocol functions (_query_length, _query_extract, _query_eltype) dispatch
 # directly on query container type — no normalization needed.
 
+# Shaped in-place batch: `output` must match `_query_size(queries)` EXACTLY — a
+# length-only match would silently flatten a matrix query into a vector sink. The
+# `AbstractVector` peer keeps the established vector-batch dispatch stable; both route
+# through one shape-checking helper. (Column-major linear indexing fills the shape.)
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        output::AbstractArray,
+        queries;
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _nd_batch_inplace!(itp, output, queries, deriv, extrap, search, hint)
+end
+
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         output::AbstractVector,
         queries;
@@ -325,9 +386,14 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    return _nd_batch_inplace!(itp, output, queries, deriv, extrap, search, hint)
+end
+
+@inline function _nd_batch_inplace!(
+        itp::AbstractInterpolantND{Tg, Tv, N}, output, queries, deriv, extrap, search, hint
+    ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
-    nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     # `extrap` (nothing → stored; InBounds → fast-path; else errors) resolved per-axis.
     extraps0 = _resolve_extrap_override_nd(itp, extrap)
     return _nd_batch_pointwise!(output, itp, queries, ops, extraps0, search, hint)
@@ -339,7 +405,7 @@ end
 # already override-resolved; `ops` already per-axis. HeteroND rides this too —
 # it is an `AbstractInterpolantND`, so the resolver threads its stored state.
 @inline function _nd_batch_pointwise!(
-        output::AbstractVector,
+        output::AbstractArray,
         itp::AbstractInterpolantND{Tg, Tv, N},
         queries,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
@@ -372,6 +438,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = Vector{_promote_eltype(itp, Tq)}(undef, _query_length(queries))
+    output = _alloc_query_output(_promote_eltype(itp, Tq), queries)
     return itp(output, queries; deriv = deriv, extrap = extrap, search = search, hint = hint)
 end

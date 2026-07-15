@@ -51,11 +51,11 @@ end
 In-place cubic Hermite interpolation using user-supplied slopes.
 """
 function hermite_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
@@ -64,7 +64,7 @@ function hermite_interp!(
     x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
 
     searcher = _resolve_search(x, x_query, search, hint)
     extrap = _resolve_extrap(extrap, x)
@@ -79,13 +79,14 @@ end
     hermite_interp(x, y, dy, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cubic Hermite interpolation at multiple query points using user-supplied slopes.
-Returns `Vector` of interpolated values.
+Returns an `Array` of interpolated values matching the query's shape
+(a `Vector` for a vector query, a `Matrix` for a matrix query).
 """
 function hermite_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
@@ -100,7 +101,7 @@ function hermite_interp(
         _promote_eltype(_interp_op, Tg_p, Tv, Tq),
         _promote_eltype(_interp_op, Tg_p, eltype(dy), Tq),
     )
-    output = Vector{Tr}(undef, length(x_query))
+    output = _alloc_query_output(Tr, x_query)
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

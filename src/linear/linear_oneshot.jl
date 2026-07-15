@@ -57,10 +57,10 @@ function linear_interp! end
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
 function linear_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -68,7 +68,7 @@ function linear_interp!(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
+    _check_query_output_size(output, x_targets)
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping):
     #   `_resolve_axis(x, bc)` shapes the axis (Range→`_CachedRange`, Vector→passthrough,
@@ -93,10 +93,10 @@ end
 # `NoExtrap` paths the return type is already `InBounds`, so this is a
 # no-op. Supports mixed types: Tg for grid, Tv for values.
 @inline function _linear_interp_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_targets::AbstractVector,
+        x_targets::AbstractArray,
         extrap::AbstractExtrap,
         op::O,
         searcher::S
@@ -106,10 +106,10 @@ end
 end
 
 @inline function _linear_interp_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_targets::AbstractVector,
+        x_targets::AbstractArray,
         extrap::E,
         op::O,
         searcher::S
@@ -346,7 +346,7 @@ end
 function linear_interp(
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -355,7 +355,7 @@ function linear_interp(
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
     T_out = _promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets))
-    output = Vector{T_out}(undef, length(x_targets))
+    output = _alloc_query_output(T_out, x_targets)
     linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output
 end

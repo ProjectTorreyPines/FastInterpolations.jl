@@ -215,10 +215,10 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
 ```
 """
 @with_pool pool function quadratic_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
+        x_targets::AbstractArray{Tq};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -226,7 +226,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
+    _check_query_output_size(output, x_targets)
     @assert length(x) >= 2 "x must have at least 2 elements"
 
     # Value-matched pooled wrap — keeps the batch interior consistent with scalar.
@@ -270,7 +270,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
 function quadratic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_targets::AbstractVector{Tq};
+        x_targets::AbstractArray{Tq};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -278,7 +278,7 @@ function quadratic_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tq <: Real}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
-    output = Vector{Tr}(undef, length(x_targets))
+    output = _alloc_query_output(Tr, x_targets)
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output
 end

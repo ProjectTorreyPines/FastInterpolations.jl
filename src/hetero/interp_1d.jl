@@ -119,13 +119,14 @@ end
 """
     interp(x::AbstractVector, y::AbstractVector, queries::AbstractVector{<:Real}; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch())
 
-Allocating one-shot 1D interpolation at multiple points. Returns a `Vector`.
+Allocating one-shot 1D interpolation at multiple points. Returns an `Array`
+matching the query's shape (a `Vector` for a vector query, a `Matrix` for a matrix query).
 Equivalent to the dedicated 1D batch call (e.g. `cubic_interp(x, y, queries)`).
 """
 @inline function interp(
         x::AbstractVector,
         y::AbstractVector,
-        queries::AbstractVector{<:Real};
+        queries::AbstractArray{<:Real};
         method::AbstractInterpMethod,
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),
@@ -142,10 +143,10 @@ In-place one-shot 1D interpolation at multiple points. Writes into `output`.
 Equivalent to the dedicated 1D in-place call (e.g. `cubic_interp!(output, x, y, queries)`).
 """
 @inline function interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        queries::AbstractVector{<:Real};
+        queries::AbstractArray{<:Real};
         method::AbstractInterpMethod,
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),

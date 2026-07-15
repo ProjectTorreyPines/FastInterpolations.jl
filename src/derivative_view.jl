@@ -297,3 +297,41 @@ end
     _check_no_deriv_override(Val(Order), deriv)
     return d.parent(out, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
 end
+
+# In-place shaped array query => same-shape array output (1D parents + the ND
+# fallback below). All-ITP; disjoint from the series-scalar `(AbstractArray, Real)`
+# above and less specific than the `(AbstractVector, AbstractVector{<:Real})` form.
+@inline function (d::DerivativeView{Order, ITP})(
+        output::AbstractArray, xq::AbstractArray{<:Real}; deriv = nothing, kwargs...
+    ) where {Order, ITP}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(output, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+
+# In-place ND batch (AoS/SoA/etc.) => shaped output. The generic `queries` argument
+# needs the three ND-specialized tie-breakers below so that every intersection with
+# the all-ITP methods has a unique most-specific winner (Aqua-verified).
+@inline function (d::DerivativeView{Order, ITP})(
+        output::AbstractArray, queries; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(output, queries; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+@inline function (d::DerivativeView{Order, ITP})(
+        out::AbstractArray, xq::Real; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(out, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+@inline function (d::DerivativeView{Order, ITP})(
+        output::AbstractVector, xq::AbstractVector{<:Real}; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(output, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+@inline function (d::DerivativeView{Order, ITP})(
+        output::AbstractArray, xq::AbstractArray{<:Real}; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(output, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
+end

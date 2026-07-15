@@ -653,7 +653,7 @@ exact `_CachedRange`s and Vectors use `lo/hi` / `first/last`) and is
 partial-sign-safe under ForwardDiff. Throw message uses `first(x)/last(x)` —
 exact endpoints, not the widened bracket.
 """
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap, dim::Int = 0)
+@inline function _check_domain(x::AbstractVector, xi::AbstractArray{<:Real}, ::NoExtrap, dim::Int = 0)
     @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi, dim)
     return InBounds()
 end
@@ -665,7 +665,7 @@ end
 # on its partial into a false exclusive promotion (→ no-cap OOB read).
 # Only the throws are `@boundscheck`-elidable; the promotion is build-mode independent.
 @inline function _check_domain(
-        x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real}, ::NoExtrap, dim::Int = 0
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractArray{<:Real}, ::NoExtrap, dim::Int = 0
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     isempty(xi) && return InBounds()
     lo, hi = _domain_bounds(x)
@@ -676,7 +676,7 @@ end
     return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
 end
 
-@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real}, dim::Int = 0)
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractArray{<:Real}, dim::Int = 0)
     qmin, qmax = minimum(xi), maximum(xi)
     x_min = _extract_primal(first(x))
     x_max = _extract_primal(last(x))
@@ -684,13 +684,13 @@ end
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
-@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::AbstractArray{<:Real}, extrap::AbstractExtrap) = extrap
 
 # Closed-domain batch fast path: every OOB policy (`ClampExtrap`, `FillExtrap`,
 # `WrapExtrap`) treats `[first(x), last(x)]` as the in-domain interval, so they
 # share one batch promotion to `InBounds()`.
 @inline function _check_domain(
-        x::AbstractVector, xi::AbstractVector{<:Real},
+        x::AbstractVector, xi::AbstractArray{<:Real},
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     )
     return _is_all_inbounds(x, xi) ? InBounds() : e
@@ -699,7 +699,7 @@ end
 # Unit-step twin: original extrap (any OOB) / exclusive-last (strictly below `last`)
 # / closed (touches `last`). Primal extrema — see the NoExtrap twin.
 @inline function _check_domain(
-        x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real},
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractArray{<:Real},
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     isempty(xi) && return InBounds()
@@ -760,7 +760,7 @@ the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 # partial sign at equal primals, so a Float query at the boundary against a Dual
 # grid endpoint must classify on primal alone (see test/ext/test_linear_dual_grid.jl).
 # Routes through `_domain_bounds` (widened bracket in one place); `&&` short-circuits.
-@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
+@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractArray{<:Real})
     isempty(queries) && return true
     lo, hi = _domain_bounds(x)
     # `_ge`/`_le` promote-compare (see search.jl): dodge Base's exact mixed

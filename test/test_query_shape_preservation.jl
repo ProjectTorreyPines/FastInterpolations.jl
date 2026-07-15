@@ -443,3 +443,108 @@ end
     @test meas_d(out_mat, (x, y), data, soa_mat) <= ND_ALLOC_THRESHOLD
     @test meas_d(out_vec, (x, y), data, pts_vec) <= ND_ALLOC_THRESHOLD
 end
+
+# ============================================================
+# Phase 3 · Persistent 1-D quadrant + DerivativeView
+# ============================================================
+# Reference = `map(itp, q)` (scalar eval per point, naturally shape-preserving).
+
+@testitem "query shape: persistent 1-D shape preservation" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    dy = cos.(x)
+
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+    q_3d = reshape(collect(range(0.3, 6.0, 24)), 2, 3, 4)
+
+    families = (
+        ("linear", linear_interp(x, y)),
+        ("constant", constant_interp(x, y)),
+        ("quadratic", quadratic_interp(x, y)),
+        ("cubic", cubic_interp(x, y)),
+        ("pchip", pchip_interp(x, y)),
+        ("akima", akima_interp(x, y)),
+        ("cardinal", cardinal_interp(x, y)),
+        ("hermite", hermite_interp(x, y, dy)),
+    )
+
+    @testset "$name" for (name, itp) in families
+        @testset "allocating Matrix / 3-D" begin
+            r = itp(q_mat)
+            @test r isa Matrix && size(r) == (3, 4)
+            @test r == map(itp, q_mat)
+            r3 = itp(q_3d)
+            @test size(r3) == (2, 3, 4)
+            @test r3 == map(itp, q_3d)
+        end
+
+        @testset "in-place Matrix" begin
+            out = Matrix{Float64}(undef, 3, 4)
+            @test itp(out, q_mat) === out
+            @test out == map(itp, q_mat)
+        end
+
+        @testset "noncontiguous view query" begin
+            qv = @view q_mat[1:2, :]
+            r = itp(qv)
+            @test size(r) == (2, 4)
+            @test r == map(itp, qv)
+        end
+
+        @testset "exact-size rejection" begin
+            @test_throws DimensionMismatch itp(Vector{Float64}(undef, 12), q_mat)
+        end
+
+        @testset "N=1 SoA (q,) parity" begin
+            @test itp((q_mat,)) == itp(q_mat)
+            out = Matrix{Float64}(undef, 3, 4)
+            itp(out, (q_mat,))
+            @test out == itp(q_mat)
+        end
+    end
+end
+
+@testitem "query shape: 1-D DerivativeView shaped" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    itp = cubic_interp(x, y)
+
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+
+    @testset "deriv$k preserves shape (allocating + in-place)" for k in 1:3
+        dv = (deriv1, deriv2, deriv3)[k](itp)
+        r = dv(q_mat)
+        @test r isa Matrix && size(r) == (3, 4)
+        @test r == map(dv, q_mat)
+
+        out = Matrix{Float64}(undef, 3, 4)
+        @test dv(out, q_mat) === out
+        @test out == map(dv, q_mat)
+
+        @test_throws DimensionMismatch dv(Vector{Float64}(undef, 12), q_mat)
+    end
+end
+
+@testitem "query shape: persistent 1-D allocation parity" setup = [AllocConstants] begin
+    measure(itp, out, q) = (itp(out, q); itp(out, q); @allocated itp(out, q))
+
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    itp = cubic_interp(x, y)
+
+    q12 = collect(range(0.3, 6.0, 12))
+    q_mat = reshape(q12, 3, 4)
+    qv = @view q_mat[1:2, :]
+
+    out_mat = Matrix{Float64}(undef, 3, 4)
+    out_view = Matrix{Float64}(undef, 2, 4)
+    out_vec = Vector{Float64}(undef, 12)
+
+    # shaped in-place: 0 B warm (dense Matrix + noncontiguous view)
+    @test measure(itp, out_mat, q_mat) <= ALLOC_THRESHOLD
+    @test measure(itp, out_view, qv) <= ALLOC_THRESHOLD
+    # existing vector lane unchanged: 0 B warm
+    @test measure(itp, out_vec, q12) <= ALLOC_THRESHOLD
+end

@@ -159,6 +159,45 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     return output
 end
 
+# ========================================
+# 1D Shaped Array Call — Allocating + In-Place
+# ========================================
+# A real array query (Matrix, 3-D, noncontiguous view) yields an array of the same
+# shape; the `AbstractVector` methods above stay more specific, so the vector hot path
+# is unchanged. Both reuse the extrap/searcher resolution and the (array-widened) family
+# loop, which fills by `eachindex(xq, output)` — column-major for same-shape arrays.
+
+function (itp::AbstractInterpolant1D{Tg, Tv})(
+        q::AbstractArray{Tq};
+        deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
+        search::AbstractSearchPolicy = _itp_search(itp),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv, Tq <: Real}
+    grid = _itp_grid(itp)
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
+    output = _alloc_query_output(_promote_eltype(itp, Tq), q)
+    searcher = _resolve_search(grid, q, search, hint)
+    _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
+    return output
+end
+
+function (itp::AbstractInterpolant1D{Tg, Tv})(
+        output::AbstractArray,
+        q::AbstractArray{Tq};
+        deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
+        search::AbstractSearchPolicy = _itp_search(itp),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv, Tq <: Real}
+    _check_query_output_size(output, q)
+    grid = _itp_grid(itp)
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
+    searcher = _resolve_search(grid, q, search, hint)
+    _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
+    return output
+end
+
 # ── ND-style tuple queries on a 1D interpolant ──
 # A 1-axis grid collapses to the 1D path (see the `*_interp((x,), y)` forwarders),
 # so generic tensor code that issues tuple queries stays transparent: `itp((x,))`
@@ -170,6 +209,13 @@ end
 @inline (itp::AbstractInterpolant1D)(output::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
     itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 @inline (itp::AbstractInterpolant1D)(q::Tuple{AbstractVector}; kwargs...) =
+    itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
+# Shaped single-axis SoA: `(q_matrix,)` collapses to the shaped 1D path (vector
+# forms above stay more specific), so generic tensor code that issues `(q,)` is
+# transparent for array queries too.
+@inline (itp::AbstractInterpolant1D)(output::AbstractArray, q::Tuple{AbstractArray}; kwargs...) =
+    itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)
+@inline (itp::AbstractInterpolant1D)(q::Tuple{AbstractArray}; kwargs...) =
     itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 
 # ╔══════════════════════════════════════╗

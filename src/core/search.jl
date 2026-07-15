@@ -229,7 +229,7 @@ Returns `false` for short vectors (length < K) since LinearBinarySearch offers n
 
 False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in first K elements).
 """
-@inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K} = Val(8)) where {K}
+@inline function _is_likely_monotone(xq::AbstractArray{<:Real}, ::Val{K} = Val(8)) where {K}
     n = length(xq)
     n < K && return false
     # Single-pass direction tracking: state ∈ {-1, 0, 1}.
@@ -294,7 +294,7 @@ end
 @inline _resolve_search_policy(::AutoSearch, xq, ::Base.RefValue{Int}) = LinearBinarySearch()
 
 # AutoSearch + no hint + vector → adaptive per prefix monotonicity check.
-@inline function _resolve_search_policy(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
+@inline function _resolve_search_policy(::AutoSearch, xq::AbstractArray{<:Real}, ::Nothing)
     return _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
 end
 

@@ -27,12 +27,12 @@ end
 # blocks SROA of RefHint's Ref (16 B/call alloc).
 # ─────────────────────────────────────────────────────────────
 @inline function _quadratic_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         a::AbstractVector{Tc},
         d::AbstractVector{Tc},
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
@@ -42,12 +42,12 @@ end
 end
 
 @inline function _quadratic_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         a::AbstractVector{Tc},
         d::AbstractVector{Tc},
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{<:Real},
         extrap::E,
         deriv::O,
         searcher::P

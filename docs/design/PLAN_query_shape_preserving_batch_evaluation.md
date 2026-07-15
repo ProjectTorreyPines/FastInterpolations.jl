@@ -544,7 +544,7 @@ coverage.
 
 - Phase 1: ☑ planned ☑ in progress ☑ done
 - Phase 2: ☑ planned ☑ in progress ☑ done
-- Phase 3: ☑ planned ☐ in progress ☐ done
+- Phase 3: ☑ planned ☑ in progress ☑ done
 - Phase 4: ☑ planned ☐ in progress ☐ done
 - Phase 5: ☑ planned ☐ in progress ☐ done
 - Phase 6: ☑ planned ☐ in progress ☐ done
@@ -619,6 +619,27 @@ coverage.
   `_query_size` reports the tuple arity (wrong); the top-level exact-size gate is skipped for them (their
   pre-slice sub-problem self-validates), preserving master's GridIdx behavior. Full GridIdx shape support is
   out of scope (adjacent to the §12 pre-anchored-query non-goal). Caught by the existing nd1_collapse regression pin.
+
+### Phase 3 — DONE (persistent 1-D quadrant + DerivativeView)
+
+- **Source edits (9 files, runic-clean)**: `core/interpolant_protocol.jl` (less-specific
+  `(itp)(q::AbstractArray{<:Real})` allocating + `(out::AbstractArray, q::AbstractArray{<:Real})` in-place with
+  exact-size gate; shaped `(q_matrix,)` single-axis SoA forwarders); `core/utils.jl` + `core/search.jl` (batch
+  domain `_check_domain`/`_is_all_inbounds`/`_throw_batch_oob` and search `_is_likely_monotone`/
+  `_resolve_search_policy` widened `AbstractVector{<:Real}`→`AbstractArray{<:Real}` — annotation-only);
+  5 family eval loops (`linear/constant/quadratic/cubic/hermite`) widened `output`/`xq` to `AbstractArray`;
+  `derivative_view.jl` (shaped in-place forward for 1-D parents + N-D `(AbstractArray, queries)` forward + the
+  three ND-specialized tie-breakers that keep it unambiguous).
+- **Tests**: persistent 1-D shape 88 (11 × 8 families: Matrix/3-D/view/exact-size/N=1-SoA), DerivativeView
+  deriv1/2/3 shaped 15, allocation parity 3 — all green.
+- **Allocation**: shaped 1-D in-place (dense Matrix + noncontiguous view) = 0 B warm; vector lane unchanged.
+  test_allocation.jl 155/155 confirms the hot-path widening is compile-time-identical for the Vector path.
+- **Aqua**: zero ambiguities (the DerivativeView tie-breaker set is the design's under-specified §4.1 gap, resolved).
+  **Regression**: allocation, constant (incl. DerivativeView), hermite_1d, akima_1d, cardinal_1d — all green.
+- **Design refinement (adj #1 & #6)**: the design's §4.1 named only two DerivativeView in-place forwards, which
+  produce 3 Aqua ambiguities; added the full ND tie-breaker set (verified 0). Kept `eachindex(xq,output)` in the
+  widened loops rather than switching to linear indexing (§5.4/adj #6) — it is 0-alloc and axes-correct for every
+  in-scope case (dense/3-D/contiguous+noncontiguous view); offset axes stay a §12 non-goal either way.
 
 - Benchmark results: (Phase 6)
 - Julia 1.10 result: (Phase 6)

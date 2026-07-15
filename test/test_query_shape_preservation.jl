@@ -448,8 +448,11 @@ end
 # Phase 3 · Persistent 1-D quadrant + DerivativeView
 # ============================================================
 # Reference = `map(itp, q)` (scalar eval per point, naturally shape-preserving).
+# Compared with `isclose` (ULP-tolerant): the batch and scalar kernels differ only
+# by FMA/muladd contraction, which is inline- and Julia/LLVM-version dependent, so
+# strict `==` flakes on some platforms (e.g. LTS). Shape/size is still pinned exactly.
 
-@testitem "query shape: persistent 1-D shape preservation" begin
+@testitem "query shape: persistent 1-D shape preservation" setup = [Basic] begin
     x = collect(range(0.0, 2π, 25))
     y = sin.(x)
     dy = cos.(x)
@@ -473,23 +476,23 @@ end
         @testset "allocating Matrix / 3-D" begin
             r = itp(q_mat)
             @test r isa Matrix && size(r) == (3, 4)
-            @test r == map(itp, q_mat)
+            @test isclose(r, map(itp, q_mat))
             r3 = itp(q_3d)
             @test size(r3) == (2, 3, 4)
-            @test r3 == map(itp, q_3d)
+            @test isclose(r3, map(itp, q_3d))
         end
 
         @testset "in-place Matrix" begin
             out = Matrix{Float64}(undef, 3, 4)
             @test itp(out, q_mat) === out
-            @test out == map(itp, q_mat)
+            @test isclose(out, map(itp, q_mat))
         end
 
         @testset "noncontiguous view query" begin
             qv = @view q_mat[1:2, :]
             r = itp(qv)
             @test size(r) == (2, 4)
-            @test r == map(itp, qv)
+            @test isclose(r, map(itp, qv))
         end
 
         @testset "exact-size rejection" begin
@@ -505,7 +508,7 @@ end
     end
 end
 
-@testitem "query shape: 1-D DerivativeView shaped" begin
+@testitem "query shape: 1-D DerivativeView shaped" setup = [Basic] begin
     x = collect(range(0.0, 2π, 25))
     y = sin.(x)
     itp = cubic_interp(x, y)
@@ -517,11 +520,12 @@ end
         dv = (deriv1, deriv2, deriv3)[k](itp)
         r = dv(q_mat)
         @test r isa Matrix && size(r) == (3, 4)
-        @test r == map(dv, q_mat)
+        # derivative kernels reassociate more than value kernels → wider ULP band
+        @test isclose(r, map(dv, q_mat); nulps = 4096)
 
         out = Matrix{Float64}(undef, 3, 4)
         @test dv(out, q_mat) === out
-        @test out == map(dv, q_mat)
+        @test isclose(out, map(dv, q_mat); nulps = 4096)
 
         @test_throws DimensionMismatch dv(Vector{Float64}(undef, 12), q_mat)
     end

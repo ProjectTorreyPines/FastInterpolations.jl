@@ -169,7 +169,8 @@ end
 """
     akima_interp(x, y, x_query; coeffs=PreCompute(), ...)
 
-Akima interpolation at multiple query points. Returns `Vector`.
+Akima interpolation at multiple query points. Returns an `Array`
+matching the query's shape (a `Vector` for a vector query).
 """
 function akima_interp(
         x::AbstractVector{Tg},

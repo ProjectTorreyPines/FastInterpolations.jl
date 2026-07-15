@@ -192,7 +192,8 @@ end
 """
     cardinal_interp(x, y, x_query; coeffs=AutoCoeffs(), tension=0.0, ...)
 
-Cardinal spline interpolation at multiple query points. Returns `Vector`.
+Cardinal spline interpolation at multiple query points. Returns an `Array`
+matching the query's shape (a `Vector` for a vector query).
 """
 function cardinal_interp(
         x::AbstractVector{Tg},

@@ -180,7 +180,8 @@ end
 """
     pchip_interp(x, y, x_query; coeffs=PreCompute(), ...)
 
-PCHIP interpolation at multiple query points. Returns `Vector`.
+PCHIP interpolation at multiple query points. Returns an `Array`
+matching the query's shape (a `Vector` for a vector query).
 """
 function pchip_interp(
         x::AbstractVector{Tg},

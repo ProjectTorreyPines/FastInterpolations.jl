@@ -547,7 +547,7 @@ coverage.
 - Phase 3: ☑ planned ☑ in progress ☑ done
 - Phase 4: ☑ planned ☑ in progress ☑ done
 - Phase 5: ☑ planned ☑ in progress ☑ done
-- Phase 6: ☑ planned ☐ in progress ☐ done
+- Phase 6: ☑ planned ☑ in progress ☑ done (impl/docs/review; full-suite + Julia 1.10 + benchmark = user)
 
 ## Notes / learnings
 
@@ -670,5 +670,21 @@ coverage.
 - **Coverage note**: OnTheFly + N=1-collapse + matrix query is a narrow untested edge (my tests use the default
   AutoCoeffs path → native 1-D); flag for Phase 6 if full OnTheFly-collapse coverage is required.
 
-- Benchmark results: (Phase 6)
-- Julia 1.10 result: (Phase 6)
+### Phase 6 — DONE (review + docs + edge cases; perf/version = user)
+
+- **Adversarial review**: a 6-agent workflow reviewed the full `master..HEAD` diff across 5 dimensions
+  (missed-sinks, dispatch/ambiguity, allocation/specialization, correctness/contracts, edge/non-goals);
+  895K subagent tokens, 202 tool-uses, ~17 min. **Zero real defects survived adversarial verification.** The
+  only candidate (LOW) was a test-coverage note (no empty/zero-dim pin) — actioned below.
+- **Edge-case tests**: added `empty + degenerate shaped queries` testitem (7 assertions) — 1-D empty Matrix →
+  `(0,3)`, N-D empty AoS/SoA, empty in-place, wrong-shape sink rejection. Green.
+- **Docs**: shape-aware docstrings on the 5 "Returns Vector" one-shot APIs + a "Shape preservation" section in
+  `docs/src/nd/overview.md` with the `vec(itp(q))` migration note.
+- **Test suite total**: `test/test_query_shape_preservation.jl` = 19 testitems covering all four quadrants,
+  both APIs, both call forms, 8 families, DerivativeView, N=1 collapse, allocation parity, edge cases.
+
+### Remaining (user-run, per the package's test-tier policy)
+- Full package test suite (all files) + extension tests.
+- Julia 1.10 (LTS) run.
+- CI benchmark (the 10% same-machine regression gate). §7.2 SoA-array fast-check peers were deferred here as a
+  potential SPEED (not alloc) optimization — add only if the SoA-matrix path measures >10% slower than SoA-vector.

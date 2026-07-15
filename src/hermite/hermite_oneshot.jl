@@ -79,7 +79,8 @@ end
     hermite_interp(x, y, dy, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cubic Hermite interpolation at multiple query points using user-supplied slopes.
-Returns `Vector` of interpolated values.
+Returns an `Array` of interpolated values matching the query's shape
+(a `Vector` for a vector query, a `Matrix` for a matrix query).
 """
 function hermite_interp(
         x::AbstractVector{Tg},

@@ -189,6 +189,28 @@ _query_eltype(q::MyQueries)      = ...   # scalar floating type (e.g. Float64)
 !!! note "Value types vs Query types"
     This is orthogonal to [Custom Value Types (Duck Typing)](../guides/custom_value_types.md), which governs what types can be *interpolated* (`Tv`). The query protocol governs what container types can *hold query points*.
 
+### Shape preservation
+
+Batch evaluation preserves the **shape** of the query container. A vector query returns a `Vector`; a query that carries more than one dimension returns a dense `Array` of the same `size`:
+
+```julia
+pts = reshape([(0.1, 0.2), (0.3, 0.4), (0.5, 0.6), (0.7, 0.8)], 2, 2)
+itp(pts)                       # 2×2 Matrix — itp(pts)[i,j] == itp(pts[i,j])
+
+qx = [0.1 0.3; 0.5 0.7]; qy = [0.2 0.4; 0.6 0.8]
+itp((qx, qy))                  # 2×2 Matrix (shaped SoA — requires size(qx) == size(qy))
+```
+
+In-place calls require the output to match the query shape **exactly** (equal length with a different shape is rejected):
+
+```julia
+out = Matrix{Float64}(undef, 2, 2)
+itp(out, pts)                  # fills the 2×2 matrix
+itp(Vector{Float64}(undef, 4), pts)   # DimensionMismatch — a length-4 vector is not a 2×2 sink
+```
+
+Scalar and vector queries are unchanged, and `GriddedQuery` keeps its Cartesian-product shape. Only a query container that already carried more than one dimension changes: it previously returned a flattened vector and now returns a same-shape array. To recover the old flat result, wrap the call: `vec(itp(pts))`.
+
 ---
 
 ## Visualization (2D)

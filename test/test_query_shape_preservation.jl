@@ -672,3 +672,31 @@ end
         @test o == native
     end
 end
+
+# ============================================================
+# Phase 6 · Empty / degenerate shaped queries (design §10.1)
+# ============================================================
+@testitem "query shape: empty + degenerate shaped queries" begin
+    x = collect(range(0.0, 2π, 25))
+    y = sin.(x)
+    yb = collect(range(0.0, 1.0, 11))
+
+    # --- 1-D: empty matrix query → empty-shaped result ---
+    itp1 = cubic_interp(x, y)
+    qe = Matrix{Float64}(undef, 0, 3)
+    @test size(itp1(qe)) == (0, 3)
+    oe = Matrix{Float64}(undef, 0, 3)
+    @test itp1(oe, qe) === oe
+    @test itp1(Float64[]) == Float64[]                     # empty vector still a vector
+    @test_throws DimensionMismatch itp1(Matrix{Float64}(undef, 1, 3), qe)   # wrong-shape sink
+
+    # --- N-D: empty AoS matrix + empty SoA ---
+    data = [sin(a) * cos(b) for a in x, b in yb]
+    itp2 = linear_interp((x, yb), data)
+    q_aos_e = Matrix{NTuple{2, Float64}}(undef, 0, 2)
+    @test size(itp2(q_aos_e)) == (0, 2)
+    soa_e = (Matrix{Float64}(undef, 0, 2), Matrix{Float64}(undef, 0, 2))
+    @test size(itp2(soa_e)) == (0, 2)
+    oe2 = Matrix{Float64}(undef, 0, 2)
+    @test itp2(oe2, q_aos_e) === oe2
+end

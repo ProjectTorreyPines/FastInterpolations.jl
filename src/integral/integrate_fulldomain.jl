@@ -16,10 +16,13 @@
     return @inline (i, h) -> @inbounds _cubic_integral_kernel(_EvalIntegralCell(), z[i], z[i + 1], y[i], y[i + 1], h)
 end
 
-@inline function _full_cell_fn(itp::LinearInterpolant)
-    y = itp.y
-    return @inline (i, h) -> @inbounds _linear_integral_kernel(_EvalIntegralCell(), y[i], y[i + 1], h)
+# Named functor (not an anonymous closure) so the engine can dispatch on it — see
+# the uniform-grid closed form `_integrate_1d_fulldomain(::_CachedRange, ::_LinearFullCell, …)`.
+struct _LinearFullCell{Y <: AbstractVector} <: Function
+    y::Y
 end
+@inline (f::_LinearFullCell)(i, h) = @inbounds _linear_integral_kernel(_EvalIntegralCell(), f.y[i], f.y[i + 1], h)
+@inline _full_cell_fn(itp::LinearInterpolant) = _LinearFullCell(itp.y)
 
 @inline function _full_cell_fn(itp::QuadraticInterpolant)
     a, d, y = itp.a, itp.d, itp.y
@@ -98,9 +101,28 @@ end
         itp::AbstractInterpolant{Tg, Tv};
         search = nothing, hint = nothing
     ) where {Tg <: Real, Tv}
-    x = _grid_1d(itp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_1d_fulldomain(x, _full_cell_fn(itp), Tout)
+    return _integrate_1d_fulldomain(_grid_1d(itp), _full_cell_fn(itp), Tout)
+end
+
+# Uniform-grid linear closed form: the trapezoid telescopes to h·Σy_interior + one
+# end-cell kernel call — the kernel keeps the `_fieldsum` widen / h-only-division
+# duck contracts; Float16 accumulates in Float32 (raw Σy overflows 65504).
+# Summation order ≠ cellwise engine → ULP-level shifts.
+@inline function _integrate_1d_fulldomain(
+        x::_CachedRange, f::_LinearFullCell, ::Type{Tout}
+    ) where {Tout}
+    y = f.y
+    n = length(x)
+    n < 2 && return zero(Tout)
+    h = _get_h(x)
+    s = zero(Tout === Float16 ? Float32 : Tout)
+    @inbounds begin
+        @simd for i in 2:(n - 1)
+            s += y[i]
+        end
+        return convert(Tout, h * s + _linear_integral_kernel(_EvalIntegralCell(), y[1], y[n], h))
+    end
 end
 
 # Constant override: side is parametric → compiler knows concrete type,

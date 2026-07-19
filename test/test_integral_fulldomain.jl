@@ -117,3 +117,41 @@
         @test alloc_c <= ALLOC_THRESHOLD
     end
 end
+
+# Range-grid twin: `_integrate_1d_fulldomain(::_CachedRange, ::_LinearFullCell, Tout)`
+# dispatches only for Range grids — every block above uses collect(...)ed Vectors.
+@testitem "Full-domain fast path (Range grid)" setup = [AllocConstants] begin
+    xr = range(0.0, 2.0, length = 21)
+    xv = collect(xr)
+    y_linear = @. 3xr + 1
+
+    @testset "Range vs Vector grid parity" begin
+        itp_r = linear_interp(xr, y_linear; extrap = NoExtrap())
+        itp_v = linear_interp(xv, y_linear; extrap = NoExtrap())
+        @test integrate(itp_r) ≈ integrate(itp_v) rtol = 1.0e-14
+        @test integrate(itp_r) ≈ integrate(itp_r, first(xr), last(xr)) atol = 1.0e-14
+    end
+
+    @testset "analytical exactness" begin
+        itp_r = linear_interp(xr, y_linear; extrap = NoExtrap())
+        expected = 1.5 * last(xr)^2 + last(xr)
+        @test integrate(itp_r) ≈ expected atol = 1.0e-12
+    end
+
+    # Raw Σy would overflow floatmax(Float16)=65504 long before the integral does
+    # (fast path accumulates in Float32). Loose rtol: Float16 accumulation drift
+    # is platform/SIMD-lane dependent (exact 120.0 on NEON, ~6% high sequential).
+    @testset "Float16 accumulation stays finite" begin
+        x16 = range(Float16(0), Float16(2), length = 2049)
+        itp16 = linear_interp(x16, fill(Float16(60), 2049))
+        r = integrate(itp16)
+        @test isfinite(r)
+        @test Float64(r) ≈ 120.0 rtol = 0.1
+    end
+
+    @testset "zero-allocation" begin
+        itp_r = linear_interp(xr, y_linear; extrap = NoExtrap())
+        integrate(itp_r)  # warmup
+        @test @allocated(integrate(itp_r)) <= ALLOC_THRESHOLD
+    end
+end

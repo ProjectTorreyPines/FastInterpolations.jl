@@ -303,14 +303,13 @@ end
 # the (value, derivative) payload — cubic h/2(fL+fR) + h²/12(dfL−dfR), quadratic
 # 2h/3·fL + h/3·fR + h²/6·dfL — so the domain integral separates with per-axis
 # (w, v) node-weight PAIRS contracting the mixed-partials tensor. Oracles: the
-# generic per-cell engine (forced via invoke) and the bounded engine at full
-# bounds (still cell-wise for these families → independent of the new path).
-@testitem "ND cubic/quad separable: engine parity (Range + Vector, 2D/3D)" setup = [AllocConstants] begin
+# engine-independent per-fiber 1D composition (`comp_nd`) and the bounded engine
+# at full bounds.
+@testitem "ND cubic/quad separable: engine parity (Range + Vector, 2D/3D)" setup = [AllocConstants, NDCompositionOracle] begin
     nonuni(a, b, n) = a .+ (b - a) .* ((x -> (x .- x[1]) ./ (x[end] - x[1]))([u + 0.15 * sinpi(u) for u in range(0, 1; length = n)]))
-    generic_nd(itp) = invoke(integrate, Tuple{FastInterpolations.AbstractInterpolantND}, itp)
 
     @testset "2D parity (both engines)" begin
-        for mk in (cubic_interp, quadratic_interp)
+        for (mk, m) in ((cubic_interp, CubicInterp()), (quadratic_interp, QuadraticInterp()))
             for (gx, gy) in (
                     (range(0.0, 2.0, length = 17), range(0.0, 3.0, length = 13)),
                     (nonuni(0.0, 2.0, 17), nonuni(0.0, 3.0, 13)),
@@ -318,19 +317,19 @@ end
                 data = [sin(xi) * cos(yj) + 0.3xi for xi in gx, yj in gy]
                 itp = mk((gx, gy), data)
                 lo = (first(gx), first(gy));  hi = (last(gx), last(gy))
-                @test integrate(itp) ≈ generic_nd(itp) rtol = 1.0e-12
+                @test integrate(itp) ≈ comp_nd((m, m), (gx, gy), data) rtol = 1.0e-12
                 @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
             end
         end
     end
 
     @testset "3D parity (both engines)" begin
-        for mk in (cubic_interp, quadratic_interp)
+        for (mk, m) in ((cubic_interp, CubicInterp()), (quadratic_interp, QuadraticInterp()))
             x = nonuni(0.0, 1.0, 9);  y = nonuni(0.0, 2.0, 8);  z = nonuni(0.0, 3.0, 7)
             data = [sin(xi) + yj * zk - 0.2zk^2 for xi in x, yj in y, zk in z]
             itp = mk((x, y, z), data)
             lo = (first(x), first(y), first(z));  hi = (last(x), last(y), last(z))
-            @test integrate(itp) ≈ generic_nd(itp) rtol = 1.0e-12
+            @test integrate(itp) ≈ comp_nd((m, m, m), (x, y, z), data) rtol = 1.0e-12
             @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
         end
     end
@@ -360,19 +359,14 @@ end
 # Cubic/Quadratic bounded: the clipped-composite structure extends to the pair
 # payload — per-axis (w, v) node weights built from the partial-cell integrals
 # (cubic via the ΔH antiderivatives, quadratic via its closed form), full cells
-# collapsing to the full-domain pair weights. Oracles: the generic cell-wise
-# bounded engine (invoke-forced), box == domain vs the full-domain path, axis
-# additivity, and orientation sign.
-@testitem "ND cubic/quad bounded separable: engine parity + oracles" setup = [AllocConstants] begin
+# collapsing to the full-domain pair weights. Oracles: the engine-independent
+# per-fiber 1D composition (`comp_nd`), box == domain vs the full-domain path,
+# axis additivity, and orientation sign.
+@testitem "ND cubic/quad bounded separable: engine parity + oracles" setup = [AllocConstants, NDCompositionOracle] begin
     nonuni(a, b, n) = a .+ (b - a) .* ((x -> (x .- x[1]) ./ (x[end] - x[1]))([u + 0.15 * sinpi(u) for u in range(0, 1; length = n)]))
-    const FI = FastInterpolations
-    gen2(itp, lo, hi, ::Type{T}) where {T} =
-        invoke(integrate, Tuple{T{Tg, Tv, 2} where {Tg, Tv}, NTuple{2, Real}, NTuple{2, Real}}, itp, lo, hi)
-    gen3(itp, lo, hi, ::Type{T}) where {T} =
-        invoke(integrate, Tuple{T{Tg, Tv, 3} where {Tg, Tv}, NTuple{3, Real}, NTuple{3, Real}}, itp, lo, hi)
 
-    @testset "2D parity vs generic bounded (Range + Vector, box sweep)" begin
-        for (mk, T) in ((cubic_interp, FI.CubicInterpolantND), (quadratic_interp, FI.QuadraticInterpolantND))
+    @testset "2D parity vs composition oracle (Range + Vector, box sweep)" begin
+        for (mk, m) in ((cubic_interp, CubicInterp()), (quadratic_interp, QuadraticInterp()))
             for (gx, gy) in (
                     (range(0.0, 2.0, length = 17), range(0.0, 3.0, length = 13)),
                     (nonuni(0.0, 2.0, 17), nonuni(0.0, 3.0, 13)),
@@ -385,7 +379,7 @@ end
                         ((0.31, 0.55), (0.65, 1.15)),   # few cells
                         ((0.05, 0.1), (0.11, 0.2)),     # sub-/single-cell
                     )
-                    @test integrate(itp, lo, hi) ≈ gen2(itp, lo, hi, T) rtol = 1.0e-11
+                    @test integrate(itp, lo, hi) ≈ comp_nd((m, m), (gx, gy), data, lo, hi) rtol = 1.0e-11
                 end
                 @test integrate(itp, (0.0, 0.0), (2.0, 3.0)) ≈ integrate(itp) rtol = 1.0e-12
             end
@@ -395,10 +389,10 @@ end
     @testset "3D parity + additivity + sign" begin
         x = nonuni(0.0, 1.0, 9);  y = nonuni(0.0, 2.0, 8);  z = nonuni(0.0, 3.0, 7)
         data = [sin(xi) + yj * zk - 0.2zk^2 for xi in x, yj in y, zk in z]
-        for (mk, T) in ((cubic_interp, FI.CubicInterpolantND), (quadratic_interp, FI.QuadraticInterpolantND))
+        for (mk, m) in ((cubic_interp, CubicInterp()), (quadratic_interp, QuadraticInterp()))
             itp = mk((x, y, z), data)
             lo = (0.12, 0.3, 0.4);  hi = (0.85, 1.7, 2.6)
-            @test integrate(itp, lo, hi) ≈ gen3(itp, lo, hi, T) rtol = 1.0e-11
+            @test integrate(itp, lo, hi) ≈ comp_nd((m, m, m), (x, y, z), data, lo, hi) rtol = 1.0e-11
             c = 0.5
             @test integrate(itp, lo, hi) ≈
                 integrate(itp, lo, (c, hi[2], hi[3])) + integrate(itp, (c, lo[2], lo[3]), hi) rtol = 1.0e-11
@@ -418,5 +412,26 @@ end
             @test @allocated(integrate(itp_r, lo, hi)) <= ND_ALLOC_THRESHOLD
             @test @allocated(integrate(itp_v, lo, hi)) <= ND_ALLOC_THRESHOLD
         end
+    end
+end
+
+# Bounded ND over MIXED grid types (Vector × Range): the `_nd_cell_ranges`
+# preamble must stay 0-alloc — the `do`-closure form leaked the element Union of
+# a mixed grid tuple into a dynamic `search_interval` dispatch (fixed via the
+# @generated per-axis unroll). Covers every tensor-product family + one hetero.
+@testitem "ND bounded: mixed grid types 0-alloc (all families)" setup = [AllocConstants] begin
+    xv = collect(range(0.0, 2.0, length = 20));  yr = range(0.0, 3.0, length = 16)
+    data = [sin(xi) * cos(yj) for xi in xv, yj in yr]
+    lo = (0.2, 0.4);  hi = (1.8, 2.7)
+    builds = (
+        linear_interp((xv, yr), data),
+        constant_interp((xv, yr), data),
+        cubic_interp((xv, yr), data),
+        quadratic_interp((xv, yr), data),
+        interp((xv, yr), data; method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()),
+    )
+    for itp in builds
+        integrate(itp, lo, hi)   # warmup
+        @test @allocated(integrate(itp, lo, hi)) <= ND_ALLOC_THRESHOLD
     end
 end

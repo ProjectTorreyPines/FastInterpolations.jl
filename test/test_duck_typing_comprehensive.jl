@@ -1864,3 +1864,38 @@ end
         end
     end
 end
+
+# ND duck integrate exercises the separable engine's non-Number zero init
+# (`_nd_int_zero` → `0 * sample`) — the path the retired generic per-cell engine
+# used to serve. Rank-1 families (Linear/Constant) build without differentiating
+# the duck payload, so they're the clean pin for the ND value contract.
+@testitem "duck ND integrate — separable engine (full + bounded)" begin
+    struct NdDuck
+        v::Float64
+    end
+    Base.:+(a::NdDuck, b::NdDuck) = NdDuck(a.v + b.v)
+    Base.:-(a::NdDuck, b::NdDuck) = NdDuck(a.v - b.v)
+    Base.:*(a::Real, b::NdDuck) = NdDuck(a * b.v)
+    Base.:*(a::NdDuck, b::Real) = NdDuck(a.v * b)
+    Base.zero(::Type{NdDuck}) = NdDuck(0.0)
+    _v(d::NdDuck) = d.v
+
+    x = [0.0, 0.5, 1.3, 2.0, 3.0]           # Vector × Range → also mixed-grid path
+    y = range(0.0, 2.0, length = 6)
+    dat = [NdDuck(sin(xi) + 2yj) for xi in x, yj in y]
+    ref = [d.v for d in dat]
+    lo = (0.3, 0.4);  hi = (2.6, 1.7)
+
+    @testset "linear ND (rank-1 payload)" begin
+        itp = linear_interp((x, y), dat);  rf = linear_interp((x, y), ref)
+        @test integrate(itp) isa NdDuck
+        @test _v(integrate(itp)) ≈ integrate(rf) rtol = 1.0e-12
+        @test _v(integrate(itp, lo, hi)) ≈ integrate(rf, lo, hi) rtol = 1.0e-12
+    end
+
+    @testset "constant ND (rank-1, side weights)" begin
+        itp = constant_interp((x, y), dat);  rf = constant_interp((x, y), ref)
+        @test _v(integrate(itp)) ≈ integrate(rf) rtol = 1.0e-12
+        @test _v(integrate(itp, lo, hi)) ≈ integrate(rf, lo, hi) rtol = 1.0e-12
+    end
+end

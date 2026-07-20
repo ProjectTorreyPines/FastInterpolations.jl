@@ -114,12 +114,15 @@ Definite integral of an interpolant.
 The **persistent** forms integrate an interpolant you built earlier.
 `integrate(itp)` covers the whole domain through a specialized search-free
 summation; the bounded forms integrate over `[a, b]` (1-D) or the
-hyper-rectangle `[lo, hi]` (ND).
+hyper-rectangle `[lo, hi]` (ND). ND covers every tensor-product interpolant —
+homogeneous (`linear_interp`, `cubic_interp`, …) and heterogeneous mixes
+(`interp(grids, data; method=(CubicInterp(), LinearInterp()))`); only the
+Hermite family (local-slope / user-slope) has no ND integral.
 
 The **one-shot** forms build the `method` interpolant from raw data with
 `copy=false` reference storage — nothing is copied — then integrate in a single
-call. 1-D integrates every method; ND only the tensor-product types (Linear,
-Cubic, Quadratic, Constant), as the Hermite family has no ND integral.
+call. 1-D integrates every method; ND takes a single tensor-product `method`
+(Linear, Cubic, Quadratic, Constant).
 
 ```julia
 integrate(cubic_interp(x, y))                        # persistent, full-domain
@@ -205,91 +208,9 @@ end
 end
 
 # ═══════════════════════════════════════════════════════════════
-# integrate(itp) — ND full-domain fast path
+# integrate(itp[, lo, hi]) — ND separable engine (single entry point)
 # ═══════════════════════════════════════════════════════════════
-
-# ND per-type trait: _full_cell_integral_nd(itp, idx, hs)
-# Each calls the existing ND kernel with ulos = zeros, uhis = hs. Methods whose
-# kernel needs reciprocal spacings (cubic/quadratic hermite-form collapse) fetch
-# inv_hs themselves — mirrors 1D, where `_hermite_full_cell_fn` pulls `_get_inv_h`
-# inside the closure; linear/constant never pay for it (their kernels take no inv_hs).
-
-@inline function _full_cell_integral_nd(
-        itp::CubicInterpolantND{Tg, Tv, N}, idx, hs
-    ) where {Tg, Tv, N}
-    ulos = ntuple(d -> zero(Tg), Val(N))
-    inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
-    return _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, hs)
-end
-
-@inline function _full_cell_integral_nd(
-        itp::LinearInterpolantND{Tg, Tv, N}, idx, hs
-    ) where {Tg, Tv, N}
-    ulos = ntuple(d -> zero(Tg), Val(N))
-    return _integrate_linear_nd_cell(itp.data, idx, hs, ulos, hs)
-end
-
-@inline function _full_cell_integral_nd(
-        itp::QuadraticInterpolantND{Tg, Tv, N}, idx, hs
-    ) where {Tg, Tv, N}
-    ulos = ntuple(d -> zero(Tg), Val(N))
-    inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
-    return _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, hs)
-end
-
-@inline function _full_cell_integral_nd(
-        itp::ConstantInterpolantND{Tg, Tv, N}, idx, hs
-    ) where {Tg, Tv, N}
-    ulos = ntuple(d -> zero(Tg), Val(N))
-    return _integrate_constant_nd_cell(itp.data, idx, hs, ulos, hs, itp.sides)
-end
-
-# Sample Tv value for duck-typing safe zero initialization
-@inline _nd_sample_value(itp::LinearInterpolantND) = @inbounds itp.data[1]
-@inline _nd_sample_value(itp::ConstantInterpolantND) = @inbounds itp.data[1]
-@inline _nd_sample_value(itp::CubicInterpolantND) = @inbounds itp.nodal_derivs.partials[1]
-@inline _nd_sample_value(itp::QuadraticInterpolantND) = @inbounds itp.nodal_derivs.partials[1]
-
-# HeteroInterpolantND: explicit not-implemented error. Beats the MethodError
-# the generic dispatch below would hit inside `_full_cell_integral_nd`, and
-# tells the user about the actual workaround (per-axis 1D integration, or
-# switching to a homogeneous specialized ND type).
-function integrate(
-        itp::HeteroInterpolantND;
-        search = nothing,
-        hint = nothing,
-    )
-    _throw_hetero_nd_integrate_unsupported(itp.methods)
-end
-
-# Bounded ND integrate never existed; add a HeteroInterpolantND-specific
-# overload too so `integrate(itp, a, b)` doesn't surface as a MethodError
-# asking the user about Real vs Tuple bound types. Must use `::Real, ::Real`
-# to win dispatch against the `(::AbstractInterpolant, ::Real, ::Real)`
-# fallback in integrate_api.jl (more specific first arg + equal specificity
-# on bounds).
-function integrate(
-        itp::HeteroInterpolantND, ::Real, ::Real;
-        search = nothing, hint = nothing,
-    )
-    _throw_hetero_nd_integrate_unsupported(itp.methods)
-end
-
-@noinline function _throw_hetero_nd_integrate_unsupported(methods)
-    throw(
-        ArgumentError(
-            "integrate is not yet implemented for HeteroInterpolantND " *
-                "(method tuple: $(methods)). ND tensor-product integration over " *
-                "mixed/Hermite axes is not yet supported. Workarounds: " *
-                "(1) use a homogeneous specialized ND type " *
-                "(`cubic_interp`, `quadratic_interp`, `linear_interp`, `constant_interp`) " *
-                "which do support `integrate`; " *
-                "(2) integrate axis-by-axis via 1D `integrate` calls on per-fiber " *
-                "1D interpolants."
-        )
-    )
-end
-
+#
 # ── Separable ND engine: full-domain + bounded, all tensor-product families ──
 #
 # On full cells every per-axis basis integral collapses to constants that are
@@ -333,6 +254,11 @@ end
     (k == 1 ? zero(_get_h(g, 1)) : _get_h(g, k - 1),)
 @inline _nd_node_weights_interior(::RightSide, g, k::Int) = (_get_h(g, k - 1),)
 
+# Constant axes carry the side in the `ConstantInterp` method tag, so the whole
+# engine speaks one vocabulary (method tags); the weight is the side's.
+@inline _nd_node_weights(m::ConstantInterp, g, k::Int, n::Int) = _nd_node_weights(m.side, g, k, n)
+@inline _nd_node_weights_interior(m::ConstantInterp, g, k::Int) = _nd_node_weights_interior(m.side, g, k)
+
 @inline function _nd_node_weights(::CubicInterp, g, k::Int, n::Int)
     if k == 1
         h1 = _get_h(g, 1)
@@ -373,6 +299,15 @@ end
 @inline _nd_cell_weights1(::LinearInterp, u0, u1, h) = (_w1_int(u0, u1, h),)
 @inline _nd_cell_weights0(s::AbstractSide, u0, u1, h) = (_cw0(u0, u1, h, s),)
 @inline _nd_cell_weights1(s::AbstractSide, u0, u1, h) = (_cw1(u0, u1, h, s),)
+@inline _nd_cell_weights0(m::ConstantInterp, u0, u1, h) = _nd_cell_weights0(m.side, u0, u1, h)
+@inline _nd_cell_weights1(m::ConstantInterp, u0, u1, h) = _nd_cell_weights1(m.side, u0, u1, h)
+
+# Per-axis weight rank (type-keyed for the @generated kernels; value-keyed for
+# the mixed-radix payload-storage checks): 1 = value-only axis (Linear/Constant),
+# 2 = (value, deriv) pair (Cubic/Quadratic). Matches `_deriv_size` in the hetero
+# build, so the slot layout the kernels index is exactly the stored layout.
+@inline _nd_weight_rank(::Type{<:Union{LinearInterp, ConstantInterp}}) = 1
+@inline _nd_weight_rank(::Type{<:Union{CubicInterp, QuadraticInterp}}) = 2
 
 # The ΔH antiderivatives carry Float64 coefficients, so the cubic pair converts
 # back to the promoted input precision (`oftype`) — same numerics as the generic
@@ -465,48 +400,57 @@ end
 # folds each node's contiguous slot pair with one muladd per outer mask. The
 # inner axis peels its boundary nodes so the interior runs branch-free @simd.
 
-function _separable_emit_common(N::Int, R::Int)
+# `rs[d] ∈ {1, 2}` — the per-axis weight rank: 1 for value-only axes
+# (Linear/Constant), 2 for the (value, deriv) pairs (Cubic/Quadratic). The
+# payload carries a leading slot dimension of size `prod(rs)` unless every axis
+# is rank 1 (a raw value array with no slot dimension). Slot layout is the same
+# mixed-radix convention `_HeteroPartials` uses: `stride_d = prod(rs[1:d-1])`,
+# so `slot = 1 + Σ_d off_d·stride_d` with the inner axis (d=1) varying fastest.
+function _separable_emit_common(rs::NTuple{N, Int}) where {N}
+    P = prod(rs)
+    r1 = rs[1]
+    Mout = P ÷ r1                      # outer-axis slot configurations
     ivars = [Symbol(:i_, d) for d in 1:N]
     rest = ivars[2:N]
-    M = 1 << (N - 1)
-    pidx(slot, i1) = R == 1 ? :(payload[$i1, $(rest...)]) : :(payload[$slot, $i1, $(rest...)])
-    wnames(ws) = R == 1 ? [Symbol(ws, :_1)] : [Symbol(ws, :_1), Symbol(ws, :_2)]
-    wdecl(ws, call) = Expr(:(=), Expr(:tuple, wnames(ws)...), call)
-    contrib(ws, i1) = R == 1 ? :($(Symbol(ws, :_1)) * $(pidx(0, i1))) :
-        foldl(
-            (a, b) -> :($a + $b),
-            [
-                :(
-                    $(N == 1 ? 1 : Symbol(:ko2_, om)) * muladd(
-                        $(Symbol(ws, :_2)), $(pidx(2om, i1)),
-                        $(Symbol(ws, :_1)) * $(pidx(2om - 1, i1))
-                    )
-                ) for om in 1:M
-            ]
-        )
-    close_expr = N == 1 ? :(total += s) : R == 1 ? :(total += wp_2 * s) : :(total += s)
-    return ivars, rest, pidx, wdecl, contrib, close_expr
+    pidx(slot, i1) = P == 1 ? :(payload[$i1, $(rest...)]) : :(payload[$slot, $i1, $(rest...)])
+    wnames(ws, r) = r == 1 ? [Symbol(ws, :_1)] : [Symbol(ws, :_1), Symbol(ws, :_2)]
+    wdecl(ws, r, call) = Expr(:(=), Expr(:tuple, wnames(ws, r)...), call)
+    # Inner sum for outer configuration `m`: contract the inner axis' `r1` weight
+    # components against its contiguous slot pair (slots `r1·(m−1)+1 … r1·m`),
+    # then scale by the outer Kronecker product `ko2_m` (absent when N == 1).
+    function term(m, i1, ws)
+        w = wnames(ws, r1)
+        base = r1 * (m - 1)
+        inner = r1 == 2 ?
+            :(muladd($(w[2]), $(pidx(base + 2, i1)), $(w[1]) * $(pidx(base + 1, i1)))) :
+            :($(w[1]) * $(pidx(base + 1, i1)))
+        return N == 1 ? inner : :($(Symbol(:ko2_, m)) * $inner)
+    end
+    contrib(ws, i1) = foldl((a, b) -> :($a + $b), [term(m, i1, ws) for m in 1:Mout])
+    return ivars, rest, pidx, wdecl, contrib
 end
 
-# Outer-axis loop wrapper: rank 1 chains the scalar product `wp_d`; rank 2
-# builds the Kronecker partial products `ko{d}_{j}` of the (w, v) pairs.
-function _separable_emit_outer(body, N::Int, R::Int, ivars, wcall::Function, ranges::Function)
+# Outer-axis loops (i_N outermost … i_2 just outside the inner sweep). Each level
+# folds axis d's rank-`rs[d]` weight components into the Kronecker partial
+# products `ko{d}_m` of the outer axes d…N (axis 2 = fastest index, matching the
+# slot order). Uniform `rs` reproduces the homogeneous scalar chain (all rank 1)
+# or the dense 2^N Kronecker chain (all rank 2) bit-for-bit.
+function _separable_emit_outer(body, rs::NTuple{N, Int}, ivars, wcall::Function, ranges::Function) where {N}
     for d in 2:N
         id = ivars[d]
-        assigns = Expr[]
-        if R == 1
-            wexpr = d == N ? :($(wcall(d))[1]) : :($(wcall(d))[1] * $(Symbol(:wp_, d + 1)))
-            push!(assigns, :($(Symbol(:wp_, d)) = $wexpr))
+        rd = rs[d]
+        wc(o) = Symbol(o == 0 ? :w_ : :v_, d)
+        assigns = Expr[Expr(:(=), Expr(:tuple, ntuple(o -> wc(o - 1), rd)...), wcall(d))]
+        if d == N
+            for o in 0:(rd - 1)
+                push!(assigns, :($(Symbol(:ko, d, :_, o + 1)) = $(wc(o))))
+            end
         else
-            push!(assigns, Expr(:(=), Expr(:tuple, Symbol(:w_, d), Symbol(:v_, d)), wcall(d)))
-            if d == N
-                push!(assigns, :($(Symbol(:ko, d, :_, 1)) = $(Symbol(:w_, d))))
-                push!(assigns, :($(Symbol(:ko, d, :_, 2)) = $(Symbol(:v_, d))))
-            else
-                for j in 1:(1 << (N - d))
-                    push!(assigns, :($(Symbol(:ko, d, :_, 2j - 1)) = $(Symbol(:w_, d)) * $(Symbol(:ko, d + 1, :_, j))))
-                    push!(assigns, :($(Symbol(:ko, d, :_, 2j)) = $(Symbol(:v_, d)) * $(Symbol(:ko, d + 1, :_, j))))
-                end
+            for mp in 1:prod(rs[(d + 1):N]), o in 0:(rd - 1)
+                push!(
+                    assigns,
+                    :($(Symbol(:ko, d, :_, o + rd * (mp - 1) + 1)) = $(wc(o)) * $(Symbol(:ko, d + 1, :_, mp))),
+                )
             end
         end
         body = quote
@@ -521,33 +465,35 @@ end
 
 @generated function _integrate_separable_nd_fulldomain(
         wspec::NTuple{N, Any}, grids::NTuple{N, Any},
-        payload::AbstractArray{Tv, NP}, ::Type{Tout}
+        payload::AbstractArray{Tv, NP}, ::Type{Tout}, z
     ) where {N, Tv, NP, Tout}
-    R = NP - N + 1
-    R in (1, 2) || error("payload must have N or N+1 dimensions")
-    ivars, _, _, wdecl, contrib, close_expr = _separable_emit_common(N, R)
+    rs = ntuple(d -> _nd_weight_rank(wspec.parameters[d]), N)
+    slotoff = prod(rs) > 1 ? 1 : 0
+    NP == N + slotoff || error("payload rank $NP inconsistent with weight spec $rs")
+    r1 = rs[1]
+    ivars, _, _, wdecl, contrib = _separable_emit_common(rs)
     inner = quote
-        $(wdecl(:w1a, :(_nd_node_weights(w1, g1, 1, n_1))))
-        $(wdecl(:w1b, :(_nd_node_weights(w1, g1, n_1, n_1))))
+        $(wdecl(:w1a, r1, :(_nd_node_weights(w1, g1, 1, n_1))))
+        $(wdecl(:w1b, r1, :(_nd_node_weights(w1, g1, n_1, n_1))))
         s = $(contrib(:w1a, 1)) + $(contrib(:w1b, :n_1))
         @simd for i_1 in 2:(n_1 - 1)
-            $(wdecl(:w1i, :(_nd_node_weights_interior(w1, g1, i_1))))
+            $(wdecl(:w1i, r1, :(_nd_node_weights_interior(w1, g1, i_1))))
             s += $(contrib(:w1i, :i_1))
         end
-        $close_expr
+        total += s
     end
     body = _separable_emit_outer(
-        inner, N, R, ivars,
+        inner, rs, ivars,
         d -> :(_nd_node_weights(wspec[$d], grids[$d], $(ivars[d]), $(Symbol(:n_, d)))),
         d -> :(1:$(Symbol(:n_, d)))
     )
-    nassign = Expr(:block, [:($(Symbol(:n_, d)) = size(payload, $(d + R - 1))) for d in 1:N]...)
+    nassign = Expr(:block, [:($(Symbol(:n_, d)) = size(payload, $(d + slotoff))) for d in 1:N]...)
     return quote
         Base.@_inline_meta
         $nassign
         g1 = grids[1]
         w1 = wspec[1]
-        total = zero(Tout)
+        total = z
         @inbounds begin
             $body
         end
@@ -557,34 +503,36 @@ end
 
 @generated function _integrate_separable_nd_bounded(
         wspec::NTuple{N, Any}, specs::NTuple{N, _BoundedAxisSpec},
-        grids::NTuple{N, Any}, payload::AbstractArray{Tv, NP}, ::Type{Tout}
+        grids::NTuple{N, Any}, payload::AbstractArray{Tv, NP}, ::Type{Tout}, z
     ) where {N, Tv, NP, Tout}
-    R = NP - N + 1
-    R in (1, 2) || error("payload must have N or N+1 dimensions")
-    ivars, _, _, wdecl, contrib, close_expr = _separable_emit_common(N, R)
+    rs = ntuple(d -> _nd_weight_rank(wspec.parameters[d]), N)
+    slotoff = prod(rs) > 1 ? 1 : 0
+    NP == N + slotoff || error("payload rank $NP inconsistent with weight spec $rs")
+    r1 = rs[1]
+    ivars, _, _, wdecl, contrib = _separable_emit_common(rs)
     inner = quote
-        s = zero(Tout)
+        s = z
         if ihi1 >= ilo1 + 2
-            $(wdecl(:w1a, :(_nd_bounded_node_weights(w1, spec1, g1, ilo1))))
-            $(wdecl(:w1b, :(_nd_bounded_node_weights(w1, spec1, g1, ilo1 + 1))))
-            $(wdecl(:w1c, :(_nd_bounded_node_weights(w1, spec1, g1, ihi1))))
-            $(wdecl(:w1d, :(_nd_bounded_node_weights(w1, spec1, g1, ihi1 + 1))))
+            $(wdecl(:w1a, r1, :(_nd_bounded_node_weights(w1, spec1, g1, ilo1))))
+            $(wdecl(:w1b, r1, :(_nd_bounded_node_weights(w1, spec1, g1, ilo1 + 1))))
+            $(wdecl(:w1c, r1, :(_nd_bounded_node_weights(w1, spec1, g1, ihi1))))
+            $(wdecl(:w1d, r1, :(_nd_bounded_node_weights(w1, spec1, g1, ihi1 + 1))))
             s += $(contrib(:w1a, :ilo1)) + $(contrib(:w1b, :(ilo1 + 1))) +
                 $(contrib(:w1c, :ihi1)) + $(contrib(:w1d, :(ihi1 + 1)))
             @simd for i_1 in (ilo1 + 2):(ihi1 - 1)
-                $(wdecl(:w1i, :(_nd_node_weights_interior(w1, g1, i_1))))
+                $(wdecl(:w1i, r1, :(_nd_node_weights_interior(w1, g1, i_1))))
                 s += $(contrib(:w1i, :i_1))
             end
         else
             for i_1 in ilo1:(ihi1 + 1)
-                $(wdecl(:w1x, :(_nd_bounded_node_weights(w1, spec1, g1, i_1))))
+                $(wdecl(:w1x, r1, :(_nd_bounded_node_weights(w1, spec1, g1, i_1))))
                 s += $(contrib(:w1x, :i_1))
             end
         end
-        $close_expr
+        total += s
     end
     body = _separable_emit_outer(
-        inner, N, R, ivars,
+        inner, rs, ivars,
         d -> :(_nd_bounded_node_weights(wspec[$d], specs[$d], grids[$d], $(ivars[d]))),
         d -> :((specs[$d].ilo):(specs[$d].ihi + 1))
     )
@@ -595,7 +543,7 @@ end
         spec1 = specs[1]
         ilo1 = spec1.ilo
         ihi1 = spec1.ihi
-        total = zero(Tout)
+        total = z
         @inbounds begin
             $body
         end
@@ -603,78 +551,115 @@ end
     end
 end
 
-# ── Dispatches: numeric values take the separable engine; duck values fall
-# through to the generic per-cell methods. The weight spec per family is the
-# existing vocabulary: a method-tag tuple, or the constant `sides` as-is. ──
+# ── Single entry point. Every tensor-product ND interpolant — homogeneous or
+# heterogeneous, numeric or duck-typed — routes through the separable engine.
+# `_separable_spec(itp)` returns `(per-axis method-tag tuple, payload)` in the
+# existing vocabulary (the method tuple the build already carries), or throws a
+# clear error for the non-tensor families (local-Hermite / user-slope Hermite /
+# NoInterp) that have no separable node-weight rule. ──
 
-@inline _separable_wspec(itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
-    (ntuple(_ -> LinearInterp(), Val(N)), itp.data)
-@inline _separable_wspec(itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
-    (itp.sides, itp.data)
-@inline _separable_wspec(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
-    (ntuple(_ -> CubicInterp(), Val(N)), itp.nodal_derivs.partials)
-@inline _separable_wspec(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
-    (ntuple(_ -> QuadraticInterp(), Val(N)), itp.nodal_derivs.partials)
+@inline _separable_spec(itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (_method_tuple(LinearInterp(), Val(N)), itp.data)
+@inline _separable_spec(itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (map(ConstantInterp, itp.sides), itp.data)
+@inline _separable_spec(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (_method_tuple(CubicInterp(), Val(N)), itp.nodal_derivs.partials)
+@inline _separable_spec(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (_method_tuple(QuadraticInterp(), Val(N)), itp.nodal_derivs.partials)
 
-const _SeparableND{Tg, Tv, N} = Union{
-    LinearInterpolantND{Tg, Tv, N}, ConstantInterpolantND{Tg, Tv, N},
-    CubicInterpolantND{Tg, Tv, N}, QuadraticInterpolantND{Tg, Tv, N},
-}
-
-@inline function integrate(
-        itp::_SeparableND{Tg, Tv, N};
-        search = nothing,
-        hint = nothing
-    ) where {Tg, Tv <: Number, N}
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    wspec, payload = _separable_wspec(itp)
-    return _integrate_separable_nd_fulldomain(wspec, itp.grids, payload, Tout)
-end
-
-# Bounded impl shared by the four thin dispatches below. The dispatches stay
-# per-type (not the `_SeparableND` union): the legacy per-cell bounded methods
-# in integrate_api.jl are per-type with unconstrained `Tv`, and a union-typed
-# `Tv <: Number` method would cross specificities with them (ambiguity); a
-# per-type `Tv <: Number` method is strictly more specific instead.
-@inline function _separable_bounded(itp, lo, hi, search, hint, ::Type{Tg}, ::Type{Tv}) where {Tg, Tv}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
-    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
-    wspec, payload = _separable_wspec(itp)
-    total = _integrate_separable_nd_bounded(wspec, specs, itp.grids, payload, Tout)
-    return sign * total
-end
-
-for T in (:LinearInterpolantND, :ConstantInterpolantND, :CubicInterpolantND, :QuadraticInterpolantND)
-    @eval @inline function integrate(
-            itp::$T{Tg, Tv, N},
-            lo::Tuple{Vararg{Real, N}},
-            hi::Tuple{Vararg{Real, N}};
-            search = itp.searches,
-            hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-        ) where {Tg, Tv <: Number, N}
-        return _separable_bounded(itp, lo, hi, search, hint, Tg, Tv)
+# HeteroInterpolantND: the stored per-axis methods ARE the weight-tag tuple; the
+# payload is the mixed-radix partials (PreCompute) or the raw data (OnTheFly /
+# all-trivial). @generated so the separability + storage gate is a compile-time
+# branch — no runtime method scan, no boxing.
+@generated function _separable_spec(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D}
+    ) where {Tg, Tv, N, G, M, E, P, D}
+    ms = (M.parameters...,)
+    all(_is_separable_method_type, ms) || return :(_throw_nd_integrate_unsupported(itp))
+    if D <: _HeteroPartials
+        return :((itp.methods, itp.data.partials))
+    elseif any(t -> _nd_weight_rank(t) == 2, ms)
+        return :(_throw_hetero_precompute_required(itp.methods))
+    else
+        return :((itp.methods, itp.data))
     end
 end
 
-# Generic ND full-domain: catches all ND types
+# Non-tensor ND families (CubicHermiteInterpolantND, and any future type): clean
+# error instead of a MethodError deep in the kernel.
+@inline _separable_spec(itp::AbstractInterpolantND) = _throw_nd_integrate_unsupported(itp)
+
+@inline _is_separable_method_type(
+    ::Type{<:Union{LinearInterp, ConstantInterp, CubicInterp, QuadraticInterp}}
+) = true
+@inline _is_separable_method_type(::Type{<:AbstractInterpMethod}) = false
+
+# Duck-safe integral zero: `zero(Tout)` for numbers, `0 * sample` otherwise.
+@inline _nd_int_zero(::Type{Tout}, payload) where {Tout <: Number} = zero(Tout)
+@inline _nd_int_zero(::Type{Tout}, payload) where {Tout} = 0 * @inbounds(payload[begin])
+
 @inline function integrate(
         itp::AbstractInterpolantND{Tg, Tv, N};
         search = nothing,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    tags, payload = _separable_spec(itp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    total = Tout <: Number ? zero(Tout) : 0 * _nd_sample_value(itp)
-    cell_ranges = ntuple(d -> 1:(length(itp.grids[d]) - 1), Val(N))
-    for I in CartesianIndices(cell_ranges)
-        idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> @inbounds(_get_h(itp.grids[d], idx[d])), Val(N))
-        total += _full_cell_integral_nd(itp, idx, hs)
-    end
-    return total
+    z = _nd_int_zero(Tout, payload)
+    return _integrate_separable_nd_fulldomain(tags, itp.grids, payload, Tout, z)
+end
+
+@inline function integrate(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        lo::Tuple{Vararg{Real, N}},
+        hi::Tuple{Vararg{Real, N}};
+        search = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    tags, payload = _separable_spec(itp)
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.extraps, lo, hi, search, hint
+    )
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    z = _nd_int_zero(Tout, payload)
+    sign == 0 && return z
+    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
+    total = _integrate_separable_nd_bounded(tags, specs, itp.grids, payload, Tout, z)
+    return sign * total
+end
+
+# Real bounds on an ND interpolant → point at the tuple form (otherwise the 1D
+# `(::AbstractInterpolant, ::Real, ::Real)` stub fires with a 1D-flavoured message).
+@inline function integrate(::AbstractInterpolantND, ::Real, ::Real; search = nothing, hint = nothing)
+    throw(
+        ArgumentError(
+            "ND `integrate` needs tuple bounds — pass lo/hi as `NTuple{N,Real}`, " *
+                "e.g. `integrate(itp, (a1, a2), (b1, b2))`."
+        )
+    )
+end
+
+@noinline function _throw_nd_integrate_unsupported(itp)
+    throw(
+        ArgumentError(
+            "integrate is not implemented for $(nameof(typeof(itp))). ND tensor-product " *
+                "integration is defined for Linear/Cubic/Quadratic/Constant axes (homogeneous " *
+                "or heterogeneous). Local-Hermite (Pchip/Cardinal/Akima), user-slope Hermite, " *
+                "and NoInterp axes have no separable node-weight rule — integrate axis-by-axis " *
+                "via 1D `integrate` on per-fiber 1D interpolants instead."
+        )
+    )
+end
+
+@noinline function _throw_hetero_precompute_required(methods)
+    throw(
+        ArgumentError(
+            "integrate over a HeteroInterpolantND with a derivative axis (Cubic/Quadratic) " *
+                "requires precomputed partials: rebuild with `coeffs=PreCompute()` " *
+                "(method tuple: $(methods)). The OnTheFly build stores only raw data, " *
+                "which has no derivative slots."
+        )
+    )
 end
 
 # ═══════════════════════════════════════════════════════════════

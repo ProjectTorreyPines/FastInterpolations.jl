@@ -247,10 +247,10 @@ end
     @test FI._cubic_integral_kernel(FI._EvalIntegralPartial(), 0.0, 0.0, 200.0, 50.0, 1.0, 0.0, 1.0) === 125.0
     @test FI._cubic_integral_kernel(FI._EvalIntegralCell(), 0.0, 0.0, 200.0, 220.0, 1.0) === 210.0
 
-    # ── quadratic ND kernel: (fR - fL) wrap ─────────────────────────────────────
-    # _quadratic_integral_kernel_nd: s = (fR - fL) * inv_h; with dfL=0, u0=0, u1=1
-    @test FI._quadratic_integral_kernel_nd(UInt8(200), UInt8(50), 0.0, 1.0, 1.0, 0.0, 1.0) ≈
-        FI._quadratic_integral_kernel_nd(200.0, 50.0, 0.0, 1.0, 1.0, 0.0, 1.0)
+    # Quadratic ND no longer has a raw-corner kernel: the separable engine
+    # multiplies each node value by a grid-typed (Float) weight before summing,
+    # so a finite-eltype quadratic payload widens and never modular-wraps. Pinned
+    # end-to-end by the N0f8/Gray carrier tests below.
 end
 
 @testitem "build-overflow: periodic seams" begin

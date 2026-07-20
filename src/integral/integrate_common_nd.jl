@@ -14,24 +14,31 @@ end
 # Uses 3-arg `search_interval(s, grid, q)` which dispatches correctly for raw
 # Range/Vector and wrapped grids alike — `_get_h` is read from the wrapped
 # axis directly when available.
-@inline function _nd_cell_ranges(
+# @generated per-axis unroll (not `ntuple(Val(N)) do d`): the `do` closure takes
+# `d` as a runtime Int, so `grids[d]` on a MIXED grid tuple (e.g. Vector × Range)
+# returns the element Union and the downstream `search_interval` dispatches
+# dynamically → boxing. Emitting literal `grids[1]`, `grids[2]` keeps each axis
+# concrete. See [[project_tg_closure_lts_alloc]] for the same bug class.
+@generated function _nd_cell_ranges(
         grids::NTuple{N, AbstractVector},
         lo::Tuple{Vararg{Real, N}},
         hi::Tuple{Vararg{Real, N}},
         search_tuple,
         hint
     ) where {N}
-    idx_lo = ntuple(Val(N)) do d
-        s = _resolve_search(grids[d], lo[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
-        i, _, _, _ = search_interval(s, grids[d], lo[d])
-        i
+    hd(d) = hint === Nothing ? :nothing : :(hint[$d])
+    lo_e = [:(_nd_cell_index(grids[$d], lo[$d], search_tuple[$d], $(hd(d)))) for d in 1:N]
+    hi_e = [:(_nd_cell_index(grids[$d], hi[$d], search_tuple[$d], $(hd(d)))) for d in 1:N]
+    return quote
+        Base.@_inline_meta
+        (($(lo_e...),), ($(hi_e...),))
     end
-    idx_hi = ntuple(Val(N)) do d
-        s = _resolve_search(grids[d], hi[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
-        i, _, _, _ = search_interval(s, grids[d], hi[d])
-        i
-    end
-    return idx_lo, idx_hi
+end
+
+@inline function _nd_cell_index(g, q, s, h)
+    searcher = _resolve_search(g, q, s, h)
+    i, _, _, _ = search_interval(searcher, g, q)
+    return i
 end
 
 # ND domain check for integration bounds.
@@ -49,35 +56,32 @@ end
     return nothing
 end
 
+# Per-axis domain checks, @generated so `grids[d]` stays concrete on mixed grid
+# tuples (a runtime-`d` loop leaks the element Union → dynamic dispatch → alloc,
+# same class as `_nd_cell_ranges`).
+@generated function _check_nd_bounds(grids, lo2, hi2, extraps, ::Val{N}) where {N}
+    checks = Expr[]
+    for d in 1:N
+        push!(checks, :(_check_nd_integrate_domain(grids[$d], lo2[$d], extraps[$d])))
+        push!(checks, :(_check_nd_integrate_domain(grids[$d], hi2[$d], extraps[$d])))
+    end
+    return quote
+        Base.@_inline_meta
+        @inbounds begin
+            $(checks...)
+        end
+        nothing
+    end
+end
+
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
         grids, extraps, lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}},
         search, hint
     ) where {N}
     sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
-    @inbounds for d in 1:N
-        _check_nd_integrate_domain(grids[d], lo2[d], extraps[d])
-        _check_nd_integrate_domain(grids[d], hi2[d], extraps[d])
-    end
+    _check_nd_bounds(grids, lo2, hi2, extraps, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N), lo)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
     idx_lo, idx_hi = _nd_cell_ranges(grids, lo2, hi2, search_tuple, hint)
     return (sign, lo2, hi2, idx_lo, idx_hi)
-end
-
-# Per-cell geometry: indices, cell widths, and local integration bounds.
-# Uses the universal 2-arg `_get_h(grid, idx)` overloads (defined in
-# `cached_vector.jl` for `_CachedVector`/`AbstractRange`/`AbstractVector`,
-# `cached_range.jl` for `_CachedRange`, `periodic_axis.jl` for
-# `_ExclusivePeriodicAxis`) — works for raw and wrapped grids alike, so
-# all ND struct types (with or without spacings field) are supported.
-@inline function _nd_cell_geom(
-        grids, lo2, hi2, I::CartesianIndex{N}, ::Val{N}
-    ) where {N}
-    idx = ntuple(d -> I[d], Val(N))
-    hs = ntuple(d -> @inbounds(_get_h(grids[d], idx[d])), Val(N))
-    Ls = ntuple(d -> @inbounds(grids[d][idx[d]]), Val(N))
-    Rs = ntuple(d -> @inbounds(grids[d][idx[d] + 1]), Val(N))
-    ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
-    uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
-    return (idx, hs, ulos, uhis)
 end

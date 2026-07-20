@@ -61,6 +61,9 @@
     end
 
     @testset "integrate(HeteroInterpolantND) — full-domain" begin
+        # Local-Hermite axes have no separable node-weight rule → the single ND
+        # entry point rejects them with a clear message pointing at the 1D
+        # axis-by-axis workaround.
         itp = interp((x, y), data; method = (PchipInterp(), CardinalInterp()))
         err = try
             integrate(itp)
@@ -69,21 +72,21 @@
             e
         end
         @test err isa ArgumentError
-        @test occursin("not yet implemented for HeteroInterpolantND", err.msg)
-        @test occursin("tensor-product integration", err.msg)
-        @test occursin("cubic_interp", err.msg)  # suggests homogeneous workaround
+        @test occursin("not implemented for HeteroInterpolantND", err.msg)
+        @test occursin("tensor-product", err.msg)
+        @test occursin("axis-by-axis", err.msg)  # suggests the 1D workaround
     end
 
-    @testset "integrate(HeteroInterpolantND, a, b) — bounded" begin
+    @testset "integrate(HeteroInterpolantND, lo, hi) — bounded" begin
         itp = interp((x, y), data; method = (CubicInterp(), AkimaInterp()))
         err = try
-            integrate(itp, 0.1, 0.9)
+            integrate(itp, (0.1, 0.1), (0.9, 0.9))
             nothing
         catch e
             e
         end
         @test err isa ArgumentError
-        @test occursin("not yet implemented for HeteroInterpolantND", err.msg)
+        @test occursin("not implemented for HeteroInterpolantND", err.msg)
     end
 
     @testset "integrate(pure Cubic ND) — regression guard" begin

@@ -310,17 +310,10 @@ end
 # ═══════════════════════════════════════════════════════════════
 # ND Integration
 # ═══════════════════════════════════════════════════════════════
-
-# ── Fallback stub (bounded ND) ──
-function integrate(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = nothing,
-        hint = nothing
-    ) where {Tg, Tv, N}
-    throw(ArgumentError("integrate(itp_nd, lo, hi) is not implemented for $(typeof(itp)) yet"))
-end
+#
+# The ND `integrate(itp)` / `integrate(itp, lo, hi)` entry points live in
+# integrate_fulldomain.jl — one separable engine for every tensor-product family
+# (homogeneous and heterogeneous). Only the shared output-type helper is here.
 
 @inline function _integrate_nd_output_type(
         ::Type{Tv}, ::Type{Tg},
@@ -329,116 +322,4 @@ end
     ) where {Tv, Tg, N}
     Tspan = promote_type(map(typeof, lo2)..., map(typeof, hi2)...)
     return _promote_eltype(_integrate_op, Tg, Tv, Tspan)
-end
-
-# ── CubicInterpolantND bounded ──
-
-@inline function integrate(
-        itp::CubicInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
-    sign == 0 && return _zero
-
-    total = _zero
-    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
-        if all(d -> uhis[d] > ulos[d], 1:N)
-            inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
-            total += convert(Tout, _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
-        end
-    end
-    return sign * total
-end
-
-# ═══════════════════════════════════════════════════════════════
-# ND Linear Integration
-# ═══════════════════════════════════════════════════════════════
-
-@inline function integrate(
-        itp::LinearInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
-    sign == 0 && return _zero
-
-    total = _zero
-    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
-        if all(d -> uhis[d] > ulos[d], 1:N)
-            total += convert(Tout, _integrate_linear_nd_cell(itp.data, idx, hs, ulos, uhis))
-        end
-    end
-    return sign * total
-end
-
-# ═══════════════════════════════════════════════════════════════
-# ND Quadratic Integration
-# ═══════════════════════════════════════════════════════════════
-
-@inline function integrate(
-        itp::QuadraticInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
-    sign == 0 && return _zero
-
-    total = _zero
-    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
-        if all(d -> uhis[d] > ulos[d], 1:N)
-            inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
-            total += convert(Tout, _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
-        end
-    end
-    return sign * total
-end
-
-# ═══════════════════════════════════════════════════════════════
-# ND Constant Integration
-# ═══════════════════════════════════════════════════════════════
-
-@inline function integrate(
-        itp::ConstantInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
-    sign == 0 && return _zero
-
-    total = _zero
-    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
-        if all(d -> uhis[d] > ulos[d], 1:N)
-            total += convert(Tout, _integrate_constant_nd_cell(itp.data, idx, hs, ulos, uhis, itp.sides))
-        end
-    end
-    return sign * total
 end

@@ -298,3 +298,125 @@ end
         end
     end
 end
+
+# Cubic/Quadratic ND full-domain: the per-axis full-cell collapse is linear in
+# the (value, derivative) payload — cubic h/2(fL+fR) + h²/12(dfL−dfR), quadratic
+# 2h/3·fL + h/3·fR + h²/6·dfL — so the domain integral separates with per-axis
+# (w, v) node-weight PAIRS contracting the mixed-partials tensor. Oracles: the
+# generic per-cell engine (forced via invoke) and the bounded engine at full
+# bounds (still cell-wise for these families → independent of the new path).
+@testitem "ND cubic/quad separable: engine parity (Range + Vector, 2D/3D)" setup = [AllocConstants] begin
+    nonuni(a, b, n) = a .+ (b - a) .* ((x -> (x .- x[1]) ./ (x[end] - x[1]))([u + 0.15 * sinpi(u) for u in range(0, 1; length = n)]))
+    generic_nd(itp) = invoke(integrate, Tuple{FastInterpolations.AbstractInterpolantND}, itp)
+
+    @testset "2D parity (both engines)" begin
+        for mk in (cubic_interp, quadratic_interp)
+            for (gx, gy) in (
+                    (range(0.0, 2.0, length = 17), range(0.0, 3.0, length = 13)),
+                    (nonuni(0.0, 2.0, 17), nonuni(0.0, 3.0, 13)),
+                )
+                data = [sin(xi) * cos(yj) + 0.3xi for xi in gx, yj in gy]
+                itp = mk((gx, gy), data)
+                lo = (first(gx), first(gy));  hi = (last(gx), last(gy))
+                @test integrate(itp) ≈ generic_nd(itp) rtol = 1.0e-12
+                @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "3D parity (both engines)" begin
+        for mk in (cubic_interp, quadratic_interp)
+            x = nonuni(0.0, 1.0, 9);  y = nonuni(0.0, 2.0, 8);  z = nonuni(0.0, 3.0, 7)
+            data = [sin(xi) + yj * zk - 0.2zk^2 for xi in x, yj in y, zk in z]
+            itp = mk((x, y, z), data)
+            lo = (first(x), first(y), first(z));  hi = (last(x), last(y), last(z))
+            @test integrate(itp) ≈ generic_nd(itp) rtol = 1.0e-12
+            @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
+        end
+    end
+
+    @testset "Range and Vector grids agree (same nodes)" begin
+        xr = range(0.0, 2.0, length = 15);  yr = range(-1.0, 1.0, length = 11)
+        data = [sin(xi) + cos(yj) for xi in xr, yj in yr]
+        for mk in (cubic_interp, quadratic_interp)
+            @test integrate(mk((xr, yr), data)) ≈
+                integrate(mk((collect(xr), collect(yr)), data)) rtol = 1.0e-11
+        end
+    end
+
+    @testset "zero allocation (Range + Vector)" begin
+        xr = range(0.0, 2.0, length = 20);  yr = range(0.0, 3.0, length = 16)
+        data = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        for mk in (cubic_interp, quadratic_interp)
+            itp_r = mk((xr, yr), data)
+            itp_v = mk((collect(xr), collect(yr)), data)
+            integrate(itp_r);  integrate(itp_v)   # warmup
+            @test @allocated(integrate(itp_r)) <= ND_ALLOC_THRESHOLD
+            @test @allocated(integrate(itp_v)) <= ND_ALLOC_THRESHOLD
+        end
+    end
+end
+
+# Cubic/Quadratic bounded: the clipped-composite structure extends to the pair
+# payload — per-axis (w, v) node weights built from the partial-cell integrals
+# (cubic via the ΔH antiderivatives, quadratic via its closed form), full cells
+# collapsing to the full-domain pair weights. Oracles: the generic cell-wise
+# bounded engine (invoke-forced), box == domain vs the full-domain path, axis
+# additivity, and orientation sign.
+@testitem "ND cubic/quad bounded separable: engine parity + oracles" setup = [AllocConstants] begin
+    nonuni(a, b, n) = a .+ (b - a) .* ((x -> (x .- x[1]) ./ (x[end] - x[1]))([u + 0.15 * sinpi(u) for u in range(0, 1; length = n)]))
+    const FI = FastInterpolations
+    gen2(itp, lo, hi, ::Type{T}) where {T} =
+        invoke(integrate, Tuple{T{Tg, Tv, 2} where {Tg, Tv}, NTuple{2, Real}, NTuple{2, Real}}, itp, lo, hi)
+    gen3(itp, lo, hi, ::Type{T}) where {T} =
+        invoke(integrate, Tuple{T{Tg, Tv, 3} where {Tg, Tv}, NTuple{3, Real}, NTuple{3, Real}}, itp, lo, hi)
+
+    @testset "2D parity vs generic bounded (Range + Vector, box sweep)" begin
+        for (mk, T) in ((cubic_interp, FI.CubicInterpolantND), (quadratic_interp, FI.QuadraticInterpolantND))
+            for (gx, gy) in (
+                    (range(0.0, 2.0, length = 17), range(0.0, 3.0, length = 13)),
+                    (nonuni(0.0, 2.0, 17), nonuni(0.0, 3.0, 13)),
+                )
+                data = [sin(xi) * cos(yj) + 0.3xi for xi in gx, yj in gy]
+                itp = mk((gx, gy), data)
+                for (lo, hi) in (
+                        ((0.25, 0.4), (1.65, 2.6)),     # interior, cells cut mid-way
+                        ((0.0, 0.0), (2.0, 3.0)),       # box == domain
+                        ((0.31, 0.55), (0.65, 1.15)),   # few cells
+                        ((0.05, 0.1), (0.11, 0.2)),     # sub-/single-cell
+                    )
+                    @test integrate(itp, lo, hi) ≈ gen2(itp, lo, hi, T) rtol = 1.0e-11
+                end
+                @test integrate(itp, (0.0, 0.0), (2.0, 3.0)) ≈ integrate(itp) rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "3D parity + additivity + sign" begin
+        x = nonuni(0.0, 1.0, 9);  y = nonuni(0.0, 2.0, 8);  z = nonuni(0.0, 3.0, 7)
+        data = [sin(xi) + yj * zk - 0.2zk^2 for xi in x, yj in y, zk in z]
+        for (mk, T) in ((cubic_interp, FI.CubicInterpolantND), (quadratic_interp, FI.QuadraticInterpolantND))
+            itp = mk((x, y, z), data)
+            lo = (0.12, 0.3, 0.4);  hi = (0.85, 1.7, 2.6)
+            @test integrate(itp, lo, hi) ≈ gen3(itp, lo, hi, T) rtol = 1.0e-11
+            c = 0.5
+            @test integrate(itp, lo, hi) ≈
+                integrate(itp, lo, (c, hi[2], hi[3])) + integrate(itp, (c, lo[2], lo[3]), hi) rtol = 1.0e-11
+            @test integrate(itp, (hi[1], lo[2], lo[3]), (lo[1], hi[2], hi[3])) ≈
+                -integrate(itp, lo, hi) rtol = 1.0e-11
+        end
+    end
+
+    @testset "zero allocation (Range + Vector)" begin
+        xr = range(0.0, 2.0, length = 20);  yr = range(0.0, 3.0, length = 16)
+        data = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        lo = (0.2, 0.4);  hi = (1.8, 2.7)
+        for mk in (cubic_interp, quadratic_interp)
+            itp_r = mk((xr, yr), data)
+            itp_v = mk((collect(xr), collect(yr)), data)
+            integrate(itp_r, lo, hi);  integrate(itp_v, lo, hi)   # warmup
+            @test @allocated(integrate(itp_r, lo, hi)) <= ND_ALLOC_THRESHOLD
+            @test @allocated(integrate(itp_v, lo, hi)) <= ND_ALLOC_THRESHOLD
+        end
+    end
+end

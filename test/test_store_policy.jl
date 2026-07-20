@@ -483,3 +483,56 @@ end
         @test itp(0.4, 0.6) ≈ itp_ref(0.4, 0.6) atol = 1.0e-12
     end
 end
+
+# Zero-allocation BUILD contract: with `copy=false, cache_axis=false` a trivial
+# (Linear/Constant) build wraps references only — on Julia ≥ 1.12 the whole
+# build+use call allocates nothing beyond the result, for BOTH grid kinds.
+# Range axes are stack-only `_CachedRange`s, so they must not heap-box either.
+# Measured through function barriers (concrete args); the interpolant struct is
+# elided by escape analysis when consumed in the same call.
+@testitem "Store Policy - zero-alloc build contract (raw storage)" setup = [AllocConstants] begin
+    S_RAW = StorePolicy(copy = false, cache_axis = false)
+
+    x_vec = collect(range(0.0, 1.0, length = 20))
+    x_rng = range(0.0, 1.0, length = 20)
+    y1 = sin.(x_vec)
+    Xv = collect(range(0.0, 1.0, length = 16));  Xr = range(0.0, 1.0, length = 16)
+    Yv = collect(range(0.0, 1.0, length = 14));  Yr = range(0.0, 1.0, length = 14)
+    D2 = [a + 2b for a in Xv, b in Yv]
+
+    # barriers: build+consume in one call so the struct itself is elided; every
+    # input (including the store) is a typed argument — a captured testitem-scope
+    # binding is a non-const global and its boxing would pollute the measurement.
+    fwd1(x, y, q, c, s) = @allocated (itp = c(x, y; store = s); itp(q))
+    fwdN(g, d, q, c, s) = @allocated (itp = c(g, d; store = s); itp(q...))
+    int1(x, y, m) = @allocated integrate(x, y; method = m)
+    intN(g, d, m) = @allocated integrate(g, d; method = m)
+
+    @testset "1D forward build+eval (Vector + Range)" begin
+        for c in (linear_interp, constant_interp), x in (x_vec, x_rng)
+            fwd1(x, y1, 0.5, c, S_RAW)                            # warmup
+            @test fwd1(x, y1, 0.5, c, S_RAW) <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND forward build+eval (Vector + Range axes)" begin
+        for c in (linear_interp, constant_interp), g in ((Xv, Yv), (Xr, Yr))
+            fwdN(g, D2, (0.5, 0.5), c, S_RAW)                     # warmup
+            @test fwdN(g, D2, (0.5, 0.5), c, S_RAW) <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "1D one-shot integrate (Vector + Range)" begin
+        for m in (LinearInterp(), ConstantInterp()), x in (x_vec, x_rng)
+            int1(x, y1, m)                                        # warmup
+            @test int1(x, y1, m) <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND one-shot integrate (Vector + Range axes)" begin
+        for m in (LinearInterp(), ConstantInterp()), g in ((Xv, Yv), (Xr, Yr))
+            intN(g, D2, m)                                        # warmup
+            @test intN(g, D2, m) <= ND_ALLOC_THRESHOLD
+        end
+    end
+end

@@ -134,7 +134,7 @@ end
     # Vector → `_CachedVector{Tg, Tinv}` aliasing user buffer. Mirrors
     # Linear/Constant — outer is reference-only; the inner constructor copies
     # (default) or aliases per `store` via `_own_or_ref_{axis,values}`.
-    x_eff = _cache_axis(x, NoBC(), Tg)
+    x_eff = _policy_axis(x, NoBC(), Tg, store)
     bc_p = _normalize_bc(bc, first(y))
 
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)

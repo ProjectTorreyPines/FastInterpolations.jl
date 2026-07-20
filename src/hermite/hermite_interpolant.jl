@@ -50,7 +50,7 @@ end
         store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    x_eff = _cache_axis(x, bc, Tg)
+    x_eff = _policy_axis(x, bc, Tg, store)
     return CubicHermiteInterpolant1D(x_eff, y, dy, extrap, search; bc = bc, store = store)
 end
 

@@ -156,7 +156,7 @@ function linear_interp end
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic).
     # OneShot path continues to use the lazy wrapper (linear_oneshot.jl).
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    x_eff = _cache_axis(x_ext, bc_eff, Tg)
+    x_eff = _policy_axis(x_ext, bc_eff, Tg, store)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
     return LinearInterpolant(x_eff, y_ext, extrap_p, search; bc = bc_eff, store = store)
 end

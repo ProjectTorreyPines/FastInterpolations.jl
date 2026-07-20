@@ -20,6 +20,12 @@
 @inline _cache_axis_for_method(g, bc::AbstractBC, ::Type{Tg}, ::AbstractInterpMethod) where {Tg} =
     _cache_axis(g, bc, Tg)
 
+# Method-aware `_store_axis` (the hetero arm of the single ctor axis entry):
+# `cache_axis` is not plumbed here — hetero has no `integrate`, and interp axes
+# keep the cached wrap (NoInterp axes are raw by design already).
+@inline _store_axis(g, bc::AbstractBC, ::Type{Tg}, m::AbstractInterpMethod, store::StorePolicy) where {Tg} =
+    _own_or_ref_axis(_cache_axis_for_method(g, bc, Tg, m), Tg, store)
+
 """
     HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
 
@@ -82,7 +88,7 @@ struct HeteroInterpolantND{
             store::StorePolicy = StorePolicy()
         ) where {Tg, N}
         Tv = eltype(data)
-        grids_c = map((g, bc, m, T) -> _own_or_ref_axis(_cache_axis_for_method(g, bc, T, m), T, store), grids, bcs, methods, ntuple(_ -> Tg, Val(N)))
+        grids_c = map((g, bc, m, T) -> _store_axis(g, bc, T, m, store), grids, bcs, methods, ntuple(_ -> Tg, Val(N)))
         return new{Tg, Tv, N, typeof(grids_c), typeof(methods), typeof(extraps), typeof(searches), typeof(data)}(
             grids_c, data, methods, extraps, searches
         )

@@ -52,6 +52,19 @@ end
         end
     end
 
+    @testset "bounded integrate(x, y, a, b; method) — all methods, matches persistent" begin
+        for x in (x_vec, x_rng), m in (
+                    LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp(),
+                    PchipInterp(), AkimaInterp(), CardinalInterp(),
+                )
+            @test integrate(x, y, 0.3, 1.4; method = m) ≈
+                integrate(interp(x, y; method = m), 0.3, 1.4) rtol = 1.0e-12
+        end
+        # full-domain bounds reproduce the no-bounds one-shot
+        @test integrate(x_vec, y, 0.0, 2.0; method = CubicInterp()) ≈
+            integrate(x_vec, y; method = CubicInterp()) rtol = 1.0e-12
+    end
+
     @testset "method options forwarded" begin
         @test integrate(x_vec, y; method = ConstantInterp(side = LeftSide())) ≈
             integrate(constant_interp(x_vec, y; side = LeftSide())) atol = 1.0e-12
@@ -102,6 +115,20 @@ end
         @test integrate((x, y, z), data; method = LinearInterp()) ≈ ref rtol = 1.0e-12
     end
 
+    @testset "bounded integrate(grids, data, lo, hi; method) — matches persistent" begin
+        lo = (0.3, 0.4);  hi = (2.5, 1.5)
+        for (gx, gy) in ((xr, yr), (xv, yv))
+            data = [f(xi, yj) for xi in gx, yj in gy]
+            for m in (LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp())
+                @test integrate((gx, gy), data, lo, hi; method = m) ≈
+                    integrate(interp((gx, gy), data; method = m), lo, hi) rtol = 1.0e-12
+            end
+        end
+        # Hermite family rejected up front here too (same supported-method split)
+        data = [f(xi, yj) for xi in xr, yj in yr]
+        @test_throws "ND integration is implemented" integrate((xr, yr), data, lo, hi; method = AkimaInterp())
+    end
+
     @testset "trivial methods build with near-zero allocation" begin
         # Measured through a function barrier: a bare `@allocated` at test scope
         # boxes the captured globals and reports noise, not the API's real cost.
@@ -119,7 +146,7 @@ end
         # does not (they build a HeteroInterpolantND with no ND integral). Reject
         # them with a clear method-named error, not the internal Hetero message.
         for m in (PchipInterp(), AkimaInterp(), CardinalInterp(), NoInterp())
-            @test_throws "ND full-domain integration is implemented" integrate((xr, yr), data; method = m)
+            @test_throws "ND integration is implemented" integrate((xr, yr), data; method = m)
         end
         # …while the same methods DO integrate in 1-D:
         xv1 = collect(xr)

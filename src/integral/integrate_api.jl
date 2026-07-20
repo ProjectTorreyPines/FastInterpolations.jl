@@ -3,51 +3,48 @@
 @inline _grid_1d(itp::CubicSeriesInterpolant) = itp.cache.x
 @inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
-# ── One-shot quadrature: integrate(x, y; method) ──
-# Full-domain integral of the `method` interpolant of `(x, y)`, routed like
-# `interp(x, y; method=…)` (same method tags; bc/side/tension forwarded). Built
-# with StorePolicy(copy=false, cache_axis=false) — nothing copied, no axis caches.
-@inline function integrate(
-        x::AbstractVector,
-        y::AbstractVector;
-        method::AbstractInterpMethod,
-    )
+# ── One-shot quadrature: integrate(x, y[, a, b]; method) ──
+# Build the `method` interpolant of `(x, y)` and integrate it — full-domain with
+# no bounds, or over `[a, b]` with them (the bounds just forward to the bounded
+# `integrate(itp, a, b)`). Routed like `interp(x, y; method=…)` and built with
+# StorePolicy(copy=false, cache_axis=false), so nothing is copied.
+@inline function _oneshot_build_1d(method::AbstractInterpMethod, x, y)
     fn, _, opts = _interp1d_route(method)
-    itp = fn(x, y; opts..., store = StorePolicy(copy = false, cache_axis = false))
-    return integrate(itp)
+    return fn(x, y; opts..., store = StorePolicy(copy = false, cache_axis = false))
 end
+@inline integrate(x::AbstractVector, y::AbstractVector; method::AbstractInterpMethod) =
+    integrate(_oneshot_build_1d(method, x, y))
+@inline integrate(x::AbstractVector, y::AbstractVector, a::Real, b::Real; method::AbstractInterpMethod) =
+    integrate(_oneshot_build_1d(method, x, y), a, b)
 
-# ── One-shot quadrature (ND): integrate(grids, data; method) ──
-# ND mirror of the 1-D form, but with a smaller supported set: ND full-domain
-# integration exists only for the specialized tensor-product types, whereas 1-D
-# integrates every method. A single `method` applied to every axis builds a
-# homogeneous specialized ND interpolant, then integrates it. Trivial methods
-# (linear/constant) use raw reference storage (0-copy, no axis caches); PreCompute
-# methods (cubic/quadratic) own their coefficient arrays, so `store` stays at the
-# ctor default. Hermite-family methods are rejected up front (see below).
-@inline function integrate(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N};
-        method::AbstractInterpMethod,
-    ) where {N}
+# ── One-shot quadrature (ND): integrate(grids, data[, lo, hi]; method) ──
+# ND mirror, full-domain or over the hyper-rectangle `[lo, hi]`. ND integration
+# exists only for the specialized tensor-product types (Linear/Cubic/Quadratic/
+# Constant) — the Hermite family collapses to a HeteroInterpolantND with no ND
+# integral and is rejected up front (unlike 1-D, which integrates every method).
+# Trivial methods use raw reference storage; PreCompute methods own their
+# coefficient arrays, so `store` stays at the ctor default.
+@inline function _oneshot_build_nd(method::AbstractInterpMethod, grids, data)
     _nd_integrable_method(method) || _throw_nd_oneshot_unsupported(method)
     fn, _, opts = _interp1d_route(method)
-    itp = _is_trivial_method(method) ?
+    return _is_trivial_method(method) ?
         fn(grids, data; opts..., store = StorePolicy(copy = false, cache_axis = false)) :
         fn(grids, data; opts...)
-    return integrate(itp)
 end
+@inline integrate(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}; method::AbstractInterpMethod) where {N} =
+    integrate(_oneshot_build_nd(method, grids, data))
+@inline integrate(
+    grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N},
+    lo::NTuple{N, Real}, hi::NTuple{N, Real}; method::AbstractInterpMethod
+) where {N} = integrate(_oneshot_build_nd(method, grids, data), lo, hi)
 
-# Which methods have a specialized ND type with a full-domain integral. Hermite
-# axes collapse to a HeteroInterpolantND (no ND integral), so they are excluded —
-# the one behavioral split from the 1-D one-shot, which integrates all methods.
 @inline _nd_integrable_method(::Union{LinearInterp, CubicInterp, QuadraticInterp, ConstantInterp}) = true
 @inline _nd_integrable_method(::AbstractInterpMethod) = false
 
 @noinline function _throw_nd_oneshot_unsupported(method)
     throw(
         ArgumentError(
-            "integrate(grids, data; method=$(nameof(typeof(method)))(…)) — ND full-domain " *
+            "integrate(grids, data[, lo, hi]; method=$(nameof(typeof(method)))(…)) — ND " *
                 "integration is implemented only for LinearInterp, CubicInterp, " *
                 "QuadraticInterp, and ConstantInterp. Hermite-family methods " *
                 "(Pchip/Akima/Cardinal) have no ND integral yet; integrate axis-by-axis " *

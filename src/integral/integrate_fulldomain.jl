@@ -290,13 +290,14 @@ end
     )
 end
 
-# ── Linear ND full-domain: separable composite-trapezoid path ──
+# ── Linear/Constant ND full-domain: separable node-weighted path ──
 #
-# A full-cell multilinear integral has both per-axis basis weights collapse to
-# h/2, so the whole domain integral is the tensor product of 1D composite-
-# trapezoid rules:  I = Σ_nodes (Π_d w_d(i_d))·data[i].  Iterating nodes (not
-# cells) reads each value once instead of the 2^N corner reads the generic
-# per-cell kernel repeats — an N-D generalization of the 1D telescoped path.
+# On full cells the per-axis basis weights collapse to constants (multilinear →
+# h/2 each end; constant → side-selected h), so the whole domain integral is a
+# tensor product of 1D node-weight rules:  I = Σ_nodes (Π_d w_d(i_d))·data[i].
+# Iterating nodes (not cells) reads each value once instead of the 2^N corner
+# reads the generic per-cell kernel repeats — an N-D generalization of the 1D
+# telescoped path.
 
 # 1D composite-trapezoid node weight on `grid` (length `n`): ½h at the endpoints,
 # ½(h₋+h₊) in the interior. Only the grid is divided — values stay multiply-only.
@@ -307,18 +308,29 @@ end
     return _nd_trap_weight_interior(grid, k)
 end
 
+# Per-axis weight provider: `nothing` = trapezoid (linear); a side = the constant
+# family's collapsed weights (NearestSide splits each cell at h/2 — identical to
+# the trapezoid rule; Left/Right put the whole h on the selected node).
+@inline _nd_node_weight(::Union{Nothing, NearestSide}, g, k::Int, n::Int) = _nd_trap_weight(g, k, n)
+@inline _nd_node_weight_interior(::Union{Nothing, NearestSide}, g, k::Int) = _nd_trap_weight_interior(g, k)
+@inline _nd_node_weight(::LeftSide, g, k::Int, n::Int) = k == n ? zero(_get_h(g, 1)) : _get_h(g, k)
+@inline _nd_node_weight_interior(::LeftSide, g, k::Int) = _get_h(g, k)
+@inline _nd_node_weight(::RightSide, g, k::Int, n::Int) = k == 1 ? zero(_get_h(g, 1)) : _get_h(g, k - 1)
+@inline _nd_node_weight_interior(::RightSide, g, k::Int) = _get_h(g, k - 1)
+
 # Nested reduction: outer axes hoist their weight product `wp`, the contiguous
 # inner axis peels its endpoints so the interior is a branch-free @simd loop.
-@generated function _integrate_linear_nd_fulldomain(
-        grids::NTuple{N, Any}, data::AbstractArray, ::Type{Tout}
+# `wspec` = per-axis weight provider tuple (see `_nd_node_weight`).
+@generated function _integrate_separable_nd_fulldomain(
+        wspec::NTuple{N, Any}, grids::NTuple{N, Any}, data::AbstractArray, ::Type{Tout}
     ) where {N, Tout}
     ivars = [Symbol(:i_, d) for d in 1:N]
     rest = ivars[2:N]
     inner = quote
-        s = _nd_trap_weight(g1, 1, n_1) * data[1, $(rest...)] +
-            _nd_trap_weight(g1, n_1, n_1) * data[n_1, $(rest...)]
+        s = _nd_node_weight(w1, g1, 1, n_1) * data[1, $(rest...)] +
+            _nd_node_weight(w1, g1, n_1, n_1) * data[n_1, $(rest...)]
         @simd for i_1 in 2:(n_1 - 1)
-            s += _nd_trap_weight_interior(g1, i_1) * data[i_1, $(rest...)]
+            s += _nd_node_weight_interior(w1, g1, i_1) * data[i_1, $(rest...)]
         end
         total += wp_2 * s
     end
@@ -326,8 +338,8 @@ end
     for d in 2:N
         id = ivars[d]
         nd = Symbol(:n_, d)
-        wexpr = d == N ? :(_nd_trap_weight(grids[$d], $id, $nd)) :
-            :(_nd_trap_weight(grids[$d], $id, $nd) * $(Symbol(:wp_, d + 1)))
+        wexpr = d == N ? :(_nd_node_weight(wspec[$d], grids[$d], $id, $nd)) :
+            :(_nd_node_weight(wspec[$d], grids[$d], $id, $nd) * $(Symbol(:wp_, d + 1)))
         body = quote
             for $id in 1:$nd
                 $(Symbol(:wp_, d)) = $wexpr
@@ -340,6 +352,7 @@ end
         Base.@_inline_meta
         $nassign
         g1 = grids[1]
+        w1 = wspec[1]
         total = zero(Tout)
         @inbounds begin
             $body
@@ -356,7 +369,18 @@ end
         hint = nothing
     ) where {Tg, Tv <: Number, N}
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_linear_nd_fulldomain(itp.grids, itp.data, Tout)
+    return _integrate_separable_nd_fulldomain(ntuple(_ -> nothing, Val(N)), itp.grids, itp.data, Tout)
+end
+
+# ConstantInterpolantND with numeric values: same separable engine, per-axis side
+# weights (mixed sides compose axis-wise). Duck values fall through to generic.
+@inline function integrate(
+        itp::ConstantInterpolantND{Tg, Tv, N};
+        search = nothing,
+        hint = nothing
+    ) where {Tg, Tv <: Number, N}
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
+    return _integrate_separable_nd_fulldomain(itp.sides, itp.grids, itp.data, Tout)
 end
 
 # Generic ND full-domain: catches all ND types

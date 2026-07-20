@@ -401,18 +401,19 @@ end
 # inner axis peels its boundary nodes so the interior runs branch-free @simd.
 
 # `rs[d] ∈ {1, 2}` — the per-axis weight rank: 1 for value-only axes
-# (Linear/Constant), 2 for the (value, deriv) pairs (Cubic/Quadratic). The
-# payload carries a leading slot dimension of size `prod(rs)` unless every axis
-# is rank 1 (a raw value array with no slot dimension). Slot layout is the same
-# mixed-radix convention `_HeteroPartials` uses: `stride_d = prod(rs[1:d-1])`,
-# so `slot = 1 + Σ_d off_d·stride_d` with the inner axis (d=1) varying fastest.
-function _separable_emit_common(rs::NTuple{N, Int}) where {N}
+# (Linear/Constant), 2 for the (value, deriv) pairs (Cubic/Quadratic). Slot
+# layout is the mixed-radix convention `_HeteroPartials` uses: `stride_d =
+# prod(rs[1:d-1])`, so `slot = 1 + Σ_d off_d·stride_d` with the inner axis (d=1)
+# varying fastest. `has_slot` (payload rank N+1 vs N) is a *storage* fact, kept
+# separate from `prod(rs)`: an all-trivial hetero PreCompute payload carries a
+# size-1 leading slot axis even though `prod(rs) == 1`.
+function _separable_emit_common(rs::NTuple{N, Int}, has_slot::Bool) where {N}
     P = prod(rs)
     r1 = rs[1]
     Mout = P ÷ r1                      # outer-axis slot configurations
     ivars = [Symbol(:i_, d) for d in 1:N]
     rest = ivars[2:N]
-    pidx(slot, i1) = P == 1 ? :(payload[$i1, $(rest...)]) : :(payload[$slot, $i1, $(rest...)])
+    pidx(slot, i1) = has_slot ? :(payload[$slot, $i1, $(rest...)]) : :(payload[$i1, $(rest...)])
     wnames(ws, r) = r == 1 ? [Symbol(ws, :_1)] : [Symbol(ws, :_1), Symbol(ws, :_2)]
     wdecl(ws, r, call) = Expr(:(=), Expr(:tuple, wnames(ws, r)...), call)
     # Inner sum for outer configuration `m`: contract the inner axis' `r1` weight
@@ -468,10 +469,10 @@ end
         payload::AbstractArray{Tv, NP}, ::Type{Tout}, z
     ) where {N, Tv, NP, Tout}
     rs = ntuple(d -> _nd_weight_rank(wspec.parameters[d]), N)
-    slotoff = prod(rs) > 1 ? 1 : 0
-    NP == N + slotoff || error("payload rank $NP inconsistent with weight spec $rs")
+    slotoff = NP - N          # 0 = raw N-d value array, 1 = leading slot axis
+    slotoff in (0, 1) || error("payload rank $NP inconsistent with N=$N")
     r1 = rs[1]
-    ivars, _, _, wdecl, contrib = _separable_emit_common(rs)
+    ivars, _, _, wdecl, contrib = _separable_emit_common(rs, slotoff == 1)
     inner = quote
         $(wdecl(:w1a, r1, :(_nd_node_weights(w1, g1, 1, n_1))))
         $(wdecl(:w1b, r1, :(_nd_node_weights(w1, g1, n_1, n_1))))
@@ -506,10 +507,10 @@ end
         grids::NTuple{N, Any}, payload::AbstractArray{Tv, NP}, ::Type{Tout}, z
     ) where {N, Tv, NP, Tout}
     rs = ntuple(d -> _nd_weight_rank(wspec.parameters[d]), N)
-    slotoff = prod(rs) > 1 ? 1 : 0
-    NP == N + slotoff || error("payload rank $NP inconsistent with weight spec $rs")
+    slotoff = NP - N          # 0 = raw N-d value array, 1 = leading slot axis
+    slotoff in (0, 1) || error("payload rank $NP inconsistent with N=$N")
     r1 = rs[1]
-    ivars, _, _, wdecl, contrib = _separable_emit_common(rs)
+    ivars, _, _, wdecl, contrib = _separable_emit_common(rs, slotoff == 1)
     inner = quote
         s = z
         if ihi1 >= ilo1 + 2

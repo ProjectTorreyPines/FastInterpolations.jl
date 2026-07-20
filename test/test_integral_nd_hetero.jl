@@ -12,8 +12,16 @@
     y = range(0.0, 3.0, length = 9)
     A = [sin(xi) * cos(yj) + 0.5 * xi for xi in x, yj in y]
 
-    @testset "PreCompute mixes (rank-1 × rank-2, rank-2 × rank-2)" begin
+    @testset "PreCompute mixes (rank-1×rank-1, rank-1×rank-2, rank-2×rank-2)" begin
+        # Only genuinely-mixed method TYPES build a HeteroInterpolantND — `interp`
+        # collapses same-method tuples (Linear×Linear, Const×Const) to the
+        # homogeneous ND type. The rank-1×rank-1 mix (Linear×Constant) is the key
+        # case: all-trivial PreCompute carries a SIZE-1 leading slot axis (payload
+        # rank N+1 with prod(rs)==1), so the kernel must key "has slot" off the
+        # payload rank, not prod(rs).
         for ms in (
+                (LinearInterp(), ConstantInterp()),                 # rank-1 × rank-1
+                (ConstantInterp(side = LeftSide()), LinearInterp()),  # rank-1 × rank-1, other order
                 (CubicInterp(), LinearInterp()),
                 (LinearInterp(), CubicInterp()),
                 (QuadraticInterp(), LinearInterp()),
@@ -22,6 +30,17 @@
             )
             itp = interp((x, y), A; method = ms, coeffs = PreCompute())
             @test itp isa FI.HeteroInterpolantND
+            @test integrate(itp) ≈ comp_nd(ms, (x, y), A) rtol = 1.0e-11
+            @test integrate(itp, (0.2, 0.4), (1.7, 2.6)) ≈ comp_nd(ms, (x, y), A, (0.2, 0.4), (1.7, 2.6)) rtol = 1.0e-11
+        end
+    end
+
+    @testset "same-method PreCompute collapses to homogeneous (still integrates)" begin
+        # Contract check: (Linear,Linear)/(Const,Const) route to the specialized
+        # homogeneous type, not Hetero — value must still match composition.
+        for ms in ((LinearInterp(), LinearInterp()), (ConstantInterp(side = LeftSide()), ConstantInterp(side = LeftSide())))
+            itp = interp((x, y), A; method = ms, coeffs = PreCompute())
+            @test !(itp isa FI.HeteroInterpolantND)
             @test integrate(itp) ≈ comp_nd(ms, (x, y), A) rtol = 1.0e-11
         end
     end

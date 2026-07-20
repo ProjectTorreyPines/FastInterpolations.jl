@@ -290,14 +290,26 @@ end
     )
 end
 
-# ── Linear/Constant ND full-domain: separable node-weighted path ──
+# ── Separable ND engine: full-domain + bounded, all tensor-product families ──
 #
-# On full cells the per-axis basis weights collapse to constants (multilinear →
-# h/2 each end; constant → side-selected h), so the whole domain integral is a
-# tensor product of 1D node-weight rules:  I = Σ_nodes (Π_d w_d(i_d))·data[i].
-# Iterating nodes (not cells) reads each value once instead of the 2^N corner
-# reads the generic per-cell kernel repeats — an N-D generalization of the 1D
-# telescoped path.
+# On full cells every per-axis basis integral collapses to constants that are
+# LINEAR in the node payload, so the domain integral is a tensor product of 1D
+# node-weight rules contracted against the payload — each node read once,
+# instead of the 2^N corner reads per cell the generic engine repeats:
+#
+#   rank 1 — payload `data[i…]`, one weight per axis:
+#     linear    w = ½h at the ends, ½(h₋+h₊) interior (composite trapezoid)
+#     constant  w = side-selected h (NearestSide ≡ the trapezoid weights)
+#   rank 2 — payload `partials[1+mask, i…]` (bit d of mask = ∂ along axis d),
+#             a (w, v) = (value, deriv) weight pair per axis:
+#     cubic     ∫cell = h/2(fL+fR) + h²/12(dfL−dfR) → v telescopes interior,
+#               vanishing on uniform axes
+#     quad      ∫cell = 2h/3·fL + h/3·fR + h²/6·dfL → left-anchored, no right v
+#
+# The per-axis weight spec reuses the existing vocabulary — the method tags
+# (`LinearInterp`/`CubicInterp`/`QuadraticInterp`) or the constant `sides` — and
+# the @generated kernels pick the rank from the payload dimensionality (N vs
+# N+1), so one engine serves every family; only the weight methods differ.
 
 # 1D composite-trapezoid node weight on `grid` (length `n`): ½h at the endpoints,
 # ½(h₋+h₊) in the interior. Only the grid is divided — values stay multiply-only.
@@ -308,100 +320,20 @@ end
     return _nd_trap_weight_interior(grid, k)
 end
 
-# Per-axis weight provider: `nothing` = trapezoid (linear); a side = the constant
-# family's collapsed weights (NearestSide splits each cell at h/2 — identical to
-# the trapezoid rule; Left/Right put the whole h on the selected node).
-@inline _nd_node_weight(::Union{Nothing, NearestSide}, g, k::Int, n::Int) = _nd_trap_weight(g, k, n)
-@inline _nd_node_weight_interior(::Union{Nothing, NearestSide}, g, k::Int) = _nd_trap_weight_interior(g, k)
-@inline _nd_node_weight(::LeftSide, g, k::Int, n::Int) = k == n ? zero(_get_h(g, 1)) : _get_h(g, k)
-@inline _nd_node_weight_interior(::LeftSide, g, k::Int) = _get_h(g, k)
-@inline _nd_node_weight(::RightSide, g, k::Int, n::Int) = k == 1 ? zero(_get_h(g, 1)) : _get_h(g, k - 1)
-@inline _nd_node_weight_interior(::RightSide, g, k::Int) = _get_h(g, k - 1)
+# ── Full-cell node weights: `_nd_node_weights(tag, g, k, n) -> NTuple{R}` ──
 
-# Nested reduction: outer axes hoist their weight product `wp`, the contiguous
-# inner axis peels its endpoints so the interior is a branch-free @simd loop.
-# `wspec` = per-axis weight provider tuple (see `_nd_node_weight`).
-@generated function _integrate_separable_nd_fulldomain(
-        wspec::NTuple{N, Any}, grids::NTuple{N, Any}, data::AbstractArray, ::Type{Tout}
-    ) where {N, Tout}
-    ivars = [Symbol(:i_, d) for d in 1:N]
-    rest = ivars[2:N]
-    inner = quote
-        s = _nd_node_weight(w1, g1, 1, n_1) * data[1, $(rest...)] +
-            _nd_node_weight(w1, g1, n_1, n_1) * data[n_1, $(rest...)]
-        @simd for i_1 in 2:(n_1 - 1)
-            s += _nd_node_weight_interior(w1, g1, i_1) * data[i_1, $(rest...)]
-        end
-        total += wp_2 * s
-    end
-    body = inner
-    for d in 2:N
-        id = ivars[d]
-        nd = Symbol(:n_, d)
-        wexpr = d == N ? :(_nd_node_weight(wspec[$d], grids[$d], $id, $nd)) :
-            :(_nd_node_weight(wspec[$d], grids[$d], $id, $nd) * $(Symbol(:wp_, d + 1)))
-        body = quote
-            for $id in 1:$nd
-                $(Symbol(:wp_, d)) = $wexpr
-                $body
-            end
-        end
-    end
-    nassign = Expr(:block, [:($(Symbol(:n_, d)) = size(data, $d)) for d in 1:N]...)
-    return quote
-        Base.@_inline_meta
-        $nassign
-        g1 = grids[1]
-        w1 = wspec[1]
-        total = zero(Tout)
-        @inbounds begin
-            $body
-        end
-        return total
-    end
-end
+@inline _nd_node_weights(::Union{LinearInterp, NearestSide}, g, k::Int, n::Int) =
+    (_nd_trap_weight(g, k, n),)
+@inline _nd_node_weights_interior(::Union{LinearInterp, NearestSide}, g, k::Int) =
+    (_nd_trap_weight_interior(g, k),)
+@inline _nd_node_weights(::LeftSide, g, k::Int, n::Int) =
+    (k == n ? zero(_get_h(g, 1)) : _get_h(g, k),)
+@inline _nd_node_weights_interior(::LeftSide, g, k::Int) = (_get_h(g, k),)
+@inline _nd_node_weights(::RightSide, g, k::Int, n::Int) =
+    (k == 1 ? zero(_get_h(g, 1)) : _get_h(g, k - 1),)
+@inline _nd_node_weights_interior(::RightSide, g, k::Int) = (_get_h(g, k - 1),)
 
-# LinearInterpolantND with numeric values: the separable path. Non-numeric (duck)
-# value types fall through to the generic per-cell method below.
-@inline function integrate(
-        itp::LinearInterpolantND{Tg, Tv, N};
-        search = nothing,
-        hint = nothing
-    ) where {Tg, Tv <: Number, N}
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_separable_nd_fulldomain(ntuple(_ -> nothing, Val(N)), itp.grids, itp.data, Tout)
-end
-
-# ConstantInterpolantND with numeric values: same separable engine, per-axis side
-# weights (mixed sides compose axis-wise). Duck values fall through to generic.
-@inline function integrate(
-        itp::ConstantInterpolantND{Tg, Tv, N};
-        search = nothing,
-        hint = nothing
-    ) where {Tg, Tv <: Number, N}
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_separable_nd_fulldomain(itp.sides, itp.grids, itp.data, Tout)
-end
-
-# ── Cubic/Quadratic ND full-domain: separable (value, deriv) pair path ──
-#
-# The full-cell collapse of the 1D kernels is linear in the payload — cubic
-# ∫cell = h/2(fL+fR) + h²/12(dfL−dfR), quadratic ∫cell = 2h/3·fL + h/3·fR +
-# h²/6·dfL — so the domain integral separates with per-axis (w, v) node-weight
-# PAIRS contracting the mixed-partials tensor (slot-first, bit d = ∂ along d):
-#
-#     I = Σ_node Σ_mask (Π_d bit_d(mask) ? v_d(i_d) : w_d(i_d)) · P[1+mask, node]
-#
-# Each node reads its contiguous 2^N-slot block once (vs the 4^N-ish payload
-# reads per cell of the per-cell engine). On uniform axes the cubic deriv
-# weight telescopes to zero in the interior.
-
-struct _CubicWV end
-struct _QuadWV end
-
-# cubic: w = composite trapezoid; v telescopes — (h_k² − h_{k−1}²)/12 interior,
-# ±h²/12 at the ends.
-@inline function _nd_node_wv(::_CubicWV, g, k::Int, n::Int)
+@inline function _nd_node_weights(::CubicInterp, g, k::Int, n::Int)
     if k == 1
         h1 = _get_h(g, 1)
         return (h1 / 2, h1 * h1 / 12)
@@ -409,16 +341,15 @@ struct _QuadWV end
         hm = _get_h(g, n - 1)
         return (hm / 2, -hm * hm / 12)
     end
-    return _nd_node_wv_interior(_CubicWV(), g, k)
+    return _nd_node_weights_interior(CubicInterp(), g, k)
 end
-@inline function _nd_node_wv_interior(::_CubicWV, g, k::Int)
+@inline function _nd_node_weights_interior(::CubicInterp, g, k::Int)
     hm = _get_h(g, k - 1)
     hk = _get_h(g, k)
     return ((hm + hk) / 2, (hk * hk - hm * hm) / 12)
 end
 
-# quadratic (left-anchored parabola): w is asymmetric, v has no right-end share.
-@inline function _nd_node_wv(::_QuadWV, g, k::Int, n::Int)
+@inline function _nd_node_weights(::QuadraticInterp, g, k::Int, n::Int)
     if k == 1
         h1 = _get_h(g, 1)
         return (2 * h1 / 3, h1 * h1 / 6)
@@ -426,127 +357,54 @@ end
         hm = _get_h(g, n - 1)
         return (hm / 3, zero(hm * hm))
     end
-    return _nd_node_wv_interior(_QuadWV(), g, k)
+    return _nd_node_weights_interior(QuadraticInterp(), g, k)
 end
-@inline function _nd_node_wv_interior(::_QuadWV, g, k::Int)
+@inline function _nd_node_weights_interior(::QuadraticInterp, g, k::Int)
     hm = _get_h(g, k - 1)
     hk = _get_h(g, k)
     return ((2 * hk + hm) / 3, hk * hk / 6)
 end
 
-# Nested pair reduction: outer axes hoist the Kronecker partial products of
-# their (w, v) pairs (axis 2 = fastest outer-mask bit, matching the slot
-# order), so the inner sweep is one contiguous slot-pair muladd per outer mask.
-@generated function _integrate_separable_pair_fulldomain(
-        p, grids::NTuple{N, Any}, partials::Array{Tv, NP1}, ::Type{Tout}
-    ) where {N, Tv, NP1, Tout}
-    NP1 == N + 1 || error("NP1 must equal N+1")
-    if N == 1
-        return quote
-            Base.@_inline_meta
-            g1 = grids[1]
-            n_1 = size(partials, 2)
-            total = zero(Tout)
-            @inbounds begin
-                (w1a, v1a) = _nd_node_wv(p, g1, 1, n_1)
-                (w1b, v1b) = _nd_node_wv(p, g1, n_1, n_1)
-                total += w1a * partials[1, 1] + v1a * partials[2, 1] +
-                    w1b * partials[1, n_1] + v1b * partials[2, n_1]
-                @simd for i_1 in 2:(n_1 - 1)
-                    (w1, v1) = _nd_node_wv_interior(p, g1, i_1)
-                    total += w1 * partials[1, i_1] + v1 * partials[2, i_1]
-                end
-            end
-            return total
-        end
-    end
-    M = 1 << (N - 1)
-    ivars = [Symbol(:i_, d) for d in 1:N]
-    rest = ivars[2:N]
-    ko(j) = Symbol(:ko, 2, :_, j)
-    contrib(w1s, v1s, i1expr) = foldl(
-        (a, b) -> :($a + $b),
-        [
-            :(
-                    $(ko(om)) * muladd(
-                        $v1s, partials[$(2om), $i1expr, $(rest...)],
-                        $w1s * partials[$(2om - 1), $i1expr, $(rest...)]
-                    )
-                ) for om in 1:M
-        ]
+# ── Partial-cell node shares: `_nd_cell_weights0/1(tag, u0, u1, h) -> NTuple{R}` ──
+# Share of ∫_{u0}^{u1} within one cell landing on the left (0) / right (1) node;
+# full cells reduce to the closed full-cell forms.
+
+@inline _nd_cell_weights0(::LinearInterp, u0, u1, h) = (_w0_int(u0, u1, h),)
+@inline _nd_cell_weights1(::LinearInterp, u0, u1, h) = (_w1_int(u0, u1, h),)
+@inline _nd_cell_weights0(s::AbstractSide, u0, u1, h) = (_cw0(u0, u1, h, s),)
+@inline _nd_cell_weights1(s::AbstractSide, u0, u1, h) = (_cw1(u0, u1, h, s),)
+
+# The ΔH antiderivatives carry Float64 coefficients, so the cubic pair converts
+# back to the promoted input precision (`oftype`) — same numerics as the generic
+# engine's per-cell `convert(Tout, …)`, keeping Float32 outputs Float32.
+@inline function _nd_cell_weights0(::CubicInterp, u0, u1, h)
+    t0 = u0 / h
+    t1 = u1 / h
+    return (
+        oftype(h * one(t1), h * (_IH00(t1) - _IH00(t0))),
+        oftype(h * h * one(t1), h * h * (_IH10(t1) - _IH10(t0))),
     )
-    inner = quote
-        (w1a, v1a) = _nd_node_wv(p, g1, 1, n_1)
-        (w1b, v1b) = _nd_node_wv(p, g1, n_1, n_1)
-        s = $(contrib(:w1a, :v1a, 1)) + $(contrib(:w1b, :v1b, :n_1))
-        @simd for i_1 in 2:(n_1 - 1)
-            (w1, v1) = _nd_node_wv_interior(p, g1, i_1)
-            s += $(contrib(:w1, :v1, :i_1))
-        end
-        total += s
-    end
-    body = inner
-    for d in 2:N
-        id = ivars[d]
-        nd = Symbol(:n_, d)
-        assigns = Expr[:(($(Symbol(:w_, d)), $(Symbol(:v_, d))) = _nd_node_wv(p, grids[$d], $id, $nd))]
-        if d == N
-            push!(assigns, :($(Symbol(:ko, d, :_, 1)) = $(Symbol(:w_, d))))
-            push!(assigns, :($(Symbol(:ko, d, :_, 2)) = $(Symbol(:v_, d))))
-        else
-            for j in 1:(1 << (N - d))
-                push!(assigns, :($(Symbol(:ko, d, :_, 2j - 1)) = $(Symbol(:w_, d)) * $(Symbol(:ko, d + 1, :_, j))))
-                push!(assigns, :($(Symbol(:ko, d, :_, 2j)) = $(Symbol(:v_, d)) * $(Symbol(:ko, d + 1, :_, j))))
-            end
-        end
-        body = quote
-            for $id in 1:$nd
-                $(assigns...)
-                $body
-            end
-        end
-    end
-    nassign = Expr(:block, [:($(Symbol(:n_, d)) = size(partials, $d + 1)) for d in 1:N]...)
-    return quote
-        Base.@_inline_meta
-        $nassign
-        g1 = grids[1]
-        total = zero(Tout)
-        @inbounds begin
-            $body
-        end
-        return total
-    end
+end
+@inline function _nd_cell_weights1(::CubicInterp, u0, u1, h)
+    t0 = u0 / h
+    t1 = u1 / h
+    return (
+        oftype(h * one(t1), h * (_IH01(t1) - _IH01(t0))),
+        oftype(h * h * one(t1), h * h * (_IH11(t1) - _IH11(t0))),
+    )
+end
+@inline function _nd_cell_weights0(::QuadraticInterp, u0, u1, h)
+    du = u1 - u0
+    D2 = du * (u1 + u0)
+    D3 = u1 * u1 * u1 - u0 * u0 * u0
+    return (du - D3 / (3 * h * h), D2 / 2 - D3 / (3 * h))
+end
+@inline function _nd_cell_weights1(::QuadraticInterp, u0, u1, h)
+    D3 = u1 * u1 * u1 - u0 * u0 * u0
+    return (D3 / (3 * h * h), zero(h * h))
 end
 
-# CubicInterpolantND / QuadraticInterpolantND with numeric values: the pair
-# path. Duck values fall through to the generic per-cell method below.
-@inline function integrate(
-        itp::CubicInterpolantND{Tg, Tv, N};
-        search = nothing,
-        hint = nothing
-    ) where {Tg, Tv <: Number, N}
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_separable_pair_fulldomain(_CubicWV(), itp.grids, itp.nodal_derivs.partials, Tout)
-end
-
-@inline function integrate(
-        itp::QuadraticInterpolantND{Tg, Tv, N};
-        search = nothing,
-        hint = nothing
-    ) where {Tg, Tv <: Number, N}
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_separable_pair_fulldomain(_QuadWV(), itp.grids, itp.nodal_derivs.partials, Tout)
-end
-
-# ── Bounded ND (linear/constant): separable clipped-composite path ──
-#
-# Separability holds on any axis-aligned box, not just the full domain: the
-# per-axis node weights become "clipped composites" — zero outside the covered
-# cells, the partial-cell integral weights at the two boundary cells, and the
-# full-cell weights in between — so the sum visits the node sub-box once with
-# no per-cell clip geometry. Bounds/sign/extrap semantics come from the shared
-# `_integrate_nd_preamble`, identical to the generic cell-wise engine.
+# ── Bounded per-axis machinery ──
 
 # Per-axis spec: covered cell range [ilo, ihi] plus the clipped local start
 # inside cell `ilo` (u0 ≥ 0) and clipped local end inside cell `ihi` (u1 ≤ h).
@@ -574,69 +432,162 @@ end
     return :(($(exprs...),))
 end
 
-# Partial-cell end-weight pair through the provider (`nothing` = linear basis,
-# a side = the constant selection weights) — full cells reduce to the closed forms.
-@inline _nd_cell_w0(::Nothing, u0, u1, h) = _w0_int(u0, u1, h)
-@inline _nd_cell_w1(::Nothing, u0, u1, h) = _w1_int(u0, u1, h)
-@inline _nd_cell_w0(s::AbstractSide, u0, u1, h) = _cw0(u0, u1, h, s)
-@inline _nd_cell_w1(s::AbstractSide, u0, u1, h) = _cw1(u0, u1, h, s)
-
-# Clipped composite node weight: right-end share of cell k−1 plus left-end share
-# of cell k, each clipped to the covered range. Only the ≤ 4 nodes touching the
-# two boundary cells differ from the full-domain weights.
-@inline function _nd_bounded_node_weight(w, spec::_BoundedAxisSpec, g, k::Int)
-    total = zero(spec.u0)
+# Clipped composite node weights: right-end share of cell k−1 plus left-end
+# share of cell k, each clipped to the covered range. Only the ≤ 4 nodes
+# touching the two boundary cells differ from the full-cell weights. The seed
+# is an empty-span cell share — typed zeros of the tag's weight tuple.
+@inline function _nd_bounded_node_weights(w, spec::_BoundedAxisSpec, g, k::Int)
+    acc = _nd_cell_weights0(w, spec.u0, spec.u0, _get_h(g, spec.ilo))
     c = k - 1
     if spec.ilo <= c <= spec.ihi
         h = _get_h(g, c)
-        total += _nd_cell_w1(w, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
+        acc = map(
+            +, acc,
+            _nd_cell_weights1(w, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
+        )
     end
     c = k
     if spec.ilo <= c <= spec.ihi
         h = _get_h(g, c)
-        total += _nd_cell_w0(w, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
+        acc = map(
+            +, acc,
+            _nd_cell_weights0(w, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
+        )
     end
-    return total
+    return acc
 end
 
-# Nested reduction over the node sub-box. Wide inner spans peel the four
-# boundary-cell nodes so the interior runs the branch-free full-cell weights
-# under @simd; narrow spans (≤ 2 cells) take the scalar clipped loop.
-@generated function _integrate_separable_nd_bounded(
-        wspec::NTuple{N, Any}, specs::NTuple{N, _BoundedAxisSpec},
-        grids::NTuple{N, Any}, data::AbstractArray, ::Type{Tout}
-    ) where {N, Tout}
+# ── The two @generated kernels (full-domain / bounded), rank-aware ──
+#
+# Emission per rank: rank 1 hoists the plain outer weight product `wp` and
+# multiplies once per inner sweep; rank 2 hoists the Kronecker partial products
+# of the (w, v) pairs (axis 2 = fastest mask bit, matching the slot order) and
+# folds each node's contiguous slot pair with one muladd per outer mask. The
+# inner axis peels its boundary nodes so the interior runs branch-free @simd.
+
+function _separable_emit_common(N::Int, R::Int)
     ivars = [Symbol(:i_, d) for d in 1:N]
     rest = ivars[2:N]
-    inner = quote
-        s = zero(Tout)
-        if ihi1 >= ilo1 + 2
-            s += _nd_bounded_node_weight(w1, spec1, g1, ilo1) * data[ilo1, $(rest...)] +
-                _nd_bounded_node_weight(w1, spec1, g1, ilo1 + 1) * data[ilo1 + 1, $(rest...)] +
-                _nd_bounded_node_weight(w1, spec1, g1, ihi1) * data[ihi1, $(rest...)] +
-                _nd_bounded_node_weight(w1, spec1, g1, ihi1 + 1) * data[ihi1 + 1, $(rest...)]
-            @simd for i_1 in (ilo1 + 2):(ihi1 - 1)
-                s += _nd_node_weight_interior(w1, g1, i_1) * data[i_1, $(rest...)]
-            end
-        else
-            for i_1 in ilo1:(ihi1 + 1)
-                s += _nd_bounded_node_weight(w1, spec1, g1, i_1) * data[i_1, $(rest...)]
-            end
-        end
-        total += wp_2 * s
-    end
-    body = inner
+    M = 1 << (N - 1)
+    pidx(slot, i1) = R == 1 ? :(payload[$i1, $(rest...)]) : :(payload[$slot, $i1, $(rest...)])
+    wnames(ws) = R == 1 ? [Symbol(ws, :_1)] : [Symbol(ws, :_1), Symbol(ws, :_2)]
+    wdecl(ws, call) = Expr(:(=), Expr(:tuple, wnames(ws)...), call)
+    contrib(ws, i1) = R == 1 ? :($(Symbol(ws, :_1)) * $(pidx(0, i1))) :
+        foldl(
+            (a, b) -> :($a + $b),
+            [
+                :(
+                    $(N == 1 ? 1 : Symbol(:ko2_, om)) * muladd(
+                        $(Symbol(ws, :_2)), $(pidx(2om, i1)),
+                        $(Symbol(ws, :_1)) * $(pidx(2om - 1, i1))
+                    )
+                ) for om in 1:M
+            ]
+        )
+    close_expr = N == 1 ? :(total += s) : R == 1 ? :(total += wp_2 * s) : :(total += s)
+    return ivars, rest, pidx, wdecl, contrib, close_expr
+end
+
+# Outer-axis loop wrapper: rank 1 chains the scalar product `wp_d`; rank 2
+# builds the Kronecker partial products `ko{d}_{j}` of the (w, v) pairs.
+function _separable_emit_outer(body, N::Int, R::Int, ivars, wcall::Function, ranges::Function)
     for d in 2:N
         id = ivars[d]
-        wexpr = d == N ? :(_nd_bounded_node_weight(wspec[$d], specs[$d], grids[$d], $id)) :
-            :(_nd_bounded_node_weight(wspec[$d], specs[$d], grids[$d], $id) * $(Symbol(:wp_, d + 1)))
+        assigns = Expr[]
+        if R == 1
+            wexpr = d == N ? :($(wcall(d))[1]) : :($(wcall(d))[1] * $(Symbol(:wp_, d + 1)))
+            push!(assigns, :($(Symbol(:wp_, d)) = $wexpr))
+        else
+            push!(assigns, Expr(:(=), Expr(:tuple, Symbol(:w_, d), Symbol(:v_, d)), wcall(d)))
+            if d == N
+                push!(assigns, :($(Symbol(:ko, d, :_, 1)) = $(Symbol(:w_, d))))
+                push!(assigns, :($(Symbol(:ko, d, :_, 2)) = $(Symbol(:v_, d))))
+            else
+                for j in 1:(1 << (N - d))
+                    push!(assigns, :($(Symbol(:ko, d, :_, 2j - 1)) = $(Symbol(:w_, d)) * $(Symbol(:ko, d + 1, :_, j))))
+                    push!(assigns, :($(Symbol(:ko, d, :_, 2j)) = $(Symbol(:v_, d)) * $(Symbol(:ko, d + 1, :_, j))))
+                end
+            end
+        end
         body = quote
-            for $id in specs[$d].ilo:(specs[$d].ihi + 1)
-                $(Symbol(:wp_, d)) = $wexpr
+            for $id in $(ranges(d))
+                $(assigns...)
                 $body
             end
         end
     end
+    return body
+end
+
+@generated function _integrate_separable_nd_fulldomain(
+        wspec::NTuple{N, Any}, grids::NTuple{N, Any},
+        payload::AbstractArray{Tv, NP}, ::Type{Tout}
+    ) where {N, Tv, NP, Tout}
+    R = NP - N + 1
+    R in (1, 2) || error("payload must have N or N+1 dimensions")
+    ivars, _, _, wdecl, contrib, close_expr = _separable_emit_common(N, R)
+    inner = quote
+        $(wdecl(:w1a, :(_nd_node_weights(w1, g1, 1, n_1))))
+        $(wdecl(:w1b, :(_nd_node_weights(w1, g1, n_1, n_1))))
+        s = $(contrib(:w1a, 1)) + $(contrib(:w1b, :n_1))
+        @simd for i_1 in 2:(n_1 - 1)
+            $(wdecl(:w1i, :(_nd_node_weights_interior(w1, g1, i_1))))
+            s += $(contrib(:w1i, :i_1))
+        end
+        $close_expr
+    end
+    body = _separable_emit_outer(
+        inner, N, R, ivars,
+        d -> :(_nd_node_weights(wspec[$d], grids[$d], $(ivars[d]), $(Symbol(:n_, d)))),
+        d -> :(1:$(Symbol(:n_, d)))
+    )
+    nassign = Expr(:block, [:($(Symbol(:n_, d)) = size(payload, $(d + R - 1))) for d in 1:N]...)
+    return quote
+        Base.@_inline_meta
+        $nassign
+        g1 = grids[1]
+        w1 = wspec[1]
+        total = zero(Tout)
+        @inbounds begin
+            $body
+        end
+        return total
+    end
+end
+
+@generated function _integrate_separable_nd_bounded(
+        wspec::NTuple{N, Any}, specs::NTuple{N, _BoundedAxisSpec},
+        grids::NTuple{N, Any}, payload::AbstractArray{Tv, NP}, ::Type{Tout}
+    ) where {N, Tv, NP, Tout}
+    R = NP - N + 1
+    R in (1, 2) || error("payload must have N or N+1 dimensions")
+    ivars, _, _, wdecl, contrib, close_expr = _separable_emit_common(N, R)
+    inner = quote
+        s = zero(Tout)
+        if ihi1 >= ilo1 + 2
+            $(wdecl(:w1a, :(_nd_bounded_node_weights(w1, spec1, g1, ilo1))))
+            $(wdecl(:w1b, :(_nd_bounded_node_weights(w1, spec1, g1, ilo1 + 1))))
+            $(wdecl(:w1c, :(_nd_bounded_node_weights(w1, spec1, g1, ihi1))))
+            $(wdecl(:w1d, :(_nd_bounded_node_weights(w1, spec1, g1, ihi1 + 1))))
+            s += $(contrib(:w1a, :ilo1)) + $(contrib(:w1b, :(ilo1 + 1))) +
+                $(contrib(:w1c, :ihi1)) + $(contrib(:w1d, :(ihi1 + 1)))
+            @simd for i_1 in (ilo1 + 2):(ihi1 - 1)
+                $(wdecl(:w1i, :(_nd_node_weights_interior(w1, g1, i_1))))
+                s += $(contrib(:w1i, :i_1))
+            end
+        else
+            for i_1 in ilo1:(ihi1 + 1)
+                $(wdecl(:w1x, :(_nd_bounded_node_weights(w1, spec1, g1, i_1))))
+                s += $(contrib(:w1x, :i_1))
+            end
+        end
+        $close_expr
+    end
+    body = _separable_emit_outer(
+        inner, N, R, ivars,
+        d -> :(_nd_bounded_node_weights(wspec[$d], specs[$d], grids[$d], $(ivars[d]))),
+        d -> :((specs[$d].ilo):(specs[$d].ihi + 1))
+    )
     return quote
         Base.@_inline_meta
         g1 = grids[1]
@@ -652,219 +603,61 @@ end
     end
 end
 
-# LinearInterpolantND bounded, numeric values: separable clipped path. Duck
-# values keep the generic per-cell method in integrate_api.jl.
+# ── Dispatches: numeric values take the separable engine; duck values fall
+# through to the generic per-cell methods. The weight spec per family is the
+# existing vocabulary: a method-tag tuple, or the constant `sides` as-is. ──
+
+@inline _separable_wspec(itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (ntuple(_ -> LinearInterp(), Val(N)), itp.data)
+@inline _separable_wspec(itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (itp.sides, itp.data)
+@inline _separable_wspec(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (ntuple(_ -> CubicInterp(), Val(N)), itp.nodal_derivs.partials)
+@inline _separable_wspec(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
+    (ntuple(_ -> QuadraticInterp(), Val(N)), itp.nodal_derivs.partials)
+
+const _SeparableND{Tg, Tv, N} = Union{
+    LinearInterpolantND{Tg, Tv, N}, ConstantInterpolantND{Tg, Tv, N},
+    CubicInterpolantND{Tg, Tv, N}, QuadraticInterpolantND{Tg, Tv, N},
+}
+
 @inline function integrate(
-        itp::LinearInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        itp::_SeparableND{Tg, Tv, N};
+        search = nothing,
+        hint = nothing
     ) where {Tg, Tv <: Number, N}
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
+    wspec, payload = _separable_wspec(itp)
+    return _integrate_separable_nd_fulldomain(wspec, itp.grids, payload, Tout)
+end
+
+# Bounded impl shared by the four thin dispatches below. The dispatches stay
+# per-type (not the `_SeparableND` union): the legacy per-cell bounded methods
+# in integrate_api.jl are per-type with unconstrained `Tv`, and a union-typed
+# `Tv <: Number` method would cross specificities with them (ambiguity); a
+# per-type `Tv <: Number` method is strictly more specific instead.
+@inline function _separable_bounded(itp, lo, hi, search, hint, ::Type{Tg}, ::Type{Tv}) where {Tg, Tv}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
     sign == 0 && return zero(Tout)
     specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
-    total = _integrate_separable_nd_bounded(
-        ntuple(_ -> nothing, Val(N)), specs, itp.grids, itp.data, Tout
-    )
+    wspec, payload = _separable_wspec(itp)
+    total = _integrate_separable_nd_bounded(wspec, specs, itp.grids, payload, Tout)
     return sign * total
 end
 
-# ConstantInterpolantND bounded, numeric values: same path with side weights.
-@inline function integrate(
-        itp::ConstantInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv <: Number, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
-    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
-    total = _integrate_separable_nd_bounded(itp.sides, specs, itp.grids, itp.data, Tout)
-    return sign * total
-end
-
-# ── Bounded ND (cubic/quadratic): separable clipped (value, deriv) pairs ──
-#
-# The clipped-composite structure extends to the pair payload: each boundary
-# cell contributes its partial-cell (value, deriv) end-weight pair — cubic via
-# the ΔH antiderivative deltas, quadratic via its closed form — and full cells
-# collapse to the full-domain pair weights.
-
-# Partial-cell end-weight pairs: node share of ∫_{u0}^{u1} within one cell.
-# The ΔH antiderivatives carry Float64 coefficients, so the cubic pair converts
-# back to the promoted input precision (`oftype`) — same numerics as the generic
-# engine's per-cell `convert(Tout, …)`, keeping Float32 outputs Float32.
-@inline function _nd_cell_wv0(::_CubicWV, u0, u1, h)
-    t0 = u0 / h
-    t1 = u1 / h
-    return (
-        oftype(h * one(t1), h * (_IH00(t1) - _IH00(t0))),
-        oftype(h * h * one(t1), h * h * (_IH10(t1) - _IH10(t0))),
-    )
-end
-@inline function _nd_cell_wv1(::_CubicWV, u0, u1, h)
-    t0 = u0 / h
-    t1 = u1 / h
-    return (
-        oftype(h * one(t1), h * (_IH01(t1) - _IH01(t0))),
-        oftype(h * h * one(t1), h * h * (_IH11(t1) - _IH11(t0))),
-    )
-end
-@inline function _nd_cell_wv0(::_QuadWV, u0, u1, h)
-    du = u1 - u0
-    D2 = du * (u1 + u0)
-    D3 = u1 * u1 * u1 - u0 * u0 * u0
-    return (du - D3 / (3 * h * h), D2 / 2 - D3 / (3 * h))
-end
-@inline function _nd_cell_wv1(::_QuadWV, u0, u1, h)
-    D3 = u1 * u1 * u1 - u0 * u0 * u0
-    return (D3 / (3 * h * h), zero(h * h))
-end
-
-# Clipped composite (w, v) node weight — the pair analog of
-# `_nd_bounded_node_weight`.
-@inline function _nd_bounded_node_wv(p, spec::_BoundedAxisSpec, g, k::Int)
-    w = zero(spec.u0)
-    v = zero(spec.u0 * spec.u0)
-    c = k - 1
-    if spec.ilo <= c <= spec.ihi
-        h = _get_h(g, c)
-        (wc, vc) = _nd_cell_wv1(p, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
-        w += wc
-        v += vc
+for T in (:LinearInterpolantND, :ConstantInterpolantND, :CubicInterpolantND, :QuadraticInterpolantND)
+    @eval @inline function integrate(
+            itp::$T{Tg, Tv, N},
+            lo::Tuple{Vararg{Real, N}},
+            hi::Tuple{Vararg{Real, N}};
+            search = itp.searches,
+            hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        ) where {Tg, Tv <: Number, N}
+        return _separable_bounded(itp, lo, hi, search, hint, Tg, Tv)
     end
-    c = k
-    if spec.ilo <= c <= spec.ihi
-        h = _get_h(g, c)
-        (wc, vc) = _nd_cell_wv0(p, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
-        w += wc
-        v += vc
-    end
-    return (w, v)
-end
-
-# Nested pair reduction over the node sub-box — the bounded analog of
-# `_integrate_separable_pair_fulldomain`, with the same boundary-node peel.
-@generated function _integrate_separable_pair_bounded(
-        p, specs::NTuple{N, _BoundedAxisSpec}, grids::NTuple{N, Any},
-        partials::Array{Tv, NP1}, ::Type{Tout}
-    ) where {N, Tv, NP1, Tout}
-    NP1 == N + 1 || error("NP1 must equal N+1")
-    M = 1 << (N - 1)
-    ivars = [Symbol(:i_, d) for d in 1:N]
-    rest = ivars[2:N]
-    ko(j) = Symbol(:ko, 2, :_, j)
-    contrib(w1s, v1s, i1expr) = foldl(
-        (a, b) -> :($a + $b),
-        [
-            :(
-                    $(M == 1 ? 1 : ko(om)) * muladd(
-                        $v1s, partials[$(2om), $i1expr, $(rest...)],
-                        $w1s * partials[$(2om - 1), $i1expr, $(rest...)]
-                    )
-                ) for om in 1:M
-        ]
-    )
-    inner = quote
-        s = zero(Tout)
-        if ihi1 >= ilo1 + 2
-            (w1a, v1a) = _nd_bounded_node_wv(p, spec1, g1, ilo1)
-            (w1b, v1b) = _nd_bounded_node_wv(p, spec1, g1, ilo1 + 1)
-            (w1c, v1c) = _nd_bounded_node_wv(p, spec1, g1, ihi1)
-            (w1d, v1d) = _nd_bounded_node_wv(p, spec1, g1, ihi1 + 1)
-            s += $(contrib(:w1a, :v1a, :ilo1)) + $(contrib(:w1b, :v1b, :(ilo1 + 1))) +
-                $(contrib(:w1c, :v1c, :ihi1)) + $(contrib(:w1d, :v1d, :(ihi1 + 1)))
-            @simd for i_1 in (ilo1 + 2):(ihi1 - 1)
-                (w1, v1) = _nd_node_wv_interior(p, g1, i_1)
-                s += $(contrib(:w1, :v1, :i_1))
-            end
-        else
-            for i_1 in ilo1:(ihi1 + 1)
-                (w1, v1) = _nd_bounded_node_wv(p, spec1, g1, i_1)
-                s += $(contrib(:w1, :v1, :i_1))
-            end
-        end
-        total += s
-    end
-    body = inner
-    for d in 2:N
-        id = ivars[d]
-        assigns = Expr[:(($(Symbol(:w_, d)), $(Symbol(:v_, d))) = _nd_bounded_node_wv(p, specs[$d], grids[$d], $id))]
-        if d == N
-            push!(assigns, :($(Symbol(:ko, d, :_, 1)) = $(Symbol(:w_, d))))
-            push!(assigns, :($(Symbol(:ko, d, :_, 2)) = $(Symbol(:v_, d))))
-        else
-            for j in 1:(1 << (N - d))
-                push!(assigns, :($(Symbol(:ko, d, :_, 2j - 1)) = $(Symbol(:w_, d)) * $(Symbol(:ko, d + 1, :_, j))))
-                push!(assigns, :($(Symbol(:ko, d, :_, 2j)) = $(Symbol(:v_, d)) * $(Symbol(:ko, d + 1, :_, j))))
-            end
-        end
-        body = quote
-            for $id in specs[$d].ilo:(specs[$d].ihi + 1)
-                $(assigns...)
-                $body
-            end
-        end
-    end
-    return quote
-        Base.@_inline_meta
-        g1 = grids[1]
-        spec1 = specs[1]
-        ilo1 = spec1.ilo
-        ihi1 = spec1.ihi
-        total = zero(Tout)
-        @inbounds begin
-            $body
-        end
-        return total
-    end
-end
-
-# CubicInterpolantND / QuadraticInterpolantND bounded, numeric values.
-@inline function integrate(
-        itp::CubicInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv <: Number, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
-    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
-    total = _integrate_separable_pair_bounded(
-        _CubicWV(), specs, itp.grids, itp.nodal_derivs.partials, Tout
-    )
-    return sign * total
-end
-
-@inline function integrate(
-        itp::QuadraticInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
-        search = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv <: Number, N}
-    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.extraps, lo, hi, search, hint
-    )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
-    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
-    total = _integrate_separable_pair_bounded(
-        _QuadWV(), specs, itp.grids, itp.nodal_derivs.partials, Tout
-    )
-    return sign * total
 end
 
 # Generic ND full-domain: catches all ND types

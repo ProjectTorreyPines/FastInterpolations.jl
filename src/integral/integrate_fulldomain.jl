@@ -383,6 +383,158 @@ end
     return _integrate_separable_nd_fulldomain(itp.sides, itp.grids, itp.data, Tout)
 end
 
+# ── Bounded ND (linear/constant): separable clipped-composite path ──
+#
+# Separability holds on any axis-aligned box, not just the full domain: the
+# per-axis node weights become "clipped composites" — zero outside the covered
+# cells, the partial-cell integral weights at the two boundary cells, and the
+# full-cell weights in between — so the sum visits the node sub-box once with
+# no per-cell clip geometry. Bounds/sign/extrap semantics come from the shared
+# `_integrate_nd_preamble`, identical to the generic cell-wise engine.
+
+# Per-axis spec: covered cell range [ilo, ihi] plus the clipped local start
+# inside cell `ilo` (u0 ≥ 0) and clipped local end inside cell `ihi` (u1 ≤ h).
+struct _BoundedAxisSpec{T}
+    ilo::Int
+    ihi::Int
+    u0::T
+    u1::T
+end
+
+@generated function _nd_bounded_axis_specs(
+        grids::NTuple{N, Any}, lo2, hi2, idx_lo, idx_hi
+    ) where {N}
+    exprs = [
+        quote
+                let g = grids[$d], il = idx_lo[$d], ih = idx_hi[$d]
+                    xLl = @inbounds g[il]
+                    xLh = @inbounds g[ih]
+                    xRh = @inbounds g[ih + 1]
+                    u0, u1 = promote(max(lo2[$d], xLl) - xLl, min(hi2[$d], xRh) - xLh)
+                    _BoundedAxisSpec(il, ih, u0, u1)
+            end
+            end for d in 1:N
+    ]
+    return :(($(exprs...),))
+end
+
+# Partial-cell end-weight pair through the provider (`nothing` = linear basis,
+# a side = the constant selection weights) — full cells reduce to the closed forms.
+@inline _nd_cell_w0(::Nothing, u0, u1, h) = _w0_int(u0, u1, h)
+@inline _nd_cell_w1(::Nothing, u0, u1, h) = _w1_int(u0, u1, h)
+@inline _nd_cell_w0(s::AbstractSide, u0, u1, h) = _cw0(u0, u1, h, s)
+@inline _nd_cell_w1(s::AbstractSide, u0, u1, h) = _cw1(u0, u1, h, s)
+
+# Clipped composite node weight: right-end share of cell k−1 plus left-end share
+# of cell k, each clipped to the covered range. Only the ≤ 4 nodes touching the
+# two boundary cells differ from the full-domain weights.
+@inline function _nd_bounded_node_weight(w, spec::_BoundedAxisSpec, g, k::Int)
+    total = zero(spec.u0)
+    c = k - 1
+    if spec.ilo <= c <= spec.ihi
+        h = _get_h(g, c)
+        total += _nd_cell_w1(w, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
+    end
+    c = k
+    if spec.ilo <= c <= spec.ihi
+        h = _get_h(g, c)
+        total += _nd_cell_w0(w, c == spec.ilo ? spec.u0 : zero(h), c == spec.ihi ? spec.u1 : h, h)
+    end
+    return total
+end
+
+# Nested reduction over the node sub-box. Wide inner spans peel the four
+# boundary-cell nodes so the interior runs the branch-free full-cell weights
+# under @simd; narrow spans (≤ 2 cells) take the scalar clipped loop.
+@generated function _integrate_separable_nd_bounded(
+        wspec::NTuple{N, Any}, specs::NTuple{N, _BoundedAxisSpec},
+        grids::NTuple{N, Any}, data::AbstractArray, ::Type{Tout}
+    ) where {N, Tout}
+    ivars = [Symbol(:i_, d) for d in 1:N]
+    rest = ivars[2:N]
+    inner = quote
+        s = zero(Tout)
+        if ihi1 >= ilo1 + 2
+            s += _nd_bounded_node_weight(w1, spec1, g1, ilo1) * data[ilo1, $(rest...)] +
+                _nd_bounded_node_weight(w1, spec1, g1, ilo1 + 1) * data[ilo1 + 1, $(rest...)] +
+                _nd_bounded_node_weight(w1, spec1, g1, ihi1) * data[ihi1, $(rest...)] +
+                _nd_bounded_node_weight(w1, spec1, g1, ihi1 + 1) * data[ihi1 + 1, $(rest...)]
+            @simd for i_1 in (ilo1 + 2):(ihi1 - 1)
+                s += _nd_node_weight_interior(w1, g1, i_1) * data[i_1, $(rest...)]
+            end
+        else
+            for i_1 in ilo1:(ihi1 + 1)
+                s += _nd_bounded_node_weight(w1, spec1, g1, i_1) * data[i_1, $(rest...)]
+            end
+        end
+        total += wp_2 * s
+    end
+    body = inner
+    for d in 2:N
+        id = ivars[d]
+        wexpr = d == N ? :(_nd_bounded_node_weight(wspec[$d], specs[$d], grids[$d], $id)) :
+            :(_nd_bounded_node_weight(wspec[$d], specs[$d], grids[$d], $id) * $(Symbol(:wp_, d + 1)))
+        body = quote
+            for $id in specs[$d].ilo:(specs[$d].ihi + 1)
+                $(Symbol(:wp_, d)) = $wexpr
+                $body
+            end
+        end
+    end
+    return quote
+        Base.@_inline_meta
+        g1 = grids[1]
+        w1 = wspec[1]
+        spec1 = specs[1]
+        ilo1 = spec1.ilo
+        ihi1 = spec1.ihi
+        total = zero(Tout)
+        @inbounds begin
+            $body
+        end
+        return total
+    end
+end
+
+# LinearInterpolantND bounded, numeric values: separable clipped path. Duck
+# values keep the generic per-cell method in integrate_api.jl.
+@inline function integrate(
+        itp::LinearInterpolantND{Tg, Tv, N},
+        lo::Tuple{Vararg{Real, N}},
+        hi::Tuple{Vararg{Real, N}};
+        search = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv <: Number, N}
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.extraps, lo, hi, search, hint
+    )
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    sign == 0 && return zero(Tout)
+    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
+    total = _integrate_separable_nd_bounded(
+        ntuple(_ -> nothing, Val(N)), specs, itp.grids, itp.data, Tout
+    )
+    return sign * total
+end
+
+# ConstantInterpolantND bounded, numeric values: same path with side weights.
+@inline function integrate(
+        itp::ConstantInterpolantND{Tg, Tv, N},
+        lo::Tuple{Vararg{Real, N}},
+        hi::Tuple{Vararg{Real, N}};
+        search = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv <: Number, N}
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.extraps, lo, hi, search, hint
+    )
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    sign == 0 && return zero(Tout)
+    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
+    total = _integrate_separable_nd_bounded(itp.sides, specs, itp.grids, itp.data, Tout)
+    return sign * total
+end
+
 # Generic ND full-domain: catches all ND types
 @inline function integrate(
         itp::AbstractInterpolantND{Tg, Tv, N};

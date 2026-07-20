@@ -96,7 +96,7 @@ struct LinearAdjointND{
             Tg, N, B <: NTuple{N, AbstractBC},
             EP <: Tuple{Vararg{AbstractExtrap, N}},
         }
-        grids_c = map((g, bc, T) -> _convert_copy(_cache_axis(g, bc, T), T), grids, bcs, ntuple(_ -> Tg, Val(N)))
+        grids_c = _convert_cache_axes(grids, bcs, Tg)
         return new{Tg, N, typeof(grids_c), B, EP}(grids_c, bcs, extraps, anchors, grid_size)
     end
 end

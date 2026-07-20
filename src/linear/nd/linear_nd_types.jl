@@ -92,7 +92,7 @@ struct LinearInterpolantND{
             bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
             store::StorePolicy = StorePolicy()
         ) where {Tg, Tv, N}
-        grids_c = map((g, bc, T) -> _store_axis(g, bc, T, store), grids, bcs, ntuple(_ -> Tg, Val(N)))
+        grids_c = _store_axes(grids, bcs, Tg, store)
         data_c = _own_or_ref_data(data, store)
         return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches), typeof(data_c)}(
             grids_c, data_c, extraps, searches

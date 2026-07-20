@@ -163,3 +163,45 @@ end
         @test xv == xb && yv == yb && data == db
     end
 end
+
+# One-shot cumulative: sibling of one-shot `integrate`, same raw-storage build.
+# 1-D only; every 1-D method works via the generic `cumulative_integrate(itp)`.
+@testitem "one-shot cumulative_integrate(x, y; method)" begin
+    x_vec = collect(range(0.0, 2.0, length = 21))
+    x_rng = range(0.0, 2.0, length = 21)
+    y = @. x_vec^2 + 1.0
+
+    @testset "matches the persistent build (all methods, Range + Vector)" begin
+        for x in (x_vec, x_rng), m in (
+                    LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp(),
+                    PchipInterp(), AkimaInterp(), CardinalInterp(),
+                )
+            @test cumulative_integrate(x, y; method = m) ≈
+                cumulative_integrate(interp(x, y; method = m)) rtol = 1.0e-12
+        end
+    end
+
+    @testset "last node equals the full integral; first is zero" begin
+        for m in (LinearInterp(), CubicInterp(), QuadraticInterp(), PchipInterp())
+            c = cumulative_integrate(x_vec, y; method = m)
+            @test length(c) == length(x_vec)
+            @test c[1] == 0
+            @test c[end] ≈ integrate(x_vec, y; method = m) rtol = 1.0e-12
+        end
+    end
+
+    @testset "method options forwarded" begin
+        @test cumulative_integrate(x_vec, y; method = ConstantInterp(side = LeftSide())) ≈
+            cumulative_integrate(constant_interp(x_vec, y; side = LeftSide())) rtol = 1.0e-12
+    end
+
+    @testset "contract: method is required" begin
+        @test_throws UndefKeywordError cumulative_integrate(x_vec, y)
+    end
+
+    @testset "inputs are not mutated" begin
+        xb = copy(x_vec);  yb = copy(y)
+        cumulative_integrate(x_vec, y; method = LinearInterp())
+        @test x_vec == xb && y == yb
+    end
+end

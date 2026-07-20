@@ -290,6 +290,75 @@ end
     )
 end
 
+# ── Linear ND full-domain: separable composite-trapezoid path ──
+#
+# A full-cell multilinear integral has both per-axis basis weights collapse to
+# h/2, so the whole domain integral is the tensor product of 1D composite-
+# trapezoid rules:  I = Σ_nodes (Π_d w_d(i_d))·data[i].  Iterating nodes (not
+# cells) reads each value once instead of the 2^N corner reads the generic
+# per-cell kernel repeats — an N-D generalization of the 1D telescoped path.
+
+# 1D composite-trapezoid node weight on `grid` (length `n`): ½h at the endpoints,
+# ½(h₋+h₊) in the interior. Only the grid is divided — values stay multiply-only.
+@inline _nd_trap_weight_interior(grid, k::Int) = (_get_h(grid, k - 1) + _get_h(grid, k)) / 2
+@inline function _nd_trap_weight(grid, k::Int, n::Int)
+    k == 1 && return _get_h(grid, 1) / 2
+    k == n && return _get_h(grid, n - 1) / 2
+    return _nd_trap_weight_interior(grid, k)
+end
+
+# Nested reduction: outer axes hoist their weight product `wp`, the contiguous
+# inner axis peels its endpoints so the interior is a branch-free @simd loop.
+@generated function _integrate_linear_nd_fulldomain(
+        grids::NTuple{N, Any}, data::AbstractArray, ::Type{Tout}
+    ) where {N, Tout}
+    ivars = [Symbol(:i_, d) for d in 1:N]
+    rest = ivars[2:N]
+    inner = quote
+        s = _nd_trap_weight(g1, 1, n_1) * data[1, $(rest...)] +
+            _nd_trap_weight(g1, n_1, n_1) * data[n_1, $(rest...)]
+        @simd for i_1 in 2:(n_1 - 1)
+            s += _nd_trap_weight_interior(g1, i_1) * data[i_1, $(rest...)]
+        end
+        total += wp_2 * s
+    end
+    body = inner
+    for d in 2:N
+        id = ivars[d]
+        nd = Symbol(:n_, d)
+        wexpr = d == N ? :(_nd_trap_weight(grids[$d], $id, $nd)) :
+            :(_nd_trap_weight(grids[$d], $id, $nd) * $(Symbol(:wp_, d + 1)))
+        body = quote
+            for $id in 1:$nd
+                $(Symbol(:wp_, d)) = $wexpr
+                $body
+            end
+        end
+    end
+    nassign = Expr(:block, [:($(Symbol(:n_, d)) = size(data, $d)) for d in 1:N]...)
+    return quote
+        Base.@_inline_meta
+        $nassign
+        g1 = grids[1]
+        total = zero(Tout)
+        @inbounds begin
+            $body
+        end
+        return total
+    end
+end
+
+# LinearInterpolantND with numeric values: the separable path. Non-numeric (duck)
+# value types fall through to the generic per-cell method below.
+@inline function integrate(
+        itp::LinearInterpolantND{Tg, Tv, N};
+        search = nothing,
+        hint = nothing
+    ) where {Tg, Tv <: Number, N}
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
+    return _integrate_linear_nd_fulldomain(itp.grids, itp.data, Tout)
+end
+
 # Generic ND full-domain: catches all ND types
 @inline function integrate(
         itp::AbstractInterpolantND{Tg, Tv, N};

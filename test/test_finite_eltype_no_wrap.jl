@@ -556,3 +556,29 @@ end
     lo = Float64(minimum(yN)); hi = Float64(maximum(yN))
     @test all(lo - 1.0e-9 .<= rN .<= hi + 1.0e-9)   # bounded — no overshoot/wrap
 end
+
+# Full-domain integrate on an UN-promoted fixed-point carrier: N0f8 is outside
+# `_PromotableValue`, so it stays narrow in `itp.y` and any endpoint sum computed
+# outside the `_fieldsum`-protected kernels wraps mod 1. Pins BOTH grid arms of
+# `_integrate_1d_fulldomain` (Range = telescoped closed form, Vector = cellwise engine).
+@testitem "no-wrap: full-domain integrate (N0f8 carrier)" begin
+    using FastInterpolations
+    using FixedPointNumbers, ColorTypes, ColorVectorSpace
+    const FI = FastInterpolations
+
+    yN = N0f8.([0.8, 0.4, 0.4, 0.4, 0.8])           # y[1] + y[n] = 1.6 wraps in N0f8
+    yF = Float64.(yN)
+    for x in (0.0:0.25:1.0, collect(0.0:0.25:1.0))  # Range (fast path) + Vector (generic)
+        itpN = FI.linear_interp(x, yN)
+        itpF = FI.linear_interp(x, yF)
+        @test isapprox(Float64(integrate(itpN)), integrate(itpF); atol = 1.0e-9)
+    end
+
+    gN = Gray{N0f8}.([0.8, 0.5, 0.8])
+    gF = Float64.(gray.(gN))
+    for x in (0.0:1.0:2.0, [0.0, 1.0, 2.0])
+        itpG = FI.linear_interp(x, gN)
+        itpF = FI.linear_interp(x, gF)
+        @test isapprox(Float64(gray(integrate(itpG))), integrate(itpF); atol = 1.0e-9)
+    end
+end

@@ -81,7 +81,7 @@ struct LinearInterpolant{
         _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
@@ -98,6 +98,6 @@ end
         store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    x_eff = _cache_axis(x, bc, Tg)
+    x_eff = _policy_axis(x, bc, Tg, store)
     return LinearInterpolant(x_eff, y, _resolve_extrap(extrap, x_eff), search; bc = bc, store = store)
 end

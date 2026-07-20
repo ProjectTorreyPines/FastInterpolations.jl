@@ -52,7 +52,7 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dy = Vector{Tdy}(undef, length(yc))
@@ -73,7 +73,7 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dyc = _convert_copy(dy, Tdy)
@@ -92,7 +92,7 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
             xc, yc, slope_strategy, extrap, search
@@ -112,6 +112,6 @@ end
         store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    x_eff = _cache_axis(x, bc, Tg)
+    x_eff = _policy_axis(x, bc, Tg, store)
     return AkimaInterpolant1D(x_eff, y, slope_strategy, extrap, search; bc = bc, store = store)
 end

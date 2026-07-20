@@ -82,7 +82,7 @@ struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC, Tc}(xc, yc, a, d, ev, search, bc)
     end

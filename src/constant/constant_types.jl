@@ -70,7 +70,7 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
         ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         _check_compatible_length(x, y)
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
     end
@@ -87,6 +87,6 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
     ) where {Tg}
-    x_eff = _cache_axis(x, bc, Tg)
+    x_eff = _policy_axis(x, bc, Tg, store)
     return ConstantInterpolant(x_eff, y, extrap, side, search; bc = bc, store = store)
 end

@@ -9,11 +9,11 @@
         _own_or_ref_axis, _own_or_ref_values, _own_or_ref_data, _cache_axis
 
     @testset "tag and factory" begin
-        @test StorePolicy() === StorePolicy{true, true}()
-        @test StorePolicy(copy = false) === StorePolicy{false, false}()
-        @test StorePolicy(copy_values = false) === StorePolicy{true, false}()
-        @test StorePolicy(copy_grid = false) === StorePolicy{false, true}()
-        @test StorePolicy(copy = false, copy_grid = true) === StorePolicy{true, false}()
+        @test StorePolicy() === StorePolicy{true, true, true}()
+        @test StorePolicy(copy = false) === StorePolicy{false, false, true}()
+        @test StorePolicy(copy_values = false) === StorePolicy{true, false, true}()
+        @test StorePolicy(copy_grid = false) === StorePolicy{false, true, true}()
+        @test StorePolicy(copy = false, copy_grid = true) === StorePolicy{true, false, true}()
 
         @test copies_grid(StorePolicy()) === true
         @test copies_grid(StorePolicy(copy = false)) === false
@@ -358,5 +358,128 @@ end
         @test CardinalInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch(), 0.0; store = ref).y === y
         @test all(cardinal_interp(x, y; coeffs = OnTheFly())(q) ≈ fac(q) for q in qs)
         @test cardinal_interp(x, y; coeffs = OnTheFly(), store = ref).y === y
+    end
+end
+
+# cache_axis=false: store the axis RAW — no `_CachedVector` h/inv_h precompute
+# (n-1 divisions + 2 allocations). Effective for Vector axes only: a Range's
+# `_CachedRange` is a stack-only scalar struct with nothing to skip. Eval on a
+# raw axis falls back to on-the-fly h/inv(h); intended for one-shot /
+# integrate-heavy use where construction cost dominates.
+@testitem "Store Policy - cache_axis (raw axis storage)" begin
+    using FastInterpolations: StorePolicy, caches_axis, copies_grid, copies_values,
+        _grid_1d, _CachedRange, _CachedVector
+
+    @testset "tag, factory, accessor" begin
+        @test StorePolicy() === StorePolicy{true, true, true}()
+        @test StorePolicy(cache_axis = false) === StorePolicy{true, true, false}()
+        @test StorePolicy(copy = false) === StorePolicy{false, false, true}()
+        @test StorePolicy(copy = false, cache_axis = false) === StorePolicy{false, false, false}()
+        @test caches_axis(StorePolicy()) === true
+        @test caches_axis(StorePolicy(cache_axis = false)) === false
+    end
+
+    x = [0.0, 0.5, 1.5, 3.0, 4.0]                    # non-uniform → per-cell h matters
+    y = [1.0, 2.0, 4.0, 8.0, 16.0]
+
+    @testset "vector axis: raw storage" begin
+        itp_alias = linear_interp(x, y; store = StorePolicy(copy = false, cache_axis = false))
+        @test _grid_1d(itp_alias) === x               # pure pass-through
+        itp_owned = linear_interp(x, y; store = StorePolicy(cache_axis = false))
+        g = _grid_1d(itp_owned)
+        @test g isa Vector{Float64} && !(g isa _CachedVector)
+        @test g == x && g !== x                       # owned copy, still raw
+    end
+
+    @testset "range axis: keeps free _CachedRange" begin
+        xr = range(0.0, 4.0, length = 5)
+        itp = linear_interp(xr, y; store = StorePolicy(cache_axis = false))
+        @test _grid_1d(itp) isa _CachedRange          # stack-only — nothing to skip
+    end
+
+    @testset "eltype mismatch still converts (never aliases)" begin
+        xi = [0, 1, 2, 4, 8]
+        itp = linear_interp(xi, y; store = StorePolicy(copy = false, cache_axis = false))
+        g = _grid_1d(itp)
+        @test g isa Vector{Float64} && g == xi
+    end
+
+    @testset "eval / deriv / integrate parity vs cached build" begin
+        for ctor in (linear_interp, quadratic_interp)
+            itp_raw = ctor(x, y; store = StorePolicy(copy = false, cache_axis = false))
+            itp_ref = ctor(x, y)
+            for q in (0.25, 1.0, 2.2, 3.7)
+                @test itp_raw(q) ≈ itp_ref(q) atol = 1.0e-12
+                @test itp_raw(q; deriv = DerivOp(1)) ≈ itp_ref(q; deriv = DerivOp(1)) atol = 1.0e-12
+            end
+            @test integrate(itp_raw) ≈ integrate(itp_ref) atol = 1.0e-12
+            @test integrate(itp_raw, 0.3, 3.3) ≈ integrate(itp_ref, 0.3, 3.3) atol = 1.0e-12
+        end
+        itp_a = akima_interp(x, y; store = StorePolicy(copy = false, cache_axis = false))
+        itp_ar = akima_interp(x, y)
+        for q in (0.25, 1.0, 2.2, 3.7)
+            @test itp_a(q) ≈ itp_ar(q) atol = 1.0e-12
+        end
+        itp_c = constant_interp(x, y; store = StorePolicy(copy = false, cache_axis = false))
+        itp_cr = constant_interp(x, y)
+        @test itp_c(2.2) ≈ itp_cr(2.2)
+        @test integrate(itp_c) ≈ integrate(itp_cr) atol = 1.0e-12
+    end
+
+    @testset "ND: raw vector axes (linear/constant)" begin
+        xg = [0.0, 0.5, 1.5, 3.0, 4.0]
+        yg = [0.0, 1.0, 2.5, 4.0]
+        data = [xi + 2yj for xi in xg, yj in yg]
+        itp = linear_interp((xg, yg), data; store = StorePolicy(copy = false, cache_axis = false))
+        @test itp.grids[1] === xg && itp.grids[2] === yg      # raw pass-through per axis
+        itp_ref = linear_interp((xg, yg), data)
+        @test itp(1.2, 2.2) ≈ itp_ref(1.2, 2.2) atol = 1.0e-12
+        @test integrate(itp) ≈ integrate(itp_ref) atol = 1.0e-12
+
+        itp_c = constant_interp((xg, yg), data; store = StorePolicy(copy = false, cache_axis = false))
+        @test itp_c.grids[1] === xg
+        itp_cref = constant_interp((xg, yg), data)
+        @test itp_c(1.2, 2.2) ≈ itp_cref(1.2, 2.2)
+        @test integrate(itp_c) ≈ integrate(itp_cref) atol = 1.0e-12
+    end
+
+    @testset "ND: Range axes keep free _CachedRange (cache_axis=false)" begin
+        xr = range(0.0, 1.0, length = 5)
+        yr = range(0.0, 2.0, length = 4)
+        data = [xi + 2yj for xi in xr, yj in yr]
+        itp = linear_interp((xr, yr), data; store = StorePolicy(cache_axis = false))
+        @test itp.grids[1] isa _CachedRange && itp.grids[2] isa _CachedRange  # nothing to skip
+        itp_ref = linear_interp((xr, yr), data)
+        @test integrate(itp) ≈ integrate(itp_ref) atol = 1.0e-12
+    end
+
+    @testset "pre-wrapped axis passes through (cache_axis=false, copy=false)" begin
+        # A `_CachedVector` axis reaching the ctor again (grid reuse) is stored as-is
+        # under copy=false — the raw-axis policy short-circuits before re-wrapping.
+        x = [0.0, 0.5, 1.5, 3.0, 4.0]
+        y = [1.0, 2.0, 4.0, 8.0, 16.0]
+        cv = _grid_1d(linear_interp(x, y))                    # a _CachedVector
+        @test cv isa _CachedVector
+        itp = linear_interp(cv, y; store = StorePolicy(copy = false, cache_axis = false))
+        @test _grid_1d(itp) === cv                            # 1D passthrough by identity
+
+        data = [xi + 2yj for xi in x, yj in y[1:4]]
+        itp2 = linear_interp((x, y[1:4]), data)
+        cvx = itp2.grids[1]
+        @test cvx isa _CachedVector
+        itp2b = linear_interp((cvx, itp2.grids[2]), data; store = StorePolicy(copy = false, cache_axis = false))
+        @test itp2b.grids[1] === cvx                          # ND passthrough by identity
+    end
+
+    @testset "hetero ND data: eltype mismatch promote-copies" begin
+        # `_own_or_ref_data(data, Tv, store)` copies to `Array{Tv}` when the input
+        # eltype differs from the promoted value type — here Int data → Float64.
+        x = range(0.0, 1.0, length = 6)
+        y = range(0.0, 1.0, length = 5)
+        di = [Int(round(10 * (xi + yj))) for xi in x, yj in y]
+        itp = interp((x, y), di; method = (LinearInterp(), AkimaInterp()))
+        @test eltype(itp.data) === Float64                    # promoted, not aliased
+        itp_ref = interp((x, y), Float64.(di); method = (LinearInterp(), AkimaInterp()))
+        @test itp(0.4, 0.6) ≈ itp_ref(0.4, 0.6) atol = 1.0e-12
     end
 end

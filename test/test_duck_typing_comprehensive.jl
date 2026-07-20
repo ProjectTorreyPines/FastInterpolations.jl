@@ -1836,3 +1836,31 @@ end
     end
 
 end
+
+# Single-arg full-domain integrate duck contract: values see only `*`/`+` (see
+# `_integrate_op`) plus the accumulator seed `zero(Tout)`. Deliberately NO `/` —
+# only the Real grid step h may be divided. Local duck (not the snippet's MyDuck):
+# MyDuck omits `zero` to keep the eval-path pins minimal.
+@testitem "Duck Typing: 1D full-domain integrate (Vector + Range grids)" begin
+    struct IntDuck
+        v::Float64
+    end
+    Base.:+(a::IntDuck, b::IntDuck) = IntDuck(a.v + b.v)
+    Base.:*(a::Real, b::IntDuck) = IntDuck(a * b.v)
+    Base.:*(a::IntDuck, b::Real) = IntDuck(a.v * b)
+    Base.zero(::Type{IntDuck}) = IntDuck(0.0)
+
+    x_vec = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    x_rng = range(0.0, 6.0, 7)
+    yf = 2 .* x_vec .+ 1
+    yd = IntDuck.(yf)
+    for (name, x) in [("Vector", x_vec), ("Range", x_rng)]
+        @testset "linear ($name grid)" begin
+            itp = linear_interp(x, yd)
+            itp_ref = linear_interp(x, yf)
+            r = integrate(itp)
+            @test r isa IntDuck
+            @test r.v ≈ integrate(itp_ref)
+        end
+    end
+end

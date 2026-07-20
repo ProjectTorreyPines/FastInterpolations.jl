@@ -123,7 +123,7 @@ end
 
     h0 = _get_h(x, i0)
     total = convert(Tout, partial_fn(i0, xL0, h0, lo, xL0 + h0))
-    @inbounds for i in (i0 + 1):(i1 - 1)
+    @inbounds @simd for i in (i0 + 1):(i1 - 1)
         total += convert(Tout, full_fn(i, _get_h(x, i)))
     end
     h1 = _get_h(x, i1)
@@ -143,7 +143,10 @@ end
     ) where {F, Tout}
     n = length(x)
     total = zero(Tout)
-    @inbounds for i in 1:(n - 1)
+    # @simd: pure reduction (only cross-iteration dep is `total`). LLVM won't
+    # vectorize an FP reduction without it (non-associative `+` → scalar chain,
+    # ~6× slower); no @fastmath — only the accumulation order is relaxed.
+    @inbounds @simd for i in 1:(n - 1)
         total += full_fn(i, _get_h(x, i))
     end
     return total

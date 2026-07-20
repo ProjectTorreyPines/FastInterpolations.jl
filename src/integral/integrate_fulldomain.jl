@@ -16,10 +16,13 @@
     return @inline (i, h) -> @inbounds _cubic_integral_kernel(_EvalIntegralCell(), z[i], z[i + 1], y[i], y[i + 1], h)
 end
 
-@inline function _full_cell_fn(itp::LinearInterpolant)
-    y = itp.y
-    return @inline (i, h) -> @inbounds _linear_integral_kernel(_EvalIntegralCell(), y[i], y[i + 1], h)
+# Named functor (not an anonymous closure) so the engine can dispatch on it — see
+# the uniform-grid closed form `_integrate_1d_fulldomain(::_CachedRange, ::_LinearFullCell, …)`.
+struct _LinearFullCell{Y <: AbstractVector} <: Function
+    y::Y
 end
+@inline (f::_LinearFullCell)(i, h) = @inbounds _linear_integral_kernel(_EvalIntegralCell(), f.y[i], f.y[i + 1], h)
+@inline _full_cell_fn(itp::LinearInterpolant) = _LinearFullCell(itp.y)
 
 @inline function _full_cell_fn(itp::QuadraticInterpolant)
     a, d, y = itp.a, itp.d, itp.y
@@ -98,9 +101,28 @@ end
         itp::AbstractInterpolant{Tg, Tv};
         search = nothing, hint = nothing
     ) where {Tg <: Real, Tv}
-    x = _grid_1d(itp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_1d_fulldomain(x, _full_cell_fn(itp), Tout)
+    return _integrate_1d_fulldomain(_grid_1d(itp), _full_cell_fn(itp), Tout)
+end
+
+# Uniform-grid linear closed form: the trapezoid telescopes to h·Σy_interior + one
+# end-cell kernel call — the kernel keeps the `_fieldsum` widen / h-only-division
+# duck contracts; Float16 accumulates in Float32 (raw Σy overflows 65504).
+# Summation order ≠ cellwise engine → ULP-level shifts.
+@inline function _integrate_1d_fulldomain(
+        x::_CachedRange, f::_LinearFullCell, ::Type{Tout}
+    ) where {Tout}
+    y = f.y
+    n = length(x)
+    n < 2 && return zero(Tout)
+    h = _get_h(x)
+    s = zero(Tout === Float16 ? Float32 : Tout)
+    @inbounds begin
+        @simd for i in 2:(n - 1)
+            s += y[i]
+        end
+        return convert(Tout, h * s + _linear_integral_kernel(_EvalIntegralCell(), y[1], y[n], h))
+    end
 end
 
 # Constant override: side is parametric → compiler knows concrete type,
@@ -155,32 +177,37 @@ end
 # integrate(itp) — ND full-domain fast path
 # ═══════════════════════════════════════════════════════════════
 
-# ND per-type trait: _full_cell_integral_nd(itp, idx, hs, inv_hs)
-# Each calls the existing ND kernel with ulos = zeros, uhis = hs.
+# ND per-type trait: _full_cell_integral_nd(itp, idx, hs)
+# Each calls the existing ND kernel with ulos = zeros, uhis = hs. Methods whose
+# kernel needs reciprocal spacings (cubic/quadratic hermite-form collapse) fetch
+# inv_hs themselves — mirrors 1D, where `_hermite_full_cell_fn` pulls `_get_inv_h`
+# inside the closure; linear/constant never pay for it (their kernels take no inv_hs).
 
 @inline function _full_cell_integral_nd(
-        itp::CubicInterpolantND{Tg, Tv, N}, idx, hs, inv_hs
+        itp::CubicInterpolantND{Tg, Tv, N}, idx, hs
     ) where {Tg, Tv, N}
     ulos = ntuple(d -> zero(Tg), Val(N))
+    inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
     return _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, hs)
 end
 
 @inline function _full_cell_integral_nd(
-        itp::LinearInterpolantND{Tg, Tv, N}, idx, hs, inv_hs
+        itp::LinearInterpolantND{Tg, Tv, N}, idx, hs
     ) where {Tg, Tv, N}
     ulos = ntuple(d -> zero(Tg), Val(N))
     return _integrate_linear_nd_cell(itp.data, idx, hs, ulos, hs)
 end
 
 @inline function _full_cell_integral_nd(
-        itp::QuadraticInterpolantND{Tg, Tv, N}, idx, hs, inv_hs
+        itp::QuadraticInterpolantND{Tg, Tv, N}, idx, hs
     ) where {Tg, Tv, N}
     ulos = ntuple(d -> zero(Tg), Val(N))
+    inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
     return _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, hs)
 end
 
 @inline function _full_cell_integral_nd(
-        itp::ConstantInterpolantND{Tg, Tv, N}, idx, hs, inv_hs
+        itp::ConstantInterpolantND{Tg, Tv, N}, idx, hs
     ) where {Tg, Tv, N}
     ulos = ntuple(d -> zero(Tg), Val(N))
     return _integrate_constant_nd_cell(itp.data, idx, hs, ulos, hs, itp.sides)
@@ -244,8 +271,7 @@ end
     for I in CartesianIndices(cell_ranges)
         idx = ntuple(d -> I[d], Val(N))
         hs = ntuple(d -> @inbounds(_get_h(itp.grids[d], idx[d])), Val(N))
-        inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
-        total += _full_cell_integral_nd(itp, idx, hs, inv_hs)
+        total += _full_cell_integral_nd(itp, idx, hs)
     end
     return total
 end

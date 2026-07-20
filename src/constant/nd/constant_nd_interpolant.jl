@@ -73,7 +73,7 @@ function constant_interp(
     # bcs are promoted to `:extended` by `_prepare_periodic_nd`, then per-axis
     # `_cache_axis` wraps (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
-    grids_typed = map(_cache_axis, grids_typed, bcs_post)
+    grids_typed = map((g, bcp) -> _policy_axis(g, bcp, store), grids_typed, bcs_post)
 
     # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)

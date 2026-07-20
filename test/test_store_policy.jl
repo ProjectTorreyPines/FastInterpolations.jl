@@ -442,4 +442,44 @@ end
         @test itp_c(1.2, 2.2) ≈ itp_cref(1.2, 2.2)
         @test integrate(itp_c) ≈ integrate(itp_cref) atol = 1.0e-12
     end
+
+    @testset "ND: Range axes keep free _CachedRange (cache_axis=false)" begin
+        xr = range(0.0, 1.0, length = 5)
+        yr = range(0.0, 2.0, length = 4)
+        data = [xi + 2yj for xi in xr, yj in yr]
+        itp = linear_interp((xr, yr), data; store = StorePolicy(cache_axis = false))
+        @test itp.grids[1] isa _CachedRange && itp.grids[2] isa _CachedRange  # nothing to skip
+        itp_ref = linear_interp((xr, yr), data)
+        @test integrate(itp) ≈ integrate(itp_ref) atol = 1.0e-12
+    end
+
+    @testset "pre-wrapped axis passes through (cache_axis=false, copy=false)" begin
+        # A `_CachedVector` axis reaching the ctor again (grid reuse) is stored as-is
+        # under copy=false — the raw-axis policy short-circuits before re-wrapping.
+        x = [0.0, 0.5, 1.5, 3.0, 4.0]
+        y = [1.0, 2.0, 4.0, 8.0, 16.0]
+        cv = _grid_1d(linear_interp(x, y))                    # a _CachedVector
+        @test cv isa _CachedVector
+        itp = linear_interp(cv, y; store = StorePolicy(copy = false, cache_axis = false))
+        @test _grid_1d(itp) === cv                            # 1D passthrough by identity
+
+        data = [xi + 2yj for xi in x, yj in y[1:4]]
+        itp2 = linear_interp((x, y[1:4]), data)
+        cvx = itp2.grids[1]
+        @test cvx isa _CachedVector
+        itp2b = linear_interp((cvx, itp2.grids[2]), data; store = StorePolicy(copy = false, cache_axis = false))
+        @test itp2b.grids[1] === cvx                          # ND passthrough by identity
+    end
+
+    @testset "hetero ND data: eltype mismatch promote-copies" begin
+        # `_own_or_ref_data(data, Tv, store)` copies to `Array{Tv}` when the input
+        # eltype differs from the promoted value type — here Int data → Float64.
+        x = range(0.0, 1.0, length = 6)
+        y = range(0.0, 1.0, length = 5)
+        di = [Int(round(10 * (xi + yj))) for xi in x, yj in y]
+        itp = interp((x, y), di; method = (LinearInterp(), AkimaInterp()))
+        @test eltype(itp.data) === Float64                    # promoted, not aliased
+        itp_ref = interp((x, y), Float64.(di); method = (LinearInterp(), AkimaInterp()))
+        @test itp(0.4, 0.6) ≈ itp_ref(0.4, 0.6) atol = 1.0e-12
+    end
 end

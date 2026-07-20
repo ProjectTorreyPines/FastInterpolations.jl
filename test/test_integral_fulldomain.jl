@@ -154,4 +154,11 @@ end
         integrate(itp_r)  # warmup
         @test @allocated(integrate(itp_r)) <= ALLOC_THRESHOLD
     end
+
+    # Linear+Range is the one 1-D constructor that admits n=1; the telescoped
+    # fast path guards it with `n < 2 && return zero`. (Empty domain → 0.)
+    @testset "n=1 degenerate Range grid" begin
+        itp1 = linear_interp(range(2.0, 2.0, length = 1), [7.0]; extrap = NoExtrap())
+        @test integrate(itp1) == 0.0
+    end
 end

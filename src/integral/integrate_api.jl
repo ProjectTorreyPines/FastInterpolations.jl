@@ -4,19 +4,9 @@
 @inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
 # ── One-shot quadrature: integrate(x, y; method) ──
-"""
-    integrate(x::AbstractVector, y::AbstractVector; method::AbstractInterpMethod)
-
-One-shot full-domain integral of the `method` interpolant of `(x, y)`, routed like
-`interp(x, y; method=…)` (same method tags; `bc`/`side`/`tension` forwarded). The
-interpolant is built internally with `StorePolicy(copy=false, cache_axis=false)`,
-so nothing is copied and no per-cell axis caches are allocated.
-
-```julia
-integrate(x, y; method = LinearInterp())   # trapezoidal (exact for the linear interpolant)
-integrate(x, y; method = CubicInterp())    # spline quadrature
-```
-"""
+# Full-domain integral of the `method` interpolant of `(x, y)`, routed like
+# `interp(x, y; method=…)` (same method tags; bc/side/tension forwarded). Built
+# with StorePolicy(copy=false, cache_axis=false) — nothing copied, no axis caches.
 @inline function integrate(
         x::AbstractVector,
         y::AbstractVector;

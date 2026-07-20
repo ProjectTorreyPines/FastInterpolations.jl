@@ -53,6 +53,23 @@ nothing #hide
 
 ---
 
+## One-Shot Integration
+
+When you need the full-domain integral once and not the interpolant itself, pass the raw data with a `method` directly. This mirrors the unified `interp(x, y; method=…)` API and builds the interpolant internally with no copies and no per-cell axis caches, so the call allocates nothing:
+
+```@example integ
+xs = range(0.0, π, 50)
+ys = sin.(xs)
+
+integrate(xs, ys; method = LinearInterp())   # trapezoidal (exact for the linear interpolant)
+integrate(xs, ys; method = CubicInterp())    # spline quadrature
+nothing #hide
+```
+
+The `method` keyword is required; its options (`bc`, `side`, `tension`) are forwarded to the underlying interpolant.
+
+---
+
 ## Series Interpolants
 
 For multi-channel data (Series Interpolants), integration works channel-wise.
@@ -120,4 +137,5 @@ nothing #hide
 |----------|-------------|-------------|
 | `integrate(itp, a, b)` | Definite integral over $[a, b]$ | Scalar (or Vector for Series) |
 | `integrate(itp)` | Full-domain integration | Scalar (or Vector for Series) |
+| `integrate(x, y; method)` | One-shot full-domain integral from raw data | Scalar |
 | `cumulative_integrate(itp)` | Grid-aligned indefinite integrals | Vector (Scalar) / **Matrix** (Series) |

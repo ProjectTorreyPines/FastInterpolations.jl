@@ -3,6 +3,30 @@
 @inline _grid_1d(itp::CubicSeriesInterpolant) = itp.cache.x
 @inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
+# ── One-shot quadrature: integrate(x, y; method) ──
+"""
+    integrate(x::AbstractVector, y::AbstractVector; method::AbstractInterpMethod)
+
+One-shot full-domain integral of the `method` interpolant of `(x, y)`, routed like
+`interp(x, y; method=…)` (same method tags; `bc`/`side`/`tension` forwarded). The
+interpolant is built internally with `StorePolicy(copy=false, cache_axis=false)`,
+so nothing is copied and no per-cell axis caches are allocated.
+
+```julia
+integrate(x, y; method = LinearInterp())   # trapezoidal (exact for the linear interpolant)
+integrate(x, y; method = CubicInterp())    # spline quadrature
+```
+"""
+@inline function integrate(
+        x::AbstractVector,
+        y::AbstractVector;
+        method::AbstractInterpMethod,
+    )
+    fn, _, opts = _interp1d_route(method)
+    itp = fn(x, y; opts..., store = StorePolicy(copy = false, cache_axis = false))
+    return integrate(itp)
+end
+
 
 # ── Fallback stub (bounded 1D) ──
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search = nothing, hint = nothing)

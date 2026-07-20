@@ -35,3 +35,39 @@
         @test hi == (2.0, 3.0)
     end
 end
+
+# One-shot quadrature: integrate(x, y; method) — unified-API routing (the same
+# `_interp1d_route` trait as `interp(x, y; method=…)`), built internally with
+# `StorePolicy(copy=false, cache_axis=false)` so construction cost ≈ 0.
+@testitem "one-shot integrate(x, y; method)" begin
+    x_vec = collect(range(0.0, 2.0, length = 21))
+    x_rng = range(0.0, 2.0, length = 21)
+    y = @. x_vec^2 + 1.0
+
+    @testset "matches the persistent build" begin
+        for x in (x_vec, x_rng)
+            @test integrate(x, y; method = LinearInterp()) ≈ integrate(linear_interp(x, y)) atol = 1.0e-12
+            @test integrate(x, y; method = CubicInterp()) ≈ integrate(cubic_interp(x, y)) atol = 1.0e-12
+            @test integrate(x, y; method = QuadraticInterp()) ≈ integrate(quadratic_interp(x, y)) atol = 1.0e-12
+        end
+    end
+
+    @testset "method options forwarded" begin
+        @test integrate(x_vec, y; method = ConstantInterp(side = LeftSide())) ≈
+            integrate(constant_interp(x_vec, y; side = LeftSide())) atol = 1.0e-12
+        @test integrate(x_vec, y; method = CubicInterp(bc = ZeroCurvBC())) ≈
+            integrate(cubic_interp(x_vec, y; bc = ZeroCurvBC())) atol = 1.0e-12
+    end
+
+    @testset "contract: method is required; unsupported methods reject" begin
+        @test_throws UndefKeywordError integrate(x_vec, y)
+        @test_throws ArgumentError integrate(x_vec, y; method = NoInterp())
+    end
+
+    @testset "inputs are not mutated" begin
+        xb = copy(x_vec)
+        yb = copy(y)
+        integrate(x_vec, y; method = LinearInterp())
+        @test x_vec == xb && y == yb
+    end
+end

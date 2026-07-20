@@ -491,6 +491,7 @@ end
 # Measured through function barriers (concrete args); the interpolant struct is
 # elided by escape analysis when consumed in the same call.
 @testitem "Store Policy - zero-alloc build contract (raw storage)" setup = [AllocConstants] begin
+    using FastInterpolations: _policy_axes, _store_axes, _cache_axis
     S_RAW = StorePolicy(copy = false, cache_axis = false)
 
     x_vec = collect(range(0.0, 1.0, length = 20))
@@ -535,4 +536,45 @@ end
             @test intN(g, D2, m) <= ND_ALLOC_THRESHOLD
         end
     end
+
+    # Unit pins for the @generated axis-map helpers — including the hetero arm,
+    # whose end-to-end build has inherent allocations and can't be pinned at 0.
+    # Range axes are the sensitive case: a helper regressing to dynamic dispatch
+    # heap-boxes the isbits `_CachedRange` return per axis.
+    @testset "unrolled axis-map helpers are zero-alloc (Range axes, all arms)" begin
+        g = (_cache_axis(x_rng, NoBC()), _cache_axis(range(0.0, 1.0, length = 14), NoBC()))
+        bcs = (NoBC(), NoBC())
+        ms = (LinearInterp(), ConstantInterp())
+        S_REF = StorePolicy(copy = false)
+        u3(g, b, s) = @allocated _policy_axes(g, b, s)
+        u4(g, b, s) = @allocated _store_axes(g, b, Float64, s)
+        u5(g, b, m, s) = @allocated _store_axes(g, b, m, Float64, s)
+        u3(g, bcs, S_RAW); u4(g, bcs, S_REF); u5(g, bcs, ms, S_REF)   # warmup
+        @test u3(g, bcs, S_RAW) <= ND_ALLOC_THRESHOLD
+        @test u4(g, bcs, S_REF) <= ND_ALLOC_THRESHOLD
+        @test u5(g, bcs, ms, S_REF) <= ND_ALLOC_THRESHOLD
+    end
+end
+
+# Source lint for the recurring alloc trap behind the contract above: a closure-
+# map over the axis-wrap family (`map((g, …) -> _policy_axis/_store_axis/
+# _cache_axis(…), tuple…)`) can leave per-axis calls dynamic — runtime sparam
+# computation plus a boxed `_CachedRange` per Range axis. Bare-function maps
+# (`map(_cache_axis, grids, bcs)`) are fine; closures must use the @generated
+# unrolled helpers (`_policy_axes` / `_store_axes` / `_convert_cache_axes`).
+@testitem "Store Policy - no closure-maps over axis-wrap helpers (lint)" begin
+    srcdir = joinpath(pkgdir(FastInterpolations), "src")
+    helper = r"(_policy_axis|_store_axis|_cache_axis)\("
+    offenders = String[]
+    for (root, _, files) in walkdir(srcdir), f in files
+        endswith(f, ".jl") || continue
+        p = joinpath(root, f)
+        for (i, ln) in enumerate(eachline(p))
+            code = strip(ln)
+            startswith(code, "#") && continue          # comments may cite the pattern
+            occursin("map(", code) && occursin("->", code) && occursin(helper, code) || continue
+            push!(offenders, string(relpath(p, srcdir), ":", i))
+        end
+    end
+    @test offenders == String[]
 end

@@ -113,3 +113,88 @@ end
         @test Float64(integrate(itpN)) ≈ integrate(itpF) rtol = 1.0e-9
     end
 end
+
+# Constant ND full-domain: the per-axis side weights also collapse on full cells
+# (Left → h at the left node, Right → h at the right node, Nearest → ½h each),
+# so the domain integral is a separable side-weighted Riemann sum. Oracle 1 is
+# an explicit cell-sum reference implementation (independent of both engines);
+# oracle 2 is the generic bounded engine at full bounds. NearestSide weights
+# equal the linear composite-trapezoid weights, giving a third cross-family pin.
+@testitem "ND constant separable: cell-sum + bounded parity (all sides)" setup = [AllocConstants] begin
+    # reference: I = Σ_cells Σ_{s∈{0,1}^N} Π_d wpair(side_d, h_d(c_d))[s_d+1] · data[c+s]
+    wpair(::LeftSide, h) = (h, zero(h))
+    wpair(::RightSide, h) = (zero(h), h)
+    wpair(::NearestSide, h) = (h / 2, h / 2)
+    function brute(grids, data, sides)
+        N = length(grids)
+        total = 0.0
+        for c in CartesianIndices(ntuple(d -> 1:(length(grids[d]) - 1), N))
+            for s in CartesianIndices(ntuple(_ -> 0:1, N))
+                w = 1.0
+                for d in 1:N
+                    h = Float64(grids[d][c[d] + 1] - grids[d][c[d]])
+                    w *= wpair(sides[d], h)[s[d] + 1]
+                end
+                total += w * Float64(data[c + s])
+            end
+        end
+        return total
+    end
+
+    xv = [0.0, 0.3, 0.7, 1.1, 1.8, 2.0]
+    yv = [0.0, 0.5, 1.2, 2.0, 3.0]
+    xr = range(0.0, 2.0, length = 6)
+    yr = range(0.0, 3.0, length = 5)
+
+    @testset "2D all side combos — Range + Vector" begin
+        for (gx, gy) in ((xr, yr), (xv, yv))
+            data = [sin(xi) + cos(yj) for xi in gx, yj in gy]
+            lo = (first(gx), first(gy));  hi = (last(gx), last(gy))
+            for sx in (LeftSide(), RightSide(), NearestSide()),
+                    sy in (LeftSide(), RightSide(), NearestSide())
+
+                itp = constant_interp((gx, gy), data; side = (sx, sy), extrap = NoExtrap())
+                @test integrate(itp) ≈ brute((gx, gy), data, (sx, sy)) rtol = 1.0e-12
+                @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "3D mixed sides — Vector (non-uniform)" begin
+        zv = [0.0, 0.35, 0.8, 1.0]
+        data = [xi + 2yj - zk for xi in xv, yj in yv, zk in zv]
+        sides = (LeftSide(), NearestSide(), RightSide())
+        itp = constant_interp((xv, yv, zv), data; side = sides, extrap = NoExtrap())
+        lo = (first(xv), first(yv), first(zv));  hi = (last(xv), last(yv), last(zv))
+        @test integrate(itp) ≈ brute((xv, yv, zv), data, sides) rtol = 1.0e-12
+        @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
+    end
+
+    @testset "NearestSide ≡ linear composite trapezoid (full domain)" begin
+        for (gx, gy) in ((xr, yr), (xv, yv))
+            data = [xi^2 + yj for xi in gx, yj in gy]
+            itp_c = constant_interp((gx, gy), data; side = NearestSide())
+            itp_l = linear_interp((gx, gy), data)
+            @test integrate(itp_c) ≈ integrate(itp_l) rtol = 1.0e-12
+        end
+    end
+
+    @testset "Int data promotes to Float output" begin
+        di = [xi + yj for xi in 1:4, yj in 1:3]
+        itp = constant_interp((collect(1.0:4.0), collect(1.0:3.0)), di; side = NearestSide())
+        @test integrate(itp) isa AbstractFloat
+        @test integrate(itp) ≈ brute((1.0:4.0, 1.0:3.0), di, (NearestSide(), NearestSide())) rtol = 1.0e-12
+    end
+
+    @testset "zero allocation (Range + Vector, homogeneous + mixed sides)" begin
+        xr2 = range(0.0, 2.0, length = 20);  yr2 = range(0.0, 3.0, length = 16)
+        data = [sin(xi) * cos(yj) for xi in xr2, yj in yr2]
+        for sides in ((NearestSide(), NearestSide()), (LeftSide(), RightSide()))
+            itp_r = constant_interp((xr2, yr2), data; side = sides)
+            itp_v = constant_interp((collect(xr2), collect(yr2)), data; side = sides)
+            integrate(itp_r);  integrate(itp_v)   # warmup
+            @test @allocated(integrate(itp_r)) <= ND_ALLOC_THRESHOLD
+            @test @allocated(integrate(itp_v)) <= ND_ALLOC_THRESHOLD
+        end
+    end
+end

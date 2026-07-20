@@ -71,3 +71,68 @@ end
         @test x_vec == xb && y == yb
     end
 end
+
+# ND one-shot quadrature: integrate(grids, data; method) — the ND mirror of the
+# 1-D form. A single method is applied to every axis, building a homogeneous
+# specialized ND interpolant; trivial methods (linear/constant) use raw reference
+# storage. Mixed/Hermite methods build a HeteroInterpolantND (integrate unsupported).
+@testitem "one-shot integrate(grids, data; method) — ND" setup = [AllocConstants] begin
+    xr = range(0.0, Float64(π), length = 20)
+    yr = range(0.0, 2.0, length = 16)
+    xv = collect(xr)
+    yv = collect(yr)
+    f(xi, yj) = sin(xi) * cos(yj)
+
+    @testset "matches the persistent build (2D, Range + Vector)" begin
+        for (gx, gy) in ((xr, yr), (xv, yv))
+            data = [f(xi, yj) for xi in gx, yj in gy]
+            for m in (LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp())
+                ref = integrate(interp((gx, gy), data; method = m))
+                @test integrate((gx, gy), data; method = m) ≈ ref rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "3D linear parity" begin
+        x = range(0.0, 1.0, length = 9)
+        y = range(0.0, 2.0, length = 8)
+        z = range(0.0, 3.0, length = 7)
+        data = [xi + 2yj - zk for xi in x, yj in y, zk in z]
+        ref = integrate(linear_interp((x, y, z), data))
+        @test integrate((x, y, z), data; method = LinearInterp()) ≈ ref rtol = 1.0e-12
+    end
+
+    @testset "trivial methods build with near-zero allocation" begin
+        # Measured through a function barrier: a bare `@allocated` at test scope
+        # boxes the captured globals and reports noise, not the API's real cost.
+        data = [f(xi, yj) for xi in xv, yj in yv]
+        alloc_oneshot(g, d, m) = @allocated integrate(g, d; method = m)
+        alloc_oneshot((xv, yv), data, LinearInterp())          # warmup
+        @test alloc_oneshot((xv, yv), data, LinearInterp()) <= ND_ALLOC_THRESHOLD
+        @test alloc_oneshot((xv, yv), data, ConstantInterp()) <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "ND integrates fewer methods than 1D — reject the rest up front" begin
+        data = [f(xi, yj) for xi in xr, yj in yr]
+        @test_throws UndefKeywordError integrate((xr, yr), data)
+        # 1-D one-shot integrates the Hermite family (Pchip/Akima/Cardinal); ND
+        # does not (they build a HeteroInterpolantND with no ND integral). Reject
+        # them with a clear method-named error, not the internal Hetero message.
+        for m in (PchipInterp(), AkimaInterp(), CardinalInterp(), NoInterp())
+            @test_throws "ND full-domain integration is implemented" integrate((xr, yr), data; method = m)
+        end
+        # …while the same methods DO integrate in 1-D:
+        xv1 = collect(xr)
+        yv1 = sin.(xv1)
+        for m in (PchipInterp(), AkimaInterp(), CardinalInterp())
+            @test integrate(xv1, yv1; method = m) isa Real
+        end
+    end
+
+    @testset "inputs are not mutated" begin
+        data = [f(xi, yj) for xi in xv, yj in yv]
+        xb = copy(xv);  yb = copy(yv);  db = copy(data)
+        integrate((xv, yv), data; method = LinearInterp())
+        @test xv == xb && yv == yb && data == db
+    end
+end

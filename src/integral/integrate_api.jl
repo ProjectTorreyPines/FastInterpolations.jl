@@ -17,6 +17,45 @@
     return integrate(itp)
 end
 
+# ── One-shot quadrature (ND): integrate(grids, data; method) ──
+# ND mirror of the 1-D form, but with a smaller supported set: ND full-domain
+# integration exists only for the specialized tensor-product types, whereas 1-D
+# integrates every method. A single `method` applied to every axis builds a
+# homogeneous specialized ND interpolant, then integrates it. Trivial methods
+# (linear/constant) use raw reference storage (0-copy, no axis caches); PreCompute
+# methods (cubic/quadratic) own their coefficient arrays, so `store` stays at the
+# ctor default. Hermite-family methods are rejected up front (see below).
+@inline function integrate(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N};
+        method::AbstractInterpMethod,
+    ) where {N}
+    _nd_integrable_method(method) || _throw_nd_oneshot_unsupported(method)
+    fn, _, opts = _interp1d_route(method)
+    itp = _is_trivial_method(method) ?
+        fn(grids, data; opts..., store = StorePolicy(copy = false, cache_axis = false)) :
+        fn(grids, data; opts...)
+    return integrate(itp)
+end
+
+# Which methods have a specialized ND type with a full-domain integral. Hermite
+# axes collapse to a HeteroInterpolantND (no ND integral), so they are excluded —
+# the one behavioral split from the 1-D one-shot, which integrates all methods.
+@inline _nd_integrable_method(::Union{LinearInterp, CubicInterp, QuadraticInterp, ConstantInterp}) = true
+@inline _nd_integrable_method(::AbstractInterpMethod) = false
+
+@noinline function _throw_nd_oneshot_unsupported(method)
+    throw(
+        ArgumentError(
+            "integrate(grids, data; method=$(nameof(typeof(method)))(…)) — ND full-domain " *
+                "integration is implemented only for LinearInterp, CubicInterp, " *
+                "QuadraticInterp, and ConstantInterp. Hermite-family methods " *
+                "(Pchip/Akima/Cardinal) have no ND integral yet; integrate axis-by-axis " *
+                "on per-fiber 1-D interpolants instead."
+        )
+    )
+end
+
 
 # ── Fallback stub (bounded 1D) ──
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search = nothing, hint = nothing)

@@ -97,6 +97,37 @@ end
 # single-arg form — Cubic, Linear, Quadratic, and the entire Hermite family
 # (PreCompute + OnTheFly via `_full_cell_fn`'s internal dispatch on `itp.dy`).
 # Constant has its own override below because its full-cell trait depends on `side`.
+"""
+    # persistent — integrate an interpolant you already built
+    integrate(itp)                          # full-domain
+    integrate(itp, a, b)                    # 1-D, over [a, b]
+    integrate(itp, lo::NTuple, hi::NTuple)  # ND, over the box [lo, hi]
+
+    # one-shot — build the `method` interpolant from raw data, then integrate
+    integrate(x, y; method)                 # 1-D full-domain
+    integrate(x, y, a, b; method)           # 1-D, over [a, b]
+    integrate(grids, data; method)          # ND full-domain
+    integrate(grids, data, lo, hi; method)  # ND, over the box [lo, hi]
+
+Definite integral of an interpolant.
+
+The **persistent** forms integrate an interpolant you built earlier.
+`integrate(itp)` covers the whole domain through a specialized search-free
+summation; the bounded forms integrate over `[a, b]` (1-D) or the
+hyper-rectangle `[lo, hi]` (ND).
+
+The **one-shot** forms build the `method` interpolant from raw data with
+`copy=false` reference storage — nothing is copied — then integrate in a single
+call. 1-D integrates every method; ND only the tensor-product types (Linear,
+Cubic, Quadratic, Constant), as the Hermite family has no ND integral.
+
+```julia
+integrate(cubic_interp(x, y))                        # persistent, full-domain
+integrate(x, y; method = CubicInterp())              # one-shot,   full-domain
+integrate(x, y, 0.2, 1.5; method = LinearInterp())   # one-shot,   ∫ from 0.2 to 1.5
+integrate((xs, ys), data; method = LinearInterp())   # one-shot,   2-D full-domain
+```
+"""
 @inline function integrate(
         itp::AbstractInterpolant{Tg, Tv};
         search = nothing, hint = nothing
@@ -301,6 +332,12 @@ end
 
 # Generic 1D: catches Cubic, Linear, Quadratic, and the entire Hermite family
 # (PreCompute + OnTheFly via `_full_cell_fn`'s trait dispatch on `itp.dy`).
+"""
+    cumulative_integrate!(out, itp) -> out
+
+In-place [`cumulative_integrate`](@ref): fills `out` with the running integral.
+`out` must satisfy `length(out) == length(grid)`.
+"""
 function cumulative_integrate!(
         out::AbstractVector, itp::AbstractInterpolant{Tg, Tv}
     ) where {Tg <: Real, Tv}
@@ -320,6 +357,15 @@ function cumulative_integrate!(
 end
 
 # Allocating wrappers: allocate output vector then forward to the in-place path.
+"""
+    cumulative_integrate(itp)          # persistent — Vector (Matrix for a Series)
+    cumulative_integrate(x, y; method) # one-shot   — build from raw data
+
+Running integral at every grid node: `out[i]` is the integral from the first
+node up to node `i`, so `out[1] == 0` and `out[end] == integrate(itp)`. The
+one-shot form builds the `method` interpolant (reference storage) first. 1-D
+only — ND cumulative integration has no unambiguous definition.
+"""
 function cumulative_integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     out = Vector{Tout}(undef, length(_grid_1d(itp)))

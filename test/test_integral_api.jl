@@ -52,6 +52,19 @@ end
         end
     end
 
+    @testset "bounded integrate(x, y, a, b; method) — all methods, matches persistent" begin
+        for x in (x_vec, x_rng), m in (
+                    LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp(),
+                    PchipInterp(), AkimaInterp(), CardinalInterp(),
+                )
+            @test integrate(x, y, 0.3, 1.4; method = m) ≈
+                integrate(interp(x, y; method = m), 0.3, 1.4) rtol = 1.0e-12
+        end
+        # full-domain bounds reproduce the no-bounds one-shot
+        @test integrate(x_vec, y, 0.0, 2.0; method = CubicInterp()) ≈
+            integrate(x_vec, y; method = CubicInterp()) rtol = 1.0e-12
+    end
+
     @testset "method options forwarded" begin
         @test integrate(x_vec, y; method = ConstantInterp(side = LeftSide())) ≈
             integrate(constant_interp(x_vec, y; side = LeftSide())) atol = 1.0e-12
@@ -68,6 +81,127 @@ end
         xb = copy(x_vec)
         yb = copy(y)
         integrate(x_vec, y; method = LinearInterp())
+        @test x_vec == xb && y == yb
+    end
+end
+
+# ND one-shot quadrature: integrate(grids, data; method) — the ND mirror of the
+# 1-D form. A single method is applied to every axis, building a homogeneous
+# specialized ND interpolant; trivial methods (linear/constant) use raw reference
+# storage. Mixed/Hermite methods build a HeteroInterpolantND (integrate unsupported).
+@testitem "one-shot integrate(grids, data; method) — ND" setup = [AllocConstants] begin
+    xr = range(0.0, Float64(π), length = 20)
+    yr = range(0.0, 2.0, length = 16)
+    xv = collect(xr)
+    yv = collect(yr)
+    f(xi, yj) = sin(xi) * cos(yj)
+
+    @testset "matches the persistent build (2D, Range + Vector)" begin
+        for (gx, gy) in ((xr, yr), (xv, yv))
+            data = [f(xi, yj) for xi in gx, yj in gy]
+            for m in (LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp())
+                ref = integrate(interp((gx, gy), data; method = m))
+                @test integrate((gx, gy), data; method = m) ≈ ref rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "3D linear parity" begin
+        x = range(0.0, 1.0, length = 9)
+        y = range(0.0, 2.0, length = 8)
+        z = range(0.0, 3.0, length = 7)
+        data = [xi + 2yj - zk for xi in x, yj in y, zk in z]
+        ref = integrate(linear_interp((x, y, z), data))
+        @test integrate((x, y, z), data; method = LinearInterp()) ≈ ref rtol = 1.0e-12
+    end
+
+    @testset "bounded integrate(grids, data, lo, hi; method) — matches persistent" begin
+        lo = (0.3, 0.4);  hi = (2.5, 1.5)
+        for (gx, gy) in ((xr, yr), (xv, yv))
+            data = [f(xi, yj) for xi in gx, yj in gy]
+            for m in (LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp())
+                @test integrate((gx, gy), data, lo, hi; method = m) ≈
+                    integrate(interp((gx, gy), data; method = m), lo, hi) rtol = 1.0e-12
+            end
+        end
+        # Hermite family rejected up front here too (same supported-method split)
+        data = [f(xi, yj) for xi in xr, yj in yr]
+        @test_throws "ND integration is implemented" integrate((xr, yr), data, lo, hi; method = AkimaInterp())
+    end
+
+    @testset "trivial methods build with near-zero allocation" begin
+        # Measured through a function barrier: a bare `@allocated` at test scope
+        # boxes the captured globals and reports noise, not the API's real cost.
+        data = [f(xi, yj) for xi in xv, yj in yv]
+        alloc_oneshot(g, d, m) = @allocated integrate(g, d; method = m)
+        alloc_oneshot((xv, yv), data, LinearInterp())          # warmup
+        @test alloc_oneshot((xv, yv), data, LinearInterp()) <= ND_ALLOC_THRESHOLD
+        @test alloc_oneshot((xv, yv), data, ConstantInterp()) <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "ND integrates fewer methods than 1D — reject the rest up front" begin
+        data = [f(xi, yj) for xi in xr, yj in yr]
+        @test_throws UndefKeywordError integrate((xr, yr), data)
+        # 1-D one-shot integrates the Hermite family (Pchip/Akima/Cardinal); ND
+        # does not (they build a HeteroInterpolantND with no ND integral). Reject
+        # them with a clear method-named error, not the internal Hetero message.
+        for m in (PchipInterp(), AkimaInterp(), CardinalInterp(), NoInterp())
+            @test_throws "ND integration is implemented" integrate((xr, yr), data; method = m)
+        end
+        # …while the same methods DO integrate in 1-D:
+        xv1 = collect(xr)
+        yv1 = sin.(xv1)
+        for m in (PchipInterp(), AkimaInterp(), CardinalInterp())
+            @test integrate(xv1, yv1; method = m) isa Real
+        end
+    end
+
+    @testset "inputs are not mutated" begin
+        data = [f(xi, yj) for xi in xv, yj in yv]
+        xb = copy(xv);  yb = copy(yv);  db = copy(data)
+        integrate((xv, yv), data; method = LinearInterp())
+        @test xv == xb && yv == yb && data == db
+    end
+end
+
+# One-shot cumulative: sibling of one-shot `integrate`, same raw-storage build.
+# 1-D only; every 1-D method works via the generic `cumulative_integrate(itp)`.
+@testitem "one-shot cumulative_integrate(x, y; method)" begin
+    x_vec = collect(range(0.0, 2.0, length = 21))
+    x_rng = range(0.0, 2.0, length = 21)
+    y = @. x_vec^2 + 1.0
+
+    @testset "matches the persistent build (all methods, Range + Vector)" begin
+        for x in (x_vec, x_rng), m in (
+                    LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp(),
+                    PchipInterp(), AkimaInterp(), CardinalInterp(),
+                )
+            @test cumulative_integrate(x, y; method = m) ≈
+                cumulative_integrate(interp(x, y; method = m)) rtol = 1.0e-12
+        end
+    end
+
+    @testset "last node equals the full integral; first is zero" begin
+        for m in (LinearInterp(), CubicInterp(), QuadraticInterp(), PchipInterp())
+            c = cumulative_integrate(x_vec, y; method = m)
+            @test length(c) == length(x_vec)
+            @test c[1] == 0
+            @test c[end] ≈ integrate(x_vec, y; method = m) rtol = 1.0e-12
+        end
+    end
+
+    @testset "method options forwarded" begin
+        @test cumulative_integrate(x_vec, y; method = ConstantInterp(side = LeftSide())) ≈
+            cumulative_integrate(constant_interp(x_vec, y; side = LeftSide())) rtol = 1.0e-12
+    end
+
+    @testset "contract: method is required" begin
+        @test_throws UndefKeywordError cumulative_integrate(x_vec, y)
+    end
+
+    @testset "inputs are not mutated" begin
+        xb = copy(x_vec);  yb = copy(y)
+        cumulative_integrate(x_vec, y; method = LinearInterp())
         @test x_vec == xb && y == yb
     end
 end

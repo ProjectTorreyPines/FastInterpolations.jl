@@ -298,7 +298,7 @@ function _build_hetero_nd(
 
     # 2-5. Promote grid + data types
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    data_typed = Tv === Tv_raw ? _own_or_ref_data(data, store) : Array{Tv}(data)
+    data_typed = _own_or_ref_data(data, Tv, store)
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)

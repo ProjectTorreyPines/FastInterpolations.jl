@@ -425,4 +425,21 @@ end
         @test itp_c(2.2) ≈ itp_cr(2.2)
         @test integrate(itp_c) ≈ integrate(itp_cr) atol = 1.0e-12
     end
+
+    @testset "ND: raw vector axes (linear/constant)" begin
+        xg = [0.0, 0.5, 1.5, 3.0, 4.0]
+        yg = [0.0, 1.0, 2.5, 4.0]
+        data = [xi + 2yj for xi in xg, yj in yg]
+        itp = linear_interp((xg, yg), data; store = StorePolicy(copy = false, cache_axis = false))
+        @test itp.grids[1] === xg && itp.grids[2] === yg      # raw pass-through per axis
+        itp_ref = linear_interp((xg, yg), data)
+        @test itp(1.2, 2.2) ≈ itp_ref(1.2, 2.2) atol = 1.0e-12
+        @test integrate(itp) ≈ integrate(itp_ref) atol = 1.0e-12
+
+        itp_c = constant_interp((xg, yg), data; store = StorePolicy(copy = false, cache_axis = false))
+        @test itp_c.grids[1] === xg
+        itp_cref = constant_interp((xg, yg), data)
+        @test itp_c(1.2, 2.2) ≈ itp_cref(1.2, 2.2)
+        @test integrate(itp_c) ≈ integrate(itp_cref) atol = 1.0e-12
+    end
 end

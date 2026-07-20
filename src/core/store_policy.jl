@@ -114,6 +114,17 @@ struct StorePolicy{CopyGrid, CopyValues, CacheAxis} end
 @inline _store_axis(x, bc::AbstractBC, ::Type{Tg}, store::StorePolicy) where {Tg} =
     _own_or_ref_axis(_policy_axis(x, bc, Tg, store), Tg, store)
 
+# Tg-less `_policy_axis` (ND factories: grids arrive already value-promoted, so
+# the wrap mirrors the 2-arg `_cache_axis(g, bc)` contract — no eltype work).
+@inline _policy_axis(x, bc::AbstractBC, ::StorePolicy{CG, CV, true}) where {CG, CV} =
+    _cache_axis(x, bc)
+@inline _policy_axis(x::AbstractRange, bc::AbstractBC, ::StorePolicy{CG, CV, false}) where {CG, CV} =
+    _cache_axis(x, bc)
+@inline _policy_axis(x::_CachedVector, ::AbstractBC, ::StorePolicy{CG, CV, false}) where {CG, CV} = x
+@inline _policy_axis(x::_ExclusivePeriodicAxis, ::AbstractBC, ::StorePolicy{CG, CV, false}) where {CG, CV} = x
+@inline _policy_axis(x::AbstractVector, bc::AbstractBC, ::StorePolicy{CG, CV, false}) where {CG, CV} =
+    _wrap_exclusive_raw(x, bc)
+
 # 1D values: copy → own (+ promote to `Tv`). Reference + matching eltype → alias.
 # Reference + eltype mismatch → copy fallback (keeps `Tv`, stays type-transparent).
 @inline _own_or_ref_values(y::AbstractVector, ::Type{Tv}, ::StorePolicy{CG, true, CA}) where {Tv, CG, CA} =
@@ -130,6 +141,14 @@ struct StorePolicy{CopyGrid, CopyValues, CacheAxis} end
     Array(data)
 @inline _own_or_ref_data(data::AbstractArray, ::StorePolicy{CG, false, CA}) where {CG, CA} =
     data
+
+# Eltype-aware form (mirrors `_own_or_ref_values`' type-transparent contract):
+# alias/copy per policy only when the stored eltype already matches; a mismatch
+# always promote-copies to `Array{Tv}` regardless of the policy.
+@inline _own_or_ref_data(data::AbstractArray{Tv}, ::Type{Tv}, store::StorePolicy) where {Tv} =
+    _own_or_ref_data(data, store)
+@inline _own_or_ref_data(data::AbstractArray, ::Type{Tv}, ::StorePolicy) where {Tv} =
+    Array{Tv}(data)
 
 # ---------- unsupported-path guard ----------
 # Some constructors cannot honor reference storage (e.g. PreCompute ND that

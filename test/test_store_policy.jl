@@ -483,3 +483,98 @@ end
         @test itp(0.4, 0.6) ≈ itp_ref(0.4, 0.6) atol = 1.0e-12
     end
 end
+
+# Zero-allocation BUILD contract: with `copy=false, cache_axis=false` a trivial
+# (Linear/Constant) build wraps references only — on Julia ≥ 1.12 the whole
+# build+use call allocates nothing beyond the result, for BOTH grid kinds.
+# Range axes are stack-only `_CachedRange`s, so they must not heap-box either.
+# Measured through function barriers (concrete args); the interpolant struct is
+# elided by escape analysis when consumed in the same call.
+@testitem "Store Policy - zero-alloc build contract (raw storage)" setup = [AllocConstants] begin
+    using FastInterpolations: _policy_axes, _store_axes, _cache_axis
+    S_RAW = StorePolicy(copy = false, cache_axis = false)
+
+    x_vec = collect(range(0.0, 1.0, length = 20))
+    x_rng = range(0.0, 1.0, length = 20)
+    y1 = sin.(x_vec)
+    Xv = collect(range(0.0, 1.0, length = 16));  Xr = range(0.0, 1.0, length = 16)
+    Yv = collect(range(0.0, 1.0, length = 14));  Yr = range(0.0, 1.0, length = 14)
+    D2 = [a + 2b for a in Xv, b in Yv]
+
+    # barriers: build+consume in one call so the struct itself is elided; every
+    # input (including the store) is a typed argument — a captured testitem-scope
+    # binding is a non-const global and its boxing would pollute the measurement.
+    fwd1(x, y, q, c, s) = @allocated (itp = c(x, y; store = s); itp(q))
+    fwdN(g, d, q, c, s) = @allocated (itp = c(g, d; store = s); itp(q...))
+    int1(x, y, m) = @allocated integrate(x, y; method = m)
+    intN(g, d, m) = @allocated integrate(g, d; method = m)
+
+    @testset "1D forward build+eval (Vector + Range)" begin
+        for c in (linear_interp, constant_interp), x in (x_vec, x_rng)
+            fwd1(x, y1, 0.5, c, S_RAW)                            # warmup
+            @test fwd1(x, y1, 0.5, c, S_RAW) <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND forward build+eval (Vector + Range axes)" begin
+        for c in (linear_interp, constant_interp), g in ((Xv, Yv), (Xr, Yr))
+            fwdN(g, D2, (0.5, 0.5), c, S_RAW)                     # warmup
+            @test fwdN(g, D2, (0.5, 0.5), c, S_RAW) <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "1D one-shot integrate (Vector + Range)" begin
+        for m in (LinearInterp(), ConstantInterp()), x in (x_vec, x_rng)
+            int1(x, y1, m)                                        # warmup
+            @test int1(x, y1, m) <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND one-shot integrate (Vector + Range axes)" begin
+        for m in (LinearInterp(), ConstantInterp()), g in ((Xv, Yv), (Xr, Yr))
+            intN(g, D2, m)                                        # warmup
+            @test intN(g, D2, m) <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # Unit pins for the @generated axis-map helpers — including the hetero arm,
+    # whose end-to-end build has inherent allocations and can't be pinned at 0.
+    # Range axes are the sensitive case: a helper regressing to dynamic dispatch
+    # heap-boxes the isbits `_CachedRange` return per axis.
+    @testset "unrolled axis-map helpers are zero-alloc (Range axes, all arms)" begin
+        g = (_cache_axis(x_rng, NoBC()), _cache_axis(range(0.0, 1.0, length = 14), NoBC()))
+        bcs = (NoBC(), NoBC())
+        ms = (LinearInterp(), ConstantInterp())
+        S_REF = StorePolicy(copy = false)
+        u3(g, b, s) = @allocated _policy_axes(g, b, s)
+        u4(g, b, s) = @allocated _store_axes(g, b, Float64, s)
+        u5(g, b, m, s) = @allocated _store_axes(g, b, m, Float64, s)
+        u3(g, bcs, S_RAW); u4(g, bcs, S_REF); u5(g, bcs, ms, S_REF)   # warmup
+        @test u3(g, bcs, S_RAW) <= ND_ALLOC_THRESHOLD
+        @test u4(g, bcs, S_REF) <= ND_ALLOC_THRESHOLD
+        @test u5(g, bcs, ms, S_REF) <= ND_ALLOC_THRESHOLD
+    end
+end
+
+# Source lint for the recurring alloc trap behind the contract above: a closure-
+# map over the axis-wrap family (`map((g, …) -> _policy_axis/_store_axis/
+# _cache_axis(…), tuple…)`) can leave per-axis calls dynamic — runtime sparam
+# computation plus a boxed `_CachedRange` per Range axis. Bare-function maps
+# (`map(_cache_axis, grids, bcs)`) are fine; closures must use the @generated
+# unrolled helpers (`_policy_axes` / `_store_axes` / `_convert_cache_axes`).
+@testitem "Store Policy - no closure-maps over axis-wrap helpers (lint)" begin
+    srcdir = joinpath(pkgdir(FastInterpolations), "src")
+    helper = r"(_policy_axis|_store_axis|_cache_axis)\("
+    offenders = String[]
+    for (root, _, files) in walkdir(srcdir), f in files
+        endswith(f, ".jl") || continue
+        p = joinpath(root, f)
+        for (i, ln) in enumerate(eachline(p))
+            code = strip(ln)
+            startswith(code, "#") && continue          # comments may cite the pattern
+            occursin("map(", code) && occursin("->", code) && occursin(helper, code) || continue
+            push!(offenders, string(relpath(p, srcdir), ":", i))
+        end
+    end
+    @test offenders == String[]
+end

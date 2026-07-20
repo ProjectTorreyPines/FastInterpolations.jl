@@ -139,3 +139,12 @@ nothing #hide
 | `integrate(itp)` | Full-domain integration | Scalar (or Vector for Series) |
 | `integrate(x, y; method)` | One-shot full-domain integral from raw data | Scalar |
 | `cumulative_integrate(itp)` | Grid-aligned indefinite integrals | Vector (Scalar) / **Matrix** (Series) |
+---
+
+## API Reference
+
+```@docs
+integrate
+cumulative_integrate
+cumulative_integrate!
+```

@@ -1261,6 +1261,13 @@ end
     return :(($(exprs...),))
 end
 
+# Owned cached wrap (PreCompute/adjoint inner ctors): cache + `_convert_copy`
+# per axis. Closure-map forms of this are banned — see the store-policy lint.
+@generated function _convert_cache_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_convert_copy(_cache_axis(grids[$i], bcs[$i], Tg), Tg)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
 # Width-typed reciprocal spans from search results (linear ND scalar one-shot).
 # Span-first via the width-first 5-arg `_get_inv_h` rows: raw axes difference in
 # their own eltype, convert the span once, divide at `Tg` — the reciprocal is

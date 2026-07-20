@@ -125,6 +125,21 @@ struct StorePolicy{CopyGrid, CopyValues, CacheAxis} end
 @inline _policy_axis(x::AbstractVector, bc::AbstractBC, ::StorePolicy{CG, CV, false}) where {CG, CV} =
     _wrap_exclusive_raw(x, bc)
 
+# ND factory/ctor axis maps (@generated): closure-free unrolled per-axis calls.
+# `map((g, bc) -> _policy_axis(g, bc, store), …)` captures `store` (the inner-ctor
+# form also re-captures `Tg` through an ntuple closure); on Julia 1.12 codegen
+# leaves those per-axis calls dynamic for Range axes — runtime sparam computation
+# plus a boxed `_CachedRange` per axis. Unrolled direct calls devirtualize on
+# every version (same pattern as `_cache_axes_pooled` / `_resolve_axes`).
+@generated function _policy_axes(grids::NTuple{N, AbstractVector}, bcs, store::StorePolicy) where {N}
+    exprs = [:(_policy_axis(grids[$i], bcs[$i], store)) for i in 1:N]
+    return :(($(exprs...),))
+end
+@generated function _store_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}, store::StorePolicy) where {N, Tg}
+    exprs = [:(_store_axis(grids[$i], bcs[$i], Tg, store)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
 # 1D values: copy → own (+ promote to `Tv`). Reference + matching eltype → alias.
 # Reference + eltype mismatch → copy fallback (keeps `Tv`, stays type-transparent).
 @inline _own_or_ref_values(y::AbstractVector, ::Type{Tv}, ::StorePolicy{CG, true, CA}) where {Tv, CG, CA} =

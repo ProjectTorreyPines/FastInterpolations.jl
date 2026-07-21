@@ -1309,6 +1309,7 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
         data::AbstractArray{Tv_raw, N},
         ::Type{Tv_extra}
     ) where {Tv_raw, Tv_extra, N}
+    _check_grid_orderable(_promote_grid_eltype(grids))
     Tv_all = promote_type(Tv_raw, Tv_extra)
     # Value-matched grid float (1D rule): Int/OneTo grid + Float32 data → Float32 grid, so the
     # cheap grid converts and the O(nᴺ) data aliases under copy=false. The old grid-eltype-only
@@ -1334,6 +1335,7 @@ raw Int/Rational axes.
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N}
     ) where {Tv_raw, N}
+    _check_grid_orderable(_promote_grid_eltype(grids))
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_raw)
     Tv = _value_type(Tv_raw, Tg)
     Tz = _promote_eltype(Tv, Tg)

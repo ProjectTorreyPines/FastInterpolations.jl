@@ -51,6 +51,7 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
     ) where {TX, TY}
+    _check_grid_orderable(TX)
     # Periodic extension (no-op for NoBC). For PeriodicBC{:exclusive}, the user
     # n-grid is extended to (n+1) closed-cycle form and `bc_eff` flips to
     # `:extended`; `:inclusive` passes through unchanged. Slope-side dispatch

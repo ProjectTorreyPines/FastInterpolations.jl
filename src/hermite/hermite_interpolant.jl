@@ -96,6 +96,7 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy(),
     ) where {TX, TY}
+    _check_grid_orderable(TX)
     x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     extrap_p = _resolve_extrap(extrap, x_p, eltype(y_p))
     # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.

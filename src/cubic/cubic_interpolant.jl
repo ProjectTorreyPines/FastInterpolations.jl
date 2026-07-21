@@ -185,6 +185,7 @@ function cubic_interp(
         search::P = AutoSearch(),
         store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
+    _check_grid_orderable(Tg)
     Tg_f = _promote_grid_float(Tg, Tv)
     xc = _store_grid(x, Tg_f)
     Tv_out = _value_type(Tv, Tg_f)

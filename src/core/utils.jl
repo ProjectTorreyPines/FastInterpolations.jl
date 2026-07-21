@@ -102,6 +102,22 @@ _promote_grid_float(Int, Dual)       # → Float64 (duck: float(Int) only)
     end
 end
 
+# Build-entry guard: a grid axis must be orderable (search/sort call `isless`).
+# `Real` fast path folds to a no-op; the generic arm runs one `hasmethod` at
+# build time and turns e.g. a Complex grid into an actionable error instead of a
+# deep search-internal `MethodError`. Necessary, not sufficient (an ordered type
+# may still lack grid arithmetic) — see the duck-grid contract docs.
+@inline _check_grid_orderable(::Type{<:Real}) = nothing
+@noinline function _check_grid_orderable(::Type{Tg}) where {Tg}
+    hasmethod(isless, Tuple{Tg, Tg}) || throw(
+        ArgumentError(
+            "grid axis eltype $(Tg) does not support ordering (`isless`) — " *
+                "interpolation grids must be sortable (e.g. Complex is not a valid grid eltype)"
+        )
+    )
+    return nothing
+end
+
 """
     _value_type(::Type{Ty}, ::Type{Tg}) -> Type
 

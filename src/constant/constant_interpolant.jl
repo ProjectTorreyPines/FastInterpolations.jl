@@ -122,6 +122,7 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
     ) where {Tg, Tv}
+    _check_grid_orderable(Tg)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic/Linear).
     # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)

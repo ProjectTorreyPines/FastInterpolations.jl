@@ -128,6 +128,7 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
     ) where {TX, TY}
+    _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
     Tv = _value_type(TY, Tg)
     # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,

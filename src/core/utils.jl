@@ -471,7 +471,7 @@ Used in interpolant inner constructors to merge promotion + immutability copy.
 Widen query vector to `promote_type(Tg, Tq)` — never narrows query precision.
 Duck-typed queries (`Dual`, `Measurement`, …) pass through unchanged.
 """
-@inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
+@inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq, Tg}
     if Tq <: _PromotableValue
         return _to_float(xq, promote_type(Tg, Tq))
     else
@@ -777,7 +777,7 @@ end
 
 # Scalar in-domain test. `_extract_primal` on bounds and query keeps it partial-
 # sign independent for Dual grids (no-op on plain-Float `_CachedRange` fields).
-@inline function _is_inbounds(x::AbstractVector, xq::Real)
+@inline function _is_inbounds(x::AbstractVector, xq)
     lo, hi = _domain_bounds(x)
     xqp = _extract_primal(xq)
     # `_le` promote-compare: dodge Base's exact mixed `<=(Int, Float)` on an
@@ -789,7 +789,7 @@ end
 # widened `_domain_bounds` bracket — adjoint anchor builders use it for valid OOB
 # boundary geometry while classification reads the widened bounds (keeps the
 # acceptance cushion out of geometry).
-@inline _clamp_to_grid(xq::Real, x::AbstractVector) =
+@inline _clamp_to_grid(xq, x::AbstractVector) =
     _clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
 
 """

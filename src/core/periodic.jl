@@ -19,7 +19,7 @@ Wrap `xi` into `[x_min, x_max]` for `WrapExtrap` / periodic BC. Closed-domain:
 path. `_extract_primal` is identity on plain numerics, so the in-domain branch
 returns the original `xi` and preserves AD `Dual` carriers.
 """
-@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
+@inline function _wrap_to_domain(xi, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
     if (xi_primal >= x_min) && (xi_primal <= x_max)
         return xi

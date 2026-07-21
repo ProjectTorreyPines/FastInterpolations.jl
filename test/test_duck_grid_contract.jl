@@ -193,3 +193,34 @@ end
     @test Base.promote_op(FI._inv_op, Ts) === typeof(inv(1.0u"s"))
     @test Base.promote_op(FI._interp_op, Ts, Tw, Ts) === Tw              # eval: offset is dimensionless
 end
+
+# ========================================
+# Phase 6 — error-quality pins (non-Real, non-supported grid types)
+# ========================================
+
+@testitem "Duck grid: error-quality pins (Date/String/wrong-unit)" begin
+    using Dates
+    using Unitful
+
+    y = [0.0, 1.0, 0.5, 2.0, 1.0]
+
+    @testset "Date grid: affine types are unsupported (loud, not silent)" begin
+        # `Date - Date :: Day ≠ Date` breaks the closed-`-` duck contract
+        # (cached spacing is stored at the coordinate type). Pin: loud error.
+        xd = [Date(2020, 1, i) for i in 1:5]
+        @test_throws Exception linear_interp(xd, y)
+    end
+
+    @testset "String grid: passes the isless guard, fails at arithmetic" begin
+        xs = ["a", "b", "c", "d", "e"]
+        # hasmethod(isless) is necessary-not-sufficient by design — the failure
+        # is a loud arithmetic MethodError, never a silent wrong result.
+        @test_throws Exception linear_interp(xs, y)
+    end
+
+    @testset "wrong-unit query: DimensionError surfaces" begin
+        xu = [0.0, 1.0, 2.0, 3.0, 4.0] .* u"s"
+        itp = linear_interp(xu, y .* u"W")
+        @test_throws Unitful.DimensionError itp(1.5u"m")   # m vs s
+    end
+end

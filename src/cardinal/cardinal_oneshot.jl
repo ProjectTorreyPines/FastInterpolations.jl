@@ -24,7 +24,7 @@
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     # `_periodic_extend_1d` already returns a normalized grid (Range or
     # `_CachedRange`/Vector) — the public `cardinal_interp` API pre-resolved
@@ -87,7 +87,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     # Wrap axis + data (axis-as-truth: `last(x_eff) == first(x) + period`,
@@ -149,7 +149,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis (tension follows).
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     tension_f = float(eltype(x))(tension)
@@ -178,7 +178,7 @@ In-place cardinal spline interpolation.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     tension_f = float(eltype(x))(tension)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
@@ -206,7 +206,7 @@ function cardinal_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     cardinal_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)

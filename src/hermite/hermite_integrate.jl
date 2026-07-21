@@ -8,7 +8,7 @@
 
 @inline function integrate(
         itp::AbstractHermiteInterpolant1D{Tg, Tv},
-        x0::Real, x1::Real;
+        x0, x1;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv}
@@ -19,7 +19,7 @@ end
 @inline function _integrate_hermite_1d(
         dy::AbstractVector,
         itp::AbstractHermiteInterpolant1D{Tg, Tv},
-        x0::Real, x1::Real,
+        x0, x1,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}},
     ) where {Tg, Tv}
@@ -62,7 +62,7 @@ end
 @inline function _integrate_hermite_1d(
         sm::AbstractSlopeMethod,
         itp::AbstractHermiteInterpolant1D{Tg, Tv},
-        x0::Real, x1::Real,
+        x0, x1,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}},
     ) where {Tg, Tv}

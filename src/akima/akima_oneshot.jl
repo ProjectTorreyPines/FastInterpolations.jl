@@ -19,7 +19,7 @@
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     # Grid pre-normalized by the public `akima_interp` API via `_resolve_axis(x)`
     # before dispatching here; `_periodic_extend_1d` preserves the normalization.
@@ -72,7 +72,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     x_eff = _resolve_axis(x, bc)
@@ -129,7 +129,7 @@ Outlier-robust, C\$^1\$ continuous.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis.
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
@@ -156,7 +156,7 @@ In-place Akima interpolation with outlier-robust slopes.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
@@ -182,7 +182,7 @@ function akima_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     akima_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)

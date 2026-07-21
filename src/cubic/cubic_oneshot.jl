@@ -36,7 +36,7 @@ Thread-safe: workspaces allocated from task-local pool.
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, Tq <: Real, X, F, BC}
+    ) where {Tg, Tv, Tq, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     _check_query_output_size(output, x_query)
 
@@ -118,7 +118,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
         autocache::Bool,
         op::O,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally).
     # Value-matched `Tg_eff` selects the data-aware cache bank (Int grid + Float32
     # data → Float32 cache), so scalar ≡ batch ≡ persistent at the value width.
@@ -216,7 +216,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
         autocache::Bool,
         op::O,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
     # Hoist the domain check so the in-domain query takes the `InBounds`
@@ -295,7 +295,7 @@ function cubic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     Tr = _promote_eltype(_interp_op, eltype(cache.x), Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
@@ -351,7 +351,7 @@ end
 cubic_interp(
     cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
     x_query::Tq; extrap::AbstractExtrap = NoExtrap(), deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = AutoSearch(), hint::Union{Nothing, Base.RefValue{Int}} = nothing
-) where {Tg, Tv, Tq <: Real} =
+) where {Tg, Tv, Tq} =
     cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
 
 # Primary scalar method - AD-compatible
@@ -366,7 +366,7 @@ function cubic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     # Value-matched Tg (see the in-place form above): Ranges resolve to the value
     # width; raw Vectors pass through (identity-keyed cache — legacy width there).
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))

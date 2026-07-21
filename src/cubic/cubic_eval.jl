@@ -175,7 +175,7 @@ Uses task-local pool for workspace allocation.
         deriv::DerivOp = EvalValue(),
         search = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
     Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)

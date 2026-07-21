@@ -42,6 +42,37 @@ end
     end
 end
 
+# Per-fiber 1D-composition oracle for ND tensor-product `integrate`. Independent
+# of the ND separable engine: it integrates the inner axis per outer node with a
+# freshly built 1D interpolant of the matching method, then integrates the outer
+# 1D interpolant of those node integrals. Exact for tensor products (integration
+# is linear and the ND antiderivative factorizes), so it validates the whole ND
+# engine — weights, slot contraction, mixed radix — without sharing its code.
+# `ms` is the per-axis method tuple; homogeneous callers pass `(m, m[, m])`.
+@testsnippet NDCompositionOracle begin
+    const FIO = FastInterpolations
+    _ob1d(::FIO.LinearInterp, x, v) = linear_interp(x, v)
+    _ob1d(::FIO.CubicInterp, x, v) = cubic_interp(x, v)
+    _ob1d(::FIO.QuadraticInterp, x, v) = quadratic_interp(x, v)
+    _ob1d(m::FIO.ConstantInterp, x, v) = constant_interp(x, v; side = m.side)
+
+    comp_nd(ms::Tuple{Any}, grids, A) = integrate(_ob1d(ms[1], grids[1], A))
+    comp_nd(ms::Tuple{Any}, grids, A, lo, hi) =
+        integrate(_ob1d(ms[1], grids[1], A), lo[1], hi[1])
+    function comp_nd(ms, grids, A)
+        x = grids[1]
+        inner = Base.tail(grids)
+        vals = [comp_nd(Base.tail(ms), inner, selectdim(A, 1, i)) for i in eachindex(x)]
+        return integrate(_ob1d(ms[1], x, vals))
+    end
+    function comp_nd(ms, grids, A, lo, hi)
+        x = grids[1]
+        inner = Base.tail(grids)
+        vals = [comp_nd(Base.tail(ms), inner, selectdim(A, 1, i), Base.tail(lo), Base.tail(hi)) for i in eachindex(x)]
+        return integrate(_ob1d(ms[1], x, vals), lo[1], hi[1])
+    end
+end
+
 # DuckFloat5 type + shared 1D/2D fixtures for the duck-typing comprehensive
 # tests (test_duck_typing_comprehensive.jl). Extracted as a snippet so the
 # testitem split inside that file can reuse the same setup without copy-paste.

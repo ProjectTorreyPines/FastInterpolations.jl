@@ -239,12 +239,20 @@ function scan_file(path)
                     push!(names, ex.args[3])
                 end
             elseif mname === Symbol("@testsnippet")
+                # Match `begin`/`end` as WHOLE WORDS, not substrings: on Julia 1.10
+                # `Meta.parse` folds a following comment into this expr's span, so
+                # `chunk` can carry trailing prose. A plain `findlast("end", …)`
+                # then latches onto the "end" inside a word like "indep-end-ent"
+                # and truncates the body (the module closes early, its shim escapes
+                # to top level → "Test files must only include @testitem/@testsetup").
                 chunk = src[pos:stop]
-                b = findfirst("begin", chunk)
-                e = findlast("end", chunk)
-                if b !== nothing && e !== nothing
+                bs = collect(eachmatch(r"\bbegin\b", chunk))
+                es = collect(eachmatch(r"\bend\b", chunk))
+                if !isempty(bs) && !isempty(es)
                     name = string(ex.args[3])
-                    body = strip(chunk[nextind(chunk, last(b)):prevind(chunk, first(e))])
+                    bstop = bs[1].offset + ncodeunits(bs[1].match)   # first char after `begin`
+                    estart = es[end].offset                          # first char of the last `end`
+                    body = strip(chunk[bstop:prevind(chunk, estart)])
                     push!(snips, (name, String(body)))
                 end
             end

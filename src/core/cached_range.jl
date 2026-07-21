@@ -196,8 +196,8 @@ end
 # `search_interval`) — ignore the extra args and delegate to the no-arg form.
 @inline _get_h(x::_CachedRange, ::Int) = _get_h(x)
 @inline _get_inv_h(x::_CachedRange, ::Int) = _get_inv_h(x)
-@inline _get_h(x::_CachedRange, ::Int, ::Any, ::Any) = _get_h(x)
-@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_inv_h(x)
+@inline _get_h(x::_CachedRange, ::Int, ::TL, ::TR) where {TL, TR} = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int, ::TL, ::TR) where {TL, TR} = _get_inv_h(x)
 
 # Raw `AbstractRange` (non-_CachedRange) fallback via `step()` — pre-normalization paths only.
 @inline _get_h(x::AbstractRange, ::Int) = step(x)
@@ -214,7 +214,7 @@ end
 @inline _get_inv_h(::Type{Tw}, x::AbstractRange, ::Int) where {Tw} =
     inv(convert(Tw, step(x)))
 # Search-result form: endpoints ignored — the cached (or step-derived) reciprocal wins.
-@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::Real, ::Real) where {Tw} =
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::TL, ::TR) where {Tw, TL, TR} =
     _get_inv_h(Tw, x, i)
 
 # ========================================

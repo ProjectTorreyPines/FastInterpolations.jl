@@ -769,7 +769,7 @@ No bounds checking (except initial clamp), no binary fallback.
         x::AbstractVector{T},
         xq,
         hint_ref::Base.RefValue{Int},
-    ) where {T <: Real}
+    ) where {T}
     ix = hint_ref[]
     n = length(x)
     @inbounds begin

@@ -238,3 +238,69 @@ end
         @test integrate(itp) ≈ integrate(tw) * u"W*s"
     end
 end
+
+@testitem "Unitful 1D: LinearSearch + spacing accessors (review pin F4)" begin
+    using Unitful
+    using InteractiveUtils: @which
+
+    FI = FastInterpolations
+    # Non-uniform spacing so cached-reciprocal paths differ from a naive span.
+    xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0]
+    yw = [1.0, 2.0, 4.0, 8.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0]
+
+    @testset "F4: LinearSearch eval on unit grid (was MethodError)" begin
+        # `_search_linear!` kept `where {T <: Real}` while its siblings were
+        # relaxed — LinearSearch() + unit Vector grid threw at eval time.
+        itp = linear_interp(xs, yw; search = LinearSearch())
+        tw = linear_interp(xf, yf; search = LinearSearch())
+        @test itp(1.5u"s") ≈ tw(1.5) * u"W"
+        # Monotone batch is LinearSearch's intended workload (hint walk,
+        # including the backward-walk branch).
+        qf = [0.25, 0.75, 1.25, 2.6, 2.9, 0.5]
+        @test itp(qf .* u"s") ≈ tw(qf) .* u"W"
+    end
+
+    @testset "F4b: 4-arg `_get_h`/`_get_inv_h` accept unit endpoints" begin
+        # Search-result forms `(x, idx, xL, xR)` kept `::Real` endpoints.
+        # Relaxation must cover the WHOLE overload family: a partially relaxed
+        # raw fallback would silently steal wrapped-axis dispatch instead.
+        cv = FI._CachedVector(xs)
+        cr = FI._CachedRange(0.0u"s":0.5u"s":3.0u"s")
+        @test FI._get_inv_h(xs, 2, xs[2], xs[3]) == inv(xs[3] - xs[2])
+        @test FI._get_inv_h(cv, 2, xs[2], xs[3]) == cv.inv_h[2]
+        @test FI._get_inv_h(cr, 1, cr[1], cr[2]) == cr.inv_h
+    end
+
+    @testset "F4c: width-first `(Tw, x, idx, xL, xR)` accept unit endpoints" begin
+        Tw = typeof(1.0u"s")
+        cv = FI._CachedVector(xs)
+        cr = FI._CachedRange(0.0u"s":0.5u"s":3.0u"s")
+        @test FI._get_inv_h(Tw, xs, 2, xs[2], xs[3]) == inv(xs[3] - xs[2])
+        @test FI._get_inv_h(Tw, cv, 2, xs[2], xs[3]) == cv.inv_h[2]
+        @test FI._get_inv_h(Tw, cr, 1, cr[1], cr[2]) == cr.inv_h
+    end
+
+    @testset "F4d: exclusive-periodic seam keeps its OWN overloads" begin
+        # The `_ExclusivePeriodicAxis` seam-aware overloads (`_get_h`,
+        # `_get_inv_h`, `_alpha_of`) kept `::Real` args. Unit args then either
+        # threw (`_get_inv_h`) or SILENTLY fell through to the generic
+        # `::AbstractVector` fallback (`_get_h`, `_alpha_of`) — losing the
+        # seam-cell branch. Pin dispatch with @which, not just values.
+        g = FI._ExclusivePeriodicAxis(xs, 4.0u"s")
+        seam = length(g.inner)
+        xL, xR = xs[end], g._x_max
+        @test FI._get_h(g, seam, xL, xR) == xR - xL
+        @test FI._get_inv_h(g, seam, xL, xR) == inv(xR - xL)
+        @test FI._get_inv_h(typeof(xR), g, seam, xL, xR) == inv(xR - xL)
+        # Interior cell delegates to the wrapped inner axis (cached reciprocal).
+        @test FI._get_inv_h(g, 2, xs[2], xs[3]) == FI._get_inv_h(g.inner, 2, xs[2], xs[3])
+
+        m_h = @which FI._get_h(g, seam, xL, xR)
+        m_a = @which FI._alpha_of(3.5u"s", xL, xR, g)
+        @test occursin("_ExclusivePeriodicAxis", string(m_h.sig))
+        @test occursin("_ExclusivePeriodicAxis", string(m_a.sig))
+        @test FI._alpha_of(3.5u"s", xL, xR, g) == 0.5
+    end
+end

@@ -264,9 +264,9 @@ end
 #   - `idx == length(g.inner)` (seam cell): inner's idx-lookup would index
 #      out of `inv_h` (length n-1). Use `xR - xL` directly — caller already
 #      has `xR == g._x_max` from search, so this is the natural seam width.
-@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::TL, xR::TR) where {TL, TR} =
     idx < length(g.inner) ? _get_h(g.inner, idx, xL, xR) : xR - xL
-@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::TL, xR::TR) where {TL, TR} =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
 
 # Width-first search-result form: interior delegates to the inner axis's row
@@ -276,9 +276,9 @@ end
         ::Type{Tw},
         g::_ExclusivePeriodicAxis,
         idx::Int,
-        xL::Real,
-        xR::Real,
-    ) where {Tw}
+        xL::TL,
+        xR::TR,
+    ) where {Tw, TL, TR}
     return idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx, xL, xR) :
         inv(convert(Tw, xR - xL))
 end
@@ -301,7 +301,7 @@ end
 # `inner[end] < _x_max`, so `inner[idx+1] == _x_max` is unreachable for
 # interior cells. At the seam, the wrapper's `search_interval` returns
 # `xR = g._x_max` by direct field read — bit-equal to the comparand here.
-@inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
+@inline _alpha_of(q, L, R, g::_ExclusivePeriodicAxis) =
     R == g._x_max ? (q - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
 
 # ========================================

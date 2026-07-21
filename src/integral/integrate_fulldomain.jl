@@ -400,7 +400,10 @@ function _separable_emit_common(rs::NTuple{N, Int}, has_slot::Bool) where {N}
     end
     # Sum the `Mout` outer configs, each scaled by its Kronecker product `ko2_m`,
     # as a right-nested muladd chain so every `ko2_m · inner_m` fuses (FMA) rather
-    # than emitting a separate multiply and add (absent when N == 1: one config).
+    # than a separate multiply + add (absent when N == 1: one config). This is a
+    # reassociation — single-rounded, so at least as accurate as mul-then-add but
+    # NOT bit-identical: under cancellation the two can differ by more than 1 ULP.
+    # Consistent with the inner (value, deriv) term above, which already fuses.
     function contrib(ws, i1)
         N == 1 && return inner_term(1, i1, ws)
         acc = :($(Symbol(:ko2_, Mout)) * $(inner_term(Mout, i1, ws)))

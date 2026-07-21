@@ -25,7 +25,7 @@
 
 @generated function _gradient_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         hint,
     ) where {Tg, Tv, N}
     deriv_calls = [
@@ -73,17 +73,17 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
 """
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _gradient_generic(itp, query, hint)
 end
 
 # Splat convenience: gradient(itp, x, y) → gradient(itp, (x, y)). Scalar-only;
-# `Vararg{Real,N}` can't match a batch container, so it never intercepts one.
+# `Vararg{Number,N}` can't match a batch container, so it never intercepts one.
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return gradient(itp, q; kw...)
@@ -107,7 +107,7 @@ end
 @generated function _gradient_generic!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         hint,
     ) where {Tg, Tv, N}
     stmts = [
@@ -167,7 +167,7 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
 @inline function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _gradient_generic!(G, itp, query, hint)
@@ -177,7 +177,7 @@ end
 @inline function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return gradient!(G, itp, q; kw...)
@@ -205,7 +205,7 @@ end
 
 @generated function _value_gradient_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         hint,
     ) where {Tg, Tv, N}
     value_ops = ntuple(_ -> EvalValue(), N)
@@ -274,7 +274,7 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
 """
 @inline function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _value_gradient_generic(itp, query, hint)
@@ -283,7 +283,7 @@ end
 # Splat convenience: value_gradient(itp, x, y) → value_gradient(itp, (x, y)).
 @inline function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return value_gradient(itp, q; kw...)
@@ -311,7 +311,7 @@ end
 
 @generated function _hessian_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         hint,
     ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -378,7 +378,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 """
 @inline function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _hessian_generic(itp, query, hint)
@@ -387,7 +387,7 @@ end
 # Splat convenience: hessian(itp, x, y) → hessian(itp, (x, y)).
 @inline function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return hessian(itp, q; kw...)
@@ -411,7 +411,7 @@ end
 @generated function _hessian_generic!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         hint,
     ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -481,7 +481,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
 @inline function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _hessian_generic!(H, itp, query, hint)
@@ -491,7 +491,7 @@ end
 @inline function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return hessian!(H, itp, q; kw...)
@@ -519,7 +519,7 @@ end
 
 @generated function _laplacian_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         hint,
     ) where {Tg, Tv, N}
     deriv_calls = [
@@ -572,7 +572,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
 """
 @inline function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _laplacian_generic(itp, query, hint)
@@ -581,7 +581,7 @@ end
 # Splat convenience: laplacian(itp, x, y) → laplacian(itp, (x, y)).
 @inline function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return laplacian(itp, q; kw...)

@@ -608,10 +608,10 @@ Called once at build time before `_build_nd_coeffs`.
   (post-extension) are handled uniformly.
 """
 function _prepare_periodic_nd(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     return _prepare_periodic_nd_impl(grids, data, bcs, _extend_grid_vcat, _allocate_array)
 end
 

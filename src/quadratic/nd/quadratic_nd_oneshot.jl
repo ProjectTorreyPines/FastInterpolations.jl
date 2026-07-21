@@ -23,7 +23,7 @@ Zero-allocation after warmup (pool reuse).
 @with_pool pool function _quadratic_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -146,7 +146,7 @@ Zero-allocation after warmup.
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),

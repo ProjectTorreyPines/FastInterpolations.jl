@@ -37,7 +37,7 @@ itp((1.0, 0.5); extrap=InBounds())               # skip the domain check (in-dom
 """
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};  # Allow Real, Dual (AD), and GridIdx
+        query::Tuple{Vararg{Number, N}};  # Allow Real, Dual (AD), and GridIdx
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
@@ -67,7 +67,7 @@ end
 # scalar callers go through the 5-arg forwarder which injects `itp.extraps`.
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -111,7 +111,7 @@ end
         indices::NTuple{N, Int},
         hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},
-        dLs::Tuple{Vararg{Real, N}},  # Allow heterogeneous Real types (AD support)
+        dLs::Tuple{Vararg{Number, N}},  # Allow heterogeneous Real types (AD support)
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tv, Tg, N, NP1}
     # Validate dimensions

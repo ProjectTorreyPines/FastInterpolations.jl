@@ -50,7 +50,7 @@ struct ConstantInterpolantND{
         Tg,
         Tv,
         N,
-        G <: NTuple{N, AbstractVector{Tg}},
+        G <: Tuple{Vararg{AbstractVector, N}},   # per-axis eltypes (mixed units); Tg = promoted tag
         E <: Tuple{Vararg{AbstractExtrap, N}},
         SD <: Tuple{Vararg{AbstractSide, N}},
         P <: NTuple{N, AbstractSearchPolicy},
@@ -64,14 +64,15 @@ struct ConstantInterpolantND{
 
     # Inner ctor: type params inferred from arg signature.
     function ConstantInterpolantND(
-            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            grids::Tuple{Vararg{AbstractVector, N}},
             data::AbstractArray{Tv, N},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             sides::Tuple{Vararg{AbstractSide, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
             bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
             store::StorePolicy = StorePolicy()
-        ) where {Tg, Tv, N}
+        ) where {Tv, N}
+        Tg = _promote_grid_eltype(grids)   # abstract for mixed units (tag only)
         grids_c = _store_axes(grids, bcs, Tg, store)
         data_c = _own_or_ref_data(data, store)
         return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches), typeof(data_c)}(

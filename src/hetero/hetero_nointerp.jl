@@ -433,7 +433,7 @@ end
 # Pre-slices data at GridIdx positions, filters all tuples to Real-only axes,
 # then delegates to the existing reduced-dim interp one-shot API.
 #
-# Dispatch: Tuple{Float64, GridIdx} does NOT match Tuple{Vararg{Real, N}},
+# Dispatch: Tuple{Float64, GridIdx} does NOT match Tuple{Vararg{Number, N}},
 # so Julia selects this method only when at least one GridIdx is present.
 
 """
@@ -470,7 +470,7 @@ function _interp_nointerp_oneshot(
         extrap,
         search,
         hint,
-    ) where {N, Q <: Tuple{Vararg{Real, N}}}
+    ) where {N, Q <: Tuple{Vararg{Number, N}}}
     _validate_grididx_query_oneshot(query, data)
 
     # Pre-slice data and filter all tuples to Real-only axes
@@ -543,7 +543,7 @@ end
 # the optimal locate-once path (_locate_cell once → _eval_at_cell per component).
 @inline function gradient(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _gradient_generic(itp, query, hint)
@@ -553,7 +553,7 @@ end
 
 @inline function hessian(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _hessian_generic(itp, query, hint)
@@ -564,7 +564,7 @@ end
 @inline function hessian!(
         H::AbstractMatrix,
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _hessian_generic!(H, itp, query, hint)
@@ -574,7 +574,7 @@ end
 
 @inline function laplacian(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _laplacian_generic(itp, query, hint)
@@ -584,7 +584,7 @@ end
 
 @inline function value_gradient(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _value_gradient_generic(itp, query, hint)
@@ -597,7 +597,7 @@ end
 @inline function gradient!(
         G::AbstractVector,
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _gradient_generic!(G, itp, query, hint)
@@ -623,7 +623,7 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
 @generated function _gradient_nointerp(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     # Use promoted type for zero (handles Float32 data + Float64 query)
@@ -673,7 +673,7 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
 @generated function _hessian_nointerp(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -738,7 +738,7 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
         H::AbstractMatrix,
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -816,7 +816,7 @@ Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated ax
 @generated function _laplacian_nointerp(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     terms = [

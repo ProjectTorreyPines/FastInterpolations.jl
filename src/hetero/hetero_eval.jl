@@ -191,7 +191,7 @@ end
 #     grids — bit-for-bit identical to the pre-Phase-3 behavior, zero regression.
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
@@ -244,7 +244,7 @@ end
 # walking still works inside the resolved Searcher when the user opts in.
 @inline @with_pool pool function _eval_hetero_nd_wrap_aware(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        q_eval::Tuple{Vararg{Real, N}},
+        q_eval::Tuple{Vararg{Number, N}},
         ::Type{Tr},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
@@ -268,7 +268,7 @@ end
 @inline function _build_wrap_aware_cell_components(
         pool,
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        q_eval::Tuple{Vararg{Real, N}},
+        q_eval::Tuple{Vararg{Number, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
@@ -284,7 +284,7 @@ end
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
@@ -307,7 +307,7 @@ end
 # their cell lifetime fits cleanly inside a single `@with_pool` scope.
 @inline function _build_wrap_aware_cell_heap(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        q_eval::Tuple{Vararg{Real, N}},
+        q_eval::Tuple{Vararg{Number, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
@@ -339,7 +339,7 @@ end
 # - NoInterp in methods → _eval_nointerp (pre-slice strategy)
 # - Normal → standard hetero eval (GridIdx search short-circuits via dispatch)
 @inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search = itp.searches,
@@ -412,9 +412,9 @@ end
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
-# GridIdx <: Real, so Vararg{Real, N} matches both.
+# GridIdx <: Real, so Vararg{Number, N} matches both.
 @inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return itp(q; kw...)
@@ -434,7 +434,7 @@ end
 # pre-search and store full windows (zero regression).
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -489,7 +489,7 @@ end
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},

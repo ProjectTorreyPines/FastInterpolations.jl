@@ -39,13 +39,14 @@ struct CardinalInterpolant1D{
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
         CS <: AbstractCoeffStrategy,
+        Tt,
     } <: AbstractHermiteInterpolant1D{Tg, Tv}
     x::X
     y::Y
     dy::DY
     extrap::E
     search_policy::P
-    tension::Tg
+    tension::Tt   # DIMENSIONLESS shape param at grid precision (Tg would demand a unit)
 
     # PreCompute inner: builds slopes via cardinal central FD.
     function CardinalInterpolant1D(
@@ -62,9 +63,9 @@ struct CardinalInterpolant1D{
         yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dy = Vector{Tdy}(undef, length(yc))
-        _cardinal_slopes!(dy, xc, yc, Tg(tension))
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, PreCompute}(
-            xc, yc, dy, extrap, search, Tg(tension)
+        _cardinal_slopes!(dy, xc, yc, oftype(one(Tg) * 1, tension))
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, PreCompute, typeof(one(Tg) * 1)}(
+            xc, yc, dy, extrap, search, oftype(one(Tg) * 1, tension)
         )
     end
 
@@ -84,8 +85,8 @@ struct CardinalInterpolant1D{
         yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dyc = _convert_copy(dy, Tdy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
-            xc, yc, dyc, extrap, search, Tg(tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute, typeof(one(Tg) * 1)}(
+            xc, yc, dyc, extrap, search, oftype(one(Tg) * 1, tension)
         )
     end
 
@@ -102,8 +103,8 @@ struct CardinalInterpolant1D{
         Tv = _value_type(eltype(y), Tg)
         xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
-            xc, yc, slope_strategy, extrap, search, Tg(tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly, typeof(one(Tg) * 1)}(
+            xc, yc, slope_strategy, extrap, search, oftype(one(Tg) * 1, tension)
         )
     end
 end

@@ -16,7 +16,7 @@
 @with_pool pool function _interp_nd_hetero_oneshot(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -131,7 +131,7 @@ end
 @inline @with_pool pool function _interp_nd_oneshot_onthefly(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -404,7 +404,7 @@ dfdx = interp((x, y), data, (0.5, 0.3);
 function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),

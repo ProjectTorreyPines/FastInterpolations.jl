@@ -62,7 +62,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
 """
 # Single-point evaluation
 @inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
@@ -85,7 +85,7 @@ end
 # 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::QuadraticInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -129,7 +129,7 @@ end
         partials::AbstractArray{Tv, NP1},
         indices::NTuple{N, Int},
         inv_hs::NTuple{N, Tg},
-        dLs::Tuple{Vararg{Real, N}},
+        dLs::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tv, Tg, N, NP1}
     NP1 == N + 1 || error("NP1 must equal N+1")

@@ -58,7 +58,8 @@ function quadratic_interp(
     end
 
     # Zero-allocation type promotion and grid conversion
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
+    _check_nd_solver_grid(Tg_p)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Validate dimensions

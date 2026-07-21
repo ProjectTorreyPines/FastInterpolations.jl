@@ -118,6 +118,19 @@ end
     return nothing
 end
 
+# Solver-family ND builds store mixed derivative-mask orders in ONE homogeneous
+# array — unit-heterogeneous by construction (f vs ∂²f differ even on same-unit
+# axes). Reject unit-carrying grids with an actionable error; `Real` folds away.
+@inline _check_nd_solver_grid(::Type{<:Real}) = nothing
+@noinline _check_nd_solver_grid(::Type{Tg}) where {Tg} = throw(
+    ArgumentError(
+        "PreCompute ND coefficient builds (Cubic/Quadratic/Hermite axes) do not " *
+            "support unit-carrying grids yet (grid eltype $(Tg)) — the nodal-" *
+            "derivative store mixes derivative orders of different dimensions. " *
+            "Use LinearInterp/ConstantInterp ND, integrate per-fiber 1-D, or strip units."
+    )
+)
+
 """
     _value_type(::Type{Ty}, ::Type{Tg}) -> Type
 

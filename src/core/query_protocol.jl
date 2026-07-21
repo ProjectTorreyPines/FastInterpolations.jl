@@ -194,7 +194,7 @@ end
 # Scalar point (oneshot single-point paths). `map` dispatches per-axis on concrete types.
 @inline function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     # thread the axis index so a NoExtrap OOB names the offending axis (`_check_domain_axis`

@@ -28,7 +28,7 @@ Zero-allocation after warmup: uses pool-based partials instead of constructing a
 function cubic_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
@@ -119,7 +119,7 @@ Zero-allocation after warmup (pool reuse).
 @with_pool pool function _cubic_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},

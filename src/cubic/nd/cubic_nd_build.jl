@@ -589,6 +589,7 @@ function _build_nd_coeffs(
 
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
+    _check_nd_solver_grid(Tg)
     Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)

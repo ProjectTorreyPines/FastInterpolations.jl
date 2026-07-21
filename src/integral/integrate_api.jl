@@ -41,7 +41,7 @@ end
     integrate(_oneshot_build_nd(method, grids, data))
 @inline integrate(
     grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N},
-    lo::NTuple{N, Real}, hi::NTuple{N, Real}; method
+    lo::NTuple{N, Number}, hi::NTuple{N, Number}; method
 ) where {N} = integrate(_oneshot_build_nd(method, grids, data), lo, hi)
 
 # Single source of truth for "has an ND separable integral": the type-keyed
@@ -338,6 +338,26 @@ end
         lo2::Tuple{Vararg{Any, N}},
         hi2::Tuple{Vararg{Any, N}}
     ) where {Tv, Tg, N}
-    Tspan = promote_type(map(typeof, lo2)..., map(typeof, hi2)...)
-    return _promote_eltype(_integrate_op, Tg, Tv, Tspan)
+    return _integrate_nd_out_fold(Tv, lo2, hi2)
+end
+
+# ND output type folds ONE span dimension per axis (`∫∫ f dx dy :: Tv·X₁·X₂`) —
+# a single shared `Tspan` collapses to one span power and would be wrong for
+# unit-carrying grids (Real: identical promoted float). Recursive tuple peel
+# keeps it inferable without a generated function.
+@inline _integrate_nd_out_fold(::Type{Tacc}, ::Tuple{}, ::Tuple{}) where {Tacc} = Tacc
+@inline function _integrate_nd_out_fold(
+        ::Type{Tacc}, lo2::Tuple, hi2::Tuple
+    ) where {Tacc}
+    Ts = promote_type(typeof(first(lo2)), typeof(first(hi2)))
+    Tnext = _promote_eltype(_integrate_op, Ts, Tacc, Ts)
+    return _integrate_nd_out_fold(Tnext, Base.tail(lo2), Base.tail(hi2))
+end
+
+# Full-domain twin: spans are the axes themselves — fold per-axis eltypes.
+@inline _integrate_nd_out_grids(::Type{Tacc}, ::Tuple{}) where {Tacc} = Tacc
+@inline function _integrate_nd_out_grids(::Type{Tacc}, grids::Tuple) where {Tacc}
+    Ts = eltype(first(grids))
+    Tnext = _promote_eltype(_integrate_op, Ts, Tacc, Ts)
+    return _integrate_nd_out_grids(Tnext, Base.tail(grids))
 end

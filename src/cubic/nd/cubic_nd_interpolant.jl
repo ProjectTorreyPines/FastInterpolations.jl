@@ -72,7 +72,8 @@ function _cubic_interp_nd(
         store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
     # Zero-allocation type promotion + grid conversion
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
+    _check_nd_solver_grid(Tg_p)
 
     # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
     data_typed = Tv === Tv_raw ? data : Tv.(data)

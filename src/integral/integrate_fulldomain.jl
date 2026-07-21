@@ -588,15 +588,16 @@ end
 
 @inline function integrate(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     tags, payload = _separable_spec(itp)
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
+    # Per-axis span-product fold (∫∫ f dx dy :: Tv·X₁·X₂) — see _integrate_nd_out_grids.
+    Tout = _integrate_nd_out_grids(Tv, itp.grids)
     z = _nd_int_zero(Tout, payload)
     return _integrate_separable_nd_fulldomain(tags, itp.grids, payload, Tout, z)
 end
 
 @inline function integrate(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
+        lo::Tuple{Vararg{Number, N}},
+        hi::Tuple{Vararg{Number, N}};
         search = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}

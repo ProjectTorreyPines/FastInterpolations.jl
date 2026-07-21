@@ -86,7 +86,7 @@ end
 @inline function pchip_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}, Nothing} = nothing,
         kwargs...,
     ) where {N}
@@ -153,7 +153,7 @@ end
 @inline function cardinal_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         tension = 0.0,
         bc::Union{AbstractBC, NTuple{N, AbstractBC}, Nothing} = nothing,
         kwargs...,
@@ -222,7 +222,7 @@ end
 @inline function akima_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}, Nothing} = nothing,
         kwargs...,
     ) where {N}

@@ -10,7 +10,7 @@
 # ========================================
 
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
@@ -39,7 +39,7 @@ end
 # 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -131,10 +131,10 @@ paths share this signature.
 @generated function _constant_nd_kernel(
         data::AbstractArray{Tv, N},
         intervals::NTuple{N, _ExplicitIndices{2}},
-        hs::Tuple{Vararg{Real, N}},
+        hs::Tuple{Vararg{Number, N}},
         sides::Tuple{Vararg{AbstractSide, N}},
-        q_eval::Tuple{Vararg{Real, N}},
-        Ls::Tuple{Vararg{Real, N}}
+        q_eval::Tuple{Vararg{Number, N}},
+        Ls::Tuple{Vararg{Number, N}}
     ) where {Tv, N}
     exprs = Expr[]
 

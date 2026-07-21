@@ -61,13 +61,13 @@ end
         integrate(_ob1d(ms[1], grids[1], A), lo[1], hi[1])
     function comp_nd(ms, grids, A)
         x = grids[1]
-        inner = grids[2:end]
+        inner = Base.tail(grids)
         vals = [comp_nd(Base.tail(ms), inner, selectdim(A, 1, i)) for i in eachindex(x)]
         return integrate(_ob1d(ms[1], x, vals))
     end
     function comp_nd(ms, grids, A, lo, hi)
         x = grids[1]
-        inner = grids[2:end]
+        inner = Base.tail(grids)
         vals = [comp_nd(Base.tail(ms), inner, selectdim(A, 1, i), Base.tail(lo), Base.tail(hi)) for i in eachindex(x)]
         return integrate(_ob1d(ms[1], x, vals), lo[1], hi[1])
     end

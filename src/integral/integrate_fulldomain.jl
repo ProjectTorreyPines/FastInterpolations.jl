@@ -119,9 +119,12 @@ homogeneous (`linear_interp`, `cubic_interp`, …) and heterogeneous mixes
 (`interp(grids, data; method=(CubicInterp(), LinearInterp()))`); only the
 Hermite family (local-slope / user-slope) has no ND integral.
 
-The **one-shot** forms build the `method` interpolant from raw data with
-`copy=false` reference storage — nothing is copied — then integrate in a single
-call. 1-D integrates every method; ND takes a single tensor-product `method`
+The **one-shot** forms build the `method` interpolant from raw data, then
+integrate in a single call, storing the input by reference where the method
+allows (`copy=false`): the trivial families (Linear/Constant) never copy, the
+1-D coefficient builds reference the data (Cubic copies only its grid), and the
+ND `PreCompute` methods (Cubic/Quadratic) copy grids and data. 1-D integrates
+every method; ND takes a single tensor-product `method`
 (Linear, Cubic, Quadratic, Constant).
 
 ```julia
@@ -408,6 +411,12 @@ end
 # separate from `prod(rs)`: an all-trivial hetero PreCompute payload carries a
 # size-1 leading slot axis even though `prod(rs) == 1`.
 function _separable_emit_common(rs::NTuple{N, Int}, has_slot::Bool) where {N}
+    # Both the inner contraction here and the outer Kronecker fold in
+    # `_separable_emit_outer` hard-code rank ≤ 2 (value only, or a value+deriv pair),
+    # so a rank-≥3 family would silently drop slots. This helper runs first at
+    # generation, so guarding here covers both — but extending to rank ≥ 3 means
+    # touching both sites, not just this one.
+    all(≤(2), rs) || error("separable ND integrate kernel supports per-axis weight rank ≤ 2; got ranks $rs")
     P = prod(rs)
     r1 = rs[1]
     Mout = P ÷ r1                      # outer-axis slot configurations

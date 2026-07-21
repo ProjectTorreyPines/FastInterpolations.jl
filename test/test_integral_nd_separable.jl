@@ -435,3 +435,65 @@ end
         @test @allocated(integrate(itp, lo, hi)) <= ND_ALLOC_THRESHOLD
     end
 end
+
+# Minimal-size axes. The per-axis boundary/interior split (`k==1`/`k==n` special-
+# cased, interior sweep `2:(n-1)`) is otherwise unexercised at each family's
+# smallest grid. For rank-1 axes (linear/constant) the minimum is n=2, where the
+# interior sweep is EMPTY and both boundary branches fire on the same two nodes —
+# the branch-collision case. Quadratic (min n=3) and cubic (min n=4) cannot reach
+# n=2 (their poly fit needs degree+1 points), so their minimal axes still carry
+# interior nodes; pin them too. Each family is checked with the small axis inner,
+# outer, and on both axes, against the engine-independent `comp_nd` oracle and the
+# bounded engine at full bounds (which drives the small-span `else` kernel branch).
+@testitem "ND separable: minimal-size axes (boundary/interior collision)" setup = [AllocConstants, NDCompositionOracle] begin
+    f2(xi, yj) = sin(xi) * cos(yj) + 0.3xi + 2.0
+    big = [0.0, 0.4, 0.9, 1.6, 2.0]        # n = 5 companion axis
+
+    function pin(itp, ms, gx, gy, data)
+        lo = (first(gx), first(gy));  hi = (last(gx), last(gy))
+        @test integrate(itp) ≈ comp_nd(ms, (gx, gy), data) rtol = 1.0e-11
+        @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
+    end
+
+    @testset "linear/constant — true n=2 empty-interior collision" begin
+        two = [0.0, 1.3]
+        for (mk, m) in (
+                ((g, d) -> linear_interp(g, d; extrap = NoExtrap()), LinearInterp()),
+                (
+                    (g, d) -> constant_interp(g, d; side = NearestSide(), extrap = NoExtrap()),
+                    ConstantInterp(NearestSide()),
+                ),
+            )
+            for (gx, gy) in ((two, big), (big, two), (two, [0.0, 2.0]))   # inner, outer, both
+                data = [f2(xi, yj) for xi in gx, yj in gy]
+                pin(mk((gx, gy), data), (m, m), gx, gy, data)
+            end
+        end
+
+        # linear reproduces a bilinear field exactly → closed forms on one 2×2 cell
+        gx = [0.0, 1.3];  gy = [0.0, 2.0]
+        bil = [xi * yj + 2xi - 3yj + 5 for xi in gx, yj in gy]
+        bil_exp(lo, hi) = begin
+            X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2
+            Y1 = hi[2] - lo[2];  Y2 = (hi[2]^2 - lo[2]^2) / 2
+            X2 * Y2 + 2 * X2 * Y1 - 3 * X1 * Y2 + 5 * X1 * Y1
+        end
+        itp = linear_interp((gx, gy), bil)
+        @test integrate(itp) ≈ bil_exp((0.0, 0.0), (1.3, 2.0)) rtol = 1.0e-13
+        # partial sub-box inside the single cell — clipped weights at n=2
+        @test integrate(itp, (0.3, 0.5), (1.0, 1.7)) ≈ bil_exp((0.3, 0.5), (1.0, 1.7)) rtol = 1.0e-12
+    end
+
+    @testset "quadratic (min n=3) / cubic (min n=4) minimal axes" begin
+        for (mk, m, nmin) in (
+                (quadratic_interp, QuadraticInterp(), 3),
+                (cubic_interp, CubicInterp(), 4),
+            )
+            small = collect(range(0.0, 1.0, length = nmin))
+            for (gx, gy) in ((small, big), (big, small), (small, small))   # inner, outer, both
+                data = [f2(xi, yj) for xi in gx, yj in gy]
+                pin(mk((gx, gy), data), (m, m), gx, gy, data)
+            end
+        end
+    end
+end

@@ -40,7 +40,7 @@ function cubic_interp(
     # (a per-call copy would miss every time + alloc). `Tg` is value-matched (Int/OneTo grid +
     # Float32 data → Float32), so the OnTheFly eval + witness `Tr` agree. Batch keeps eager-convert.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
+    Tv_p = _promote_eltype(_coeff_op2, Tg, Tv)
     _validate_nd_grids(grids, data)
     Tq = promote_type(typeof.(query)...)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
@@ -152,7 +152,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
@@ -207,7 +207,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # per axis when all its queries are in-bounds, so the per-query `_try_fill_oob` /
     # `_handle_all_extraps` branches compile away.
     extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)

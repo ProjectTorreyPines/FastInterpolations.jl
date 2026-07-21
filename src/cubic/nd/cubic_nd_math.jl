@@ -183,7 +183,7 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
     ) where {Tg, Tinv, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
     # `(yL - yR)` is widened into the moment field via `_fielddiff` so narrow y can't wrap.
-    value_contrib = 12 * _fielddiff(_promote_eltype(_coeff_op, Tg, typeof(yL)), yL, yR)
+    value_contrib = 12 * _fielddiff(_promote_eltype(_coeff_op2, Tg, typeof(yL)), yL, yR)
     deriv_contrib = 6 * h * (dyL + dyR)
 
     d3P_dt3 = value_contrib + deriv_contrib
@@ -321,7 +321,7 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, first(values))
     cache = _get_cubic_cache(grid, bc, _effective_autocache(true, Tg))
     actual_bc = cache.bc isa PeriodicBC ? cache.bc : bc_compute
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, actual_bc)
     _moments_to_derivatives_1d!(deriv, m, values, cache.x)
@@ -344,7 +344,7 @@ end
     # Cache uses grid type Tg for matrix structure
     bc_cache = BCPair(Deriv1(zero(Tg)), Deriv1(zero(Tg)))
     cache = _get_cubic_cache(grid, bc_cache, _effective_autocache(true, Tg))
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, bc)
     _moments_to_derivatives_1d!(deriv, m, values, cache.x)

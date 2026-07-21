@@ -40,7 +40,7 @@ Thread-safe: workspaces allocated from task-local pool.
     @assert length(y) == length(cache.x) "y length must match cache grid"
     _check_query_output_size(output, x_query)
 
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc)
 
@@ -90,7 +90,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     # cache bank so `cache.x` — and thus the solve — is at the value width.
     Tg_eff = _promote_grid_float(Tg, eltype(y))
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg), Tg_eff)
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), eltype(y))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), eltype(y))
     z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
@@ -124,7 +124,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     # data → Float32 cache), so scalar ≡ batch ≡ persistent at the value width.
     Tg_eff = _promote_grid_float(Tg, Tv)
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg), Tg_eff)
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
@@ -170,7 +170,7 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
     # `_resolve_data` handles the per-bc endpoint validation (`:inclusive`
     # checks `y[1] ≈ y[end]`; `:exclusive` is a no-op wrap to length n+1).
     y_eff = _resolve_data(y, bc)
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(cache.x))
     _solve_system!(z, cache, y_eff, cache.bc)
 

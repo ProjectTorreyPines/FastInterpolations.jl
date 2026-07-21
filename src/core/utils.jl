@@ -195,14 +195,20 @@ end
 # in type when `h` is the (floated) grid type, which it always is at eltype sites.
 @inline _interp_op(h::Tg, yv::Tv, dL::Tq) where {Tg, Tv, Tq} = yv + yv * (dL / h)
 
-# `_coeff_op` (2-arg): divided difference `Δy/h`, accumulated by the solve → the
-# COEFFICIENT eltype. Modeled as `yv + yv * inv(h)`. Two faithful pieces: `* inv(h)`
-# (NOT `/ h`) mirrors the real solve, which multiplies by a precomputed float `inv_h`
-# — duck-safe (a value type needs `*(Tv, Tg)`, not `/(Tv, Tg)`) while `inv(h)` still
-# floats Int grids (`inv(Int)::Float64`); the leading `yv +` mirrors the solve summing
-# scaled values (`+(Tv, Tv)`, which any linear solve already requires). QUERY-FREE:
-# coefficients (cubic `z`, quadratic `a`/`d`, hermite `dy`) are solved before any query.
-@inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv * inv(h)
+# `_coeff_op` (2-arg): FIRST-ORDER divided difference `Δy/h`, accumulated by the
+# solve → the order-1 COEFFICIENT eltype (slopes: hermite/pchip/akima/cardinal `dy`,
+# secants). Modeled as `yv*inv(h) + yv*inv(h)`: `* inv(h)` (NOT `/ h`) mirrors the
+# real solve multiplying a precomputed `inv_h` — duck-safe (`*(Tv, Tg)` not `/`) and
+# floats Int grids (`inv(Int)::Float64`); the `+` mirrors the solve summing scaled
+# values. Dimensionally HOMOGENEOUS (every term `Y/X`) so unit-carrying grids infer
+# a concrete type. QUERY-FREE: coefficients are solved before any query.
+@inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv * inv(h) + yv * inv(h)
+
+# `_coeff_op2` (2-arg): SECOND-ORDER coefficient witness (`Y/X²` — cubic spline `z`;
+# quadratic curvature `a` when its storage splits). Same duck/float/homogeneity
+# contract as `_coeff_op`, one more `inv(h)` power.
+@inline _coeff_op2(h::Tg, yv::Tv) where {Tg, Tv} =
+    yv * (inv(h) * inv(h)) + yv * (inv(h) * inv(h))
 
 # `_inv_op` (1-arg): reciprocal-spacing eltype — `inv(h)` for an axis already at the
 # value-matched width (compose: `_promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))`).
@@ -213,12 +219,14 @@ end
 # `_integrate_op` (3-arg): the definite-integral element type — value × spacing.
 # ∫ ≈ Σ yᵢ·hᵢ is dimensionally distinct from the eval witnesses (which weight the value
 # by the dimensionless offset `dL/h`). `span` is the integration length (`b2 - xL` for a
-# partial cell, the cell width `h` for a full cell). The `inv(h)` term is load-bearing: it
-# floats Int grids (`inv(Int)::Float64`) and lifts Dual (`inv(Dual)::Dual`), so Tout is
-# correct for all-Int integrate (the kernels divide) and for AD-wrt-grid/bounds. Duck-safe:
-# `yv` sees only `*`/`+`, a subset of what the integral kernels already require.
+# partial cell, the cell width `h` for a full cell). The `oneunit(h)*inv(h)` factor is
+# load-bearing: dimensionless by construction (units cancel → every term is `Y·X`,
+# so unit-carrying grids infer a concrete type), it floats Int grids
+# (`oneunit(Int)*inv(Int)::Float64`) and lifts Dual (`inv(Dual)::Dual`), so Tout is
+# correct for all-Int integrate (the kernels divide) and for AD-wrt-grid/bounds.
+# Duck-safe: `yv` sees only `*`/`+`, a subset of what the integral kernels require.
 @inline _integrate_op(h::Tg, yv::Tv, span::Ts) where {Tg, Tv, Ts} =
-    yv * span + yv * (span * inv(h))
+    yv * span + yv * (span * (oneunit(h) * inv(h)))
 
 # ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
 # `Tc` is the method's coefficient/output field type (e.g. `eltype` of a coeff

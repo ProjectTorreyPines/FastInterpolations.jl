@@ -140,3 +140,56 @@ end
     end
     @test g ≈ ref rtol = 1.0e-6
 end
+
+# ========================================
+# Phase 1 — axis machinery + witness homogeneity
+# ========================================
+
+@testitem "Duck grid: Unitful axis machinery (internals)" begin
+    using Unitful
+    const FI = FastInterpolations
+
+    su = 1.0u"s"
+    Ts = typeof(su)
+
+    @testset "Unitful range → generic _CachedRange (never index-space tags)" begin
+        r = (0.0:0.5:4.0) .* u"s"
+        cr = FI._to_float(r, Ts)
+        @test cr isa FI._CachedRange{Ts}
+        tag = typeof(cr).parameters[3]
+        @test tag !== FI._UnitStep && tag !== FI._OneTo
+        @test cr.h === 0.5u"s"
+        @test cr.inv_h === inv(0.5u"s")     # Quantity⁻¹ — units preserved
+        @test first(cr) === 0.0u"s" && last(cr) === 4.0u"s"
+    end
+
+    @testset "Unitful vector → _CachedVector (h/inv_h unit-typed)" begin
+        xv = [0.0, 1.0, 2.5, 4.0] .* u"s"
+        cv = FI._CachedVector(xv)
+        @test eltype(cv.h) === Ts
+        @test eltype(cv.inv_h) === typeof(inv(su))
+        @test cv.h[2] === 1.5u"s"
+    end
+
+    @testset "demotion gate: Real index-space tags unchanged" begin
+        @test typeof(FI._to_float(1:5, Float64)).parameters[3] === FI._UnitStep
+        @test typeof(FI._to_float(Base.OneTo(5), Float64)).parameters[3] === FI._OneTo
+        @test typeof(FI._to_float(1:5, Int)).parameters[3] === FI._UnitStep
+    end
+end
+
+@testitem "Duck grid: witness homogeneity (Unitful promote_op)" begin
+    using Unitful
+    const FI = FastInterpolations
+
+    Ts = typeof(1.0u"s")
+    Tw = typeof(1.0u"W")
+
+    # Dimensionally homogeneous witnesses must infer concrete unit-carrying
+    # types (a non-homogeneous witness infers Union{} via DimensionError).
+    @test Base.promote_op(FI._integrate_op, Ts, Tw, Ts) === typeof(1.0u"W*s")
+    @test Base.promote_op(FI._coeff_op, Ts, Tw) === typeof(1.0u"W/s")     # order 1
+    @test Base.promote_op(FI._coeff_op2, Ts, Tw) === typeof(1.0u"W/s^2") # order 2 (cubic z)
+    @test Base.promote_op(FI._inv_op, Ts) === typeof(inv(1.0u"s"))
+    @test Base.promote_op(FI._interp_op, Ts, Tw, Ts) === Tw              # eval: offset is dimensionless
+end

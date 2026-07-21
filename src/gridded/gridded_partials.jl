@@ -247,7 +247,7 @@ end
 
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids_typed, data, bcs)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     partials = acquire!(pool, Tz, (1 << N, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
     return _gridded_eval_cubic_partials!(

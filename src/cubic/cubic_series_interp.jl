@@ -89,7 +89,7 @@ mutable struct CubicSeriesInterpolant{
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{Tv}               # Series-contiguous y (n_points × n_series)
-    const z::Matrix{Tz}               # Series-contiguous z: Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    const z::Matrix{Tz}               # Series-contiguous z: Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     const _transpose::LazyTransposePair{Tv, Tz}  # Lazy point-contiguous layout
     const extrap::E                   # Extrapolation mode (compile-time specialized)
     const search_policy::P            # Default search policy (immutable, thread-safe)
@@ -319,7 +319,7 @@ function cubic_interp(
 
     # Build z matrix by solving tridiagonal systems
     # z coefficients mix y (Tv_out) with grid spacing (Tg) → Dual when grid is Dual
-    Tz = _promote_eltype(_coeff_op, Tg, Tv_out)
+    Tz = _promote_eltype(_coeff_op2, Tg, Tv_out)
     z_mat = Matrix{Tz}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
@@ -381,7 +381,7 @@ function _build_series_periodic(
     cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, eltype(x)))
 
     # Build z matrix (Dual when grid is Dual)
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     z_mat = Matrix{Tz}(undef, n_pts, n_series_count)
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc)
 

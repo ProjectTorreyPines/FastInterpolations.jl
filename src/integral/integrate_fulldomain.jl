@@ -66,6 +66,10 @@ end
     y = itp.y
     return @inline (i, h) -> @inbounds _constant_integral_kernel(_EvalIntegralPartial(), y[i], y[i + 1], h, zero(Tg), h, side)
 end
+# Forward the single-arg trait to the side-aware form so the generic
+# integrate/cumulative paths serve Constant too — `side` is a type param, so this
+# fully specializes with no runtime branch (no dedicated Constant overrides needed).
+@inline _full_cell_fn(itp::ConstantInterpolant) = _full_cell_fn(itp, itp.side)
 
 # ── 1D series trait: _full_cell_fn(sitp, k) → (i, h) -> value ──
 
@@ -88,6 +92,7 @@ end
     y = sitp.y
     return @inline (i, h) -> @inbounds _constant_integral_kernel(_EvalIntegralPartial(), y[i, k], y[i + 1, k], h, zero(Tg), h, side)
 end
+@inline _full_cell_fn(sitp::ConstantSeriesInterpolant, k::Int) = _full_cell_fn(sitp, k, sitp.side)
 
 # ═══════════════════════════════════════════════════════════════
 # integrate(itp) — 1D full-domain fast path
@@ -119,9 +124,12 @@ homogeneous (`linear_interp`, `cubic_interp`, …) and heterogeneous mixes
 (`interp(grids, data; method=(CubicInterp(), LinearInterp()))`); only the
 Hermite family (local-slope / user-slope) has no ND integral.
 
-The **one-shot** forms build the `method` interpolant from raw data with
-`copy=false` reference storage — nothing is copied — then integrate in a single
-call. 1-D integrates every method; ND takes a single tensor-product `method`
+The **one-shot** forms build the `method` interpolant from raw data, then
+integrate in a single call, storing the input by reference where the method
+allows (`copy=false`): the trivial families (Linear/Constant) never copy, the
+1-D coefficient builds reference the data (Cubic copies only its grid), and the
+ND `PreCompute` methods (Cubic/Quadratic) copy grids and data. 1-D integrates
+every method; ND takes a single tensor-product `method`
 (Linear, Cubic, Quadratic, Constant).
 
 ```julia
@@ -131,10 +139,7 @@ integrate(x, y, 0.2, 1.5; method = LinearInterp())   # one-shot,   ∫ from 0.2 
 integrate((xs, ys), data; method = LinearInterp())   # one-shot,   2-D full-domain
 ```
 """
-@inline function integrate(
-        itp::AbstractInterpolant{Tg, Tv};
-        search = nothing, hint = nothing
-    ) where {Tg <: Real, Tv}
+@inline function integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     return _integrate_1d_fulldomain(_grid_1d(itp), _full_cell_fn(itp), Tout)
 end
@@ -159,29 +164,16 @@ end
     end
 end
 
-# Constant override: side is parametric → compiler knows concrete type,
-# so `_full_cell_fn(itp, side)` is a distinct method from the generic single-arg form.
-@inline function integrate(
-        itp::ConstantInterpolant{Tg, Tv};
-        search = nothing, hint = nothing
-    ) where {Tg <: Real, Tv}
-    x = _grid_1d(itp)
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    return _integrate_1d_fulldomain(x, _full_cell_fn(itp, itp.side), Tout)
-end
-
-# Hermite family is handled by the generic path above — `_full_cell_fn`
-# internally dispatches on `itp.dy` (PreCompute vs OnTheFly).
+# Constant and the Hermite family are handled by the generic path above —
+# `_full_cell_fn` forwards Constant to its side-aware form and dispatches the
+# Hermite family on `itp.dy` (PreCompute vs OnTheFly).
 
 # ═══════════════════════════════════════════════════════════════
 # integrate(sitp) — 1D Series full-domain fast path
 # ═══════════════════════════════════════════════════════════════
 
 # Generic Series: catches Cubic, Linear, Quadratic series
-@inline function integrate(
-        sitp::AbstractSeriesInterpolant{Tg, Tv};
-        search = nothing, hint = nothing
-    ) where {Tg <: Real, Tv}
+@inline function integrate(sitp::AbstractSeriesInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
     x = _grid_1d(sitp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n = n_series(sitp)
@@ -192,45 +184,20 @@ end
     return results
 end
 
-# Constant Series override: side is parametric → compiler knows concrete type
-@inline function integrate(
-        sitp::ConstantSeriesInterpolant{Tg, Tv};
-        search = nothing, hint = nothing
-    ) where {Tg <: Real, Tv}
-    x = _grid_1d(sitp)
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    n = n_series(sitp)
-    results = Vector{Tout}(undef, n)
-    @inbounds for k in 1:n
-        results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, sitp.side), Tout)
-    end
-    return results
-end
-
 # ═══════════════════════════════════════════════════════════════
 # integrate(itp[, lo, hi]) — ND separable engine (single entry point)
 # ═══════════════════════════════════════════════════════════════
 #
 # ── Separable ND engine: full-domain + bounded, all tensor-product families ──
 #
-# On full cells every per-axis basis integral collapses to constants that are
+# On full cells every per-axis basis integral collapses to a constant that is
 # LINEAR in the node payload, so the domain integral is a tensor product of 1D
-# node-weight rules contracted against the payload — each node read once,
-# instead of the 2^N corner reads per cell the generic engine repeats:
-#
-#   rank 1 — payload `data[i…]`, one weight per axis:
-#     linear    w = ½h at the ends, ½(h₋+h₊) interior (composite trapezoid)
-#     constant  w = side-selected h (NearestSide ≡ the trapezoid weights)
-#   rank 2 — payload `partials[1+mask, i…]` (bit d of mask = ∂ along axis d),
-#             a (w, v) = (value, deriv) weight pair per axis:
-#     cubic     ∫cell = h/2(fL+fR) + h²/12(dfL−dfR) → v telescopes interior,
-#               vanishing on uniform axes
-#     quad      ∫cell = 2h/3·fL + h/3·fR + h²/6·dfL → left-anchored, no right v
-#
-# The per-axis weight spec reuses the existing vocabulary — the method tags
-# (`LinearInterp`/`CubicInterp`/`QuadraticInterp`) or the constant `sides` — and
-# the @generated kernels pick the rank from the payload dimensionality (N vs
-# N+1), so one engine serves every family; only the weight methods differ.
+# node-weight rules contracted against the payload — each node read once, vs the
+# 2^N corner reads per cell of the generic engine. Rank-1 axes (linear/constant)
+# carry one weight per node; rank-2 axes (cubic/quadratic) a (value, deriv) pair.
+# The per-axis weight functions below hold the closed forms; the @generated
+# kernels pick the rank from the payload dimensionality (N vs N+1), reusing the
+# method tags (`LinearInterp`/`CubicInterp`/…) or constant `sides` as the spec.
 
 # 1D composite-trapezoid node weight on `grid` (length `n`): ½h at the endpoints,
 # ½(h₋+h₊) in the interior. Only the grid is divided — values stay multiply-only.
@@ -408,6 +375,12 @@ end
 # separate from `prod(rs)`: an all-trivial hetero PreCompute payload carries a
 # size-1 leading slot axis even though `prod(rs) == 1`.
 function _separable_emit_common(rs::NTuple{N, Int}, has_slot::Bool) where {N}
+    # Both the inner contraction here and the outer Kronecker fold in
+    # `_separable_emit_outer` hard-code rank ≤ 2 (value only, or a value+deriv pair),
+    # so a rank-≥3 family would silently drop slots. This helper runs first at
+    # generation, so guarding here covers both — but extending to rank ≥ 3 means
+    # touching both sites, not just this one.
+    all(≤(2), rs) || error("separable ND integrate kernel supports per-axis weight rank ≤ 2; got ranks $rs")
     P = prod(rs)
     r1 = rs[1]
     Mout = P ÷ r1                      # outer-axis slot configurations
@@ -416,18 +389,29 @@ function _separable_emit_common(rs::NTuple{N, Int}, has_slot::Bool) where {N}
     pidx(slot, i1) = has_slot ? :(payload[$slot, $i1, $(rest...)]) : :(payload[$i1, $(rest...)])
     wnames(ws, r) = r == 1 ? [Symbol(ws, :_1)] : [Symbol(ws, :_1), Symbol(ws, :_2)]
     wdecl(ws, r, call) = Expr(:(=), Expr(:tuple, wnames(ws, r)...), call)
-    # Inner sum for outer configuration `m`: contract the inner axis' `r1` weight
-    # components against its contiguous slot pair (slots `r1·(m−1)+1 … r1·m`),
-    # then scale by the outer Kronecker product `ko2_m` (absent when N == 1).
-    function term(m, i1, ws)
+    # Inner contraction for outer configuration `m`: contract the inner axis' `r1`
+    # weight components against its contiguous slot pair (slots `r1·(m−1)+1 … r1·m`).
+    function inner_term(m, i1, ws)
         w = wnames(ws, r1)
         base = r1 * (m - 1)
-        inner = r1 == 2 ?
+        return r1 == 2 ?
             :(muladd($(w[2]), $(pidx(base + 2, i1)), $(w[1]) * $(pidx(base + 1, i1)))) :
             :($(w[1]) * $(pidx(base + 1, i1)))
-        return N == 1 ? inner : :($(Symbol(:ko2_, m)) * $inner)
     end
-    contrib(ws, i1) = foldl((a, b) -> :($a + $b), [term(m, i1, ws) for m in 1:Mout])
+    # Sum the `Mout` outer configs, each scaled by its Kronecker product `ko2_m`,
+    # as a right-nested muladd chain so every `ko2_m · inner_m` fuses (FMA) rather
+    # than a separate multiply + add (absent when N == 1: one config). This is a
+    # reassociation — single-rounded, so at least as accurate as mul-then-add but
+    # NOT bit-identical: under cancellation the two can differ by more than 1 ULP.
+    # Consistent with the inner (value, deriv) term above, which already fuses.
+    function contrib(ws, i1)
+        N == 1 && return inner_term(1, i1, ws)
+        acc = :($(Symbol(:ko2_, Mout)) * $(inner_term(Mout, i1, ws)))
+        for m in (Mout - 1):-1:1
+            acc = :(muladd($(Symbol(:ko2_, m)), $(inner_term(m, i1, ws)), $acc))
+        end
+        return acc
+    end
     return ivars, rest, pidx, wdecl, contrib
 end
 
@@ -599,11 +583,7 @@ end
 @inline _nd_int_zero(::Type{Tout}, payload) where {Tout <: Number} = zero(Tout)
 @inline _nd_int_zero(::Type{Tout}, payload) where {Tout} = 0 * @inbounds(payload[begin])
 
-@inline function integrate(
-        itp::AbstractInterpolantND{Tg, Tv, N};
-        search = nothing,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
+@inline function integrate(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     tags, payload = _separable_spec(itp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     z = _nd_int_zero(Tout, payload)
@@ -702,16 +682,6 @@ function cumulative_integrate!(
     return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp))
 end
 
-# Constant override: side is parametric → compiler knows concrete type,
-# so `_full_cell_fn(itp, side)` dispatches to a distinct specialized method.
-function cumulative_integrate!(
-        out::AbstractVector, itp::ConstantInterpolant{Tg, Tv}
-    ) where {Tg <: Real, Tv}
-    x = _grid_1d(itp)
-    _check_cumulative_out(out, length(x))
-    return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp, itp.side))
-end
-
 # Allocating wrappers: allocate output vector then forward to the in-place path.
 """
     cumulative_integrate(itp)          # persistent — Vector (Matrix for a Series)
@@ -739,21 +709,6 @@ function cumulative_integrate(
     result = Matrix{Tout}(undef, n_pts, n_ser)
     @inbounds for k in 1:n_ser
         _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k))
-    end
-    return result
-end
-
-# Constant Series override: side is parametric → compiler knows concrete type
-function cumulative_integrate(
-        sitp::ConstantSeriesInterpolant{Tg, Tv}
-    ) where {Tg <: Real, Tv}
-    x = _grid_1d(sitp)
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
-    n_pts = length(x)
-    n_ser = n_series(sitp)
-    result = Matrix{Tout}(undef, n_pts, n_ser)
-    @inbounds for k in 1:n_ser
-        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k, sitp.side))
     end
     return result
 end

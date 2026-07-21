@@ -435,3 +435,96 @@ end
         @test @allocated(integrate(itp, lo, hi)) <= ND_ALLOC_THRESHOLD
     end
 end
+
+# Minimal-size axes. The per-axis boundary/interior split (`k==1`/`k==n` special-
+# cased, interior sweep `2:(n-1)`) is otherwise unexercised at each family's
+# smallest grid. For rank-1 axes (linear/constant) the minimum is n=2, where the
+# interior sweep is EMPTY and both boundary branches fire on the same two nodes —
+# the branch-collision case. Quadratic (min n=3) and cubic (min n=4) cannot reach
+# n=2 (their poly fit needs degree+1 points), so their minimal axes still carry
+# interior nodes; pin them too. Each family is checked with the small axis inner,
+# outer, and on both axes, against the engine-independent `comp_nd` oracle and the
+# bounded engine at full bounds (which drives the small-span `else` kernel branch).
+@testitem "ND separable: minimal-size axes (boundary/interior collision)" setup = [AllocConstants, NDCompositionOracle] begin
+    f2(xi, yj) = sin(xi) * cos(yj) + 0.3xi + 2.0
+    big = [0.0, 0.4, 0.9, 1.6, 2.0]        # n = 5 companion axis
+
+    function pin(itp, ms, gx, gy, data)
+        lo = (first(gx), first(gy));  hi = (last(gx), last(gy))
+        @test integrate(itp) ≈ comp_nd(ms, (gx, gy), data) rtol = 1.0e-11
+        @test integrate(itp) ≈ integrate(itp, lo, hi) rtol = 1.0e-12
+    end
+
+    @testset "linear/constant — true n=2 empty-interior collision" begin
+        two = [0.0, 1.3]
+        for (mk, m) in (
+                ((g, d) -> linear_interp(g, d; extrap = NoExtrap()), LinearInterp()),
+                (
+                    (g, d) -> constant_interp(g, d; side = NearestSide(), extrap = NoExtrap()),
+                    ConstantInterp(NearestSide()),
+                ),
+            )
+            for (gx, gy) in ((two, big), (big, two), (two, [0.0, 2.0]))   # inner, outer, both
+                data = [f2(xi, yj) for xi in gx, yj in gy]
+                pin(mk((gx, gy), data), (m, m), gx, gy, data)
+            end
+        end
+
+        # linear reproduces a bilinear field exactly → closed forms on one 2×2 cell
+        gx = [0.0, 1.3];  gy = [0.0, 2.0]
+        bil = [xi * yj + 2xi - 3yj + 5 for xi in gx, yj in gy]
+        bil_exp(lo, hi) = begin
+            X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2
+            Y1 = hi[2] - lo[2];  Y2 = (hi[2]^2 - lo[2]^2) / 2
+            X2 * Y2 + 2 * X2 * Y1 - 3 * X1 * Y2 + 5 * X1 * Y1
+        end
+        itp = linear_interp((gx, gy), bil)
+        @test integrate(itp) ≈ bil_exp((0.0, 0.0), (1.3, 2.0)) rtol = 1.0e-13
+        # partial sub-box inside the single cell — clipped weights at n=2
+        @test integrate(itp, (0.3, 0.5), (1.0, 1.7)) ≈ bil_exp((0.3, 0.5), (1.0, 1.7)) rtol = 1.0e-12
+    end
+
+    @testset "quadratic (min n=3) / cubic (min n=4) minimal axes" begin
+        for (mk, m, nmin) in (
+                (quadratic_interp, QuadraticInterp(), 3),
+                (cubic_interp, CubicInterp(), 4),
+            )
+            small = collect(range(0.0, 1.0, length = nmin))
+            for (gx, gy) in ((small, big), (big, small), (small, small))   # inner, outer, both
+                data = [f2(xi, yj) for xi in gx, yj in gy]
+                pin(mk((gx, gy), data), (m, m), gx, gy, data)
+            end
+        end
+    end
+end
+
+# Out-of-domain bounds on the single ND entry point must reject cleanly. The
+# preamble's domain check is shared by every separable family and the mixed-grid
+# @generated path; pin it on homogeneous builds and one heterogeneous build.
+@testitem "ND separable: out-of-domain bounds throw DomainError" begin
+    x = range(0.0, 2.0, length = 6);  y = range(0.0, 3.0, length = 5)
+    data = [xi + yj for xi in x, yj in y]
+    builds = (
+        linear_interp((x, y), data; extrap = NoExtrap()),
+        cubic_interp((x, y), data; extrap = NoExtrap()),
+        constant_interp((x, y), data; extrap = NoExtrap()),
+        interp((x, y), data; method = (CubicInterp(), LinearInterp()), coeffs = PreCompute(), extrap = NoExtrap()),
+    )
+    for itp in builds
+        @test_throws DomainError integrate(itp, (-0.5, 0.5), (1.0, 2.0))   # lo below domain
+        @test_throws DomainError integrate(itp, (0.5, 0.5), (2.5, 2.0))    # hi above domain
+    end
+end
+
+# The separable emitter hard-codes per-axis rank ≤ 2; a rank-≥3 family would
+# silently drop slots, so the generator guards and errors loudly at generation
+# rather than miscompiling. Exercises the guard directly (no rank-≥3 type exists).
+@testitem "ND separable: rank-≥3 guard errors instead of miscompiling" begin
+    emit = FastInterpolations._separable_emit_common
+    for rs in ((1,), (2,), (1, 2), (2, 2), (1, 2, 1))     # real ranks: transparent
+        @test emit(rs, false) isa Tuple
+    end
+    for rs in ((3,), (1, 3), (2, 3, 1))                    # hypothetical rank ≥ 3: rejected
+        @test_throws "rank ≤ 2" emit(rs, false)
+    end
+end

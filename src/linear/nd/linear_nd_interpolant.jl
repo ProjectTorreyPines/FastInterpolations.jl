@@ -79,7 +79,7 @@ function linear_interp(
 
     # Extend `:exclusive` axes/data to closed-cycle (n+1) layout; periodic
     # bcs are promoted to `:extended` by `_prepare_periodic_nd`, then per-axis
-    # `_cache_axis` wraps (raw → wrapped, pre-wrapped → passthrough).
+    # `_policy_axes` wraps store-aware (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
     grids_typed = _policy_axes(grids_typed, bcs_post, store)
 

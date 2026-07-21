@@ -1899,3 +1899,45 @@ end
         @test _v(integrate(itp, lo, hi)) ≈ integrate(rf, lo, hi) rtol = 1.0e-12
     end
 end
+
+# Multi-channel vector values (SVector): unlike the scalar-wrapper ducks above,
+# SVector{N} defines `zero`/`+`/`*` AND survives the rank-2 (cubic) differentiated
+# payload, so it pins channel-wise integration end to end — the result is a fresh
+# SVector with each channel integrated independently. Reference per channel: the
+# integral of that channel's own scalar interpolant.
+@testitem "SVector-valued integrate — channel-wise (1D + ND, all ranks)" begin
+    using StaticArrays
+
+    # integrate channel `c` via its own scalar interpolant (`map` keeps 1D/ND shape)
+    chan(mk, grids, data, c, args...) = integrate(mk(grids, map(d -> d[c], data)), args...)
+
+    @testset "1D — full + bounded + cumulative" begin
+        x = range(0.0, 2.0, length = 7)
+        data = [SVector(sin(xi), xi^2, 1.0) for xi in x]
+        for mk in (linear_interp, cubic_interp, constant_interp)
+            itp = mk(x, data)
+            I = integrate(itp)
+            @test I isa SVector{3, Float64}
+            @test I ≈ SVector(ntuple(c -> chan(mk, x, data, c), 3)) rtol = 1.0e-12
+            @test integrate(itp, 0.3, 1.6) ≈
+                SVector(ntuple(c -> chan(mk, x, data, c, 0.3, 1.6), 3)) rtol = 1.0e-12
+            C = cumulative_integrate(itp)
+            @test C[1] == zero(SVector{3, Float64})
+            @test C[end] ≈ I rtol = 1.0e-12
+        end
+    end
+
+    @testset "ND — full + bounded (rank-1 linear/constant + rank-2 cubic)" begin
+        x = range(0.0, 2.0, length = 6);  y = range(0.0, 3.0, length = 5)
+        data = [SVector(sin(xi) + yj, xi * yj, 2.0) for xi in x, yj in y]
+        lo = (0.3, 0.4);  hi = (1.7, 2.5)
+        for mk in (linear_interp, cubic_interp, constant_interp)
+            itp = mk((x, y), data)
+            I = integrate(itp)
+            @test I isa SVector{3, Float64}
+            @test I ≈ SVector(ntuple(c -> chan(mk, (x, y), data, c), 3)) rtol = 1.0e-12
+            @test integrate(itp, lo, hi) ≈
+                SVector(ntuple(c -> chan(mk, (x, y), data, c, lo, hi), 3)) rtol = 1.0e-12
+        end
+    end
+end

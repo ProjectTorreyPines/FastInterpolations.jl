@@ -23,8 +23,9 @@ end
 
 # ── One-shot quadrature (ND): integrate(grids, data[, lo, hi]; method) ──
 # ND mirror — only tensor-product types integrate (Linear/Cubic/Quadratic/
-# Constant); the Hermite family (HeteroInterpolantND, no ND integral) is rejected
-# up front. Trivial methods use raw storage; PreCompute types keep the ctor default.
+# Constant); the local-Hermite family (Pchip/Akima/Cardinal) has no homogeneous
+# ND factory reachable from a single `method`, so it is rejected up front.
+# Trivial methods use raw storage; PreCompute types keep the ctor default.
 @inline function _oneshot_build_nd(method::AbstractInterpMethod, grids, data)
     _nd_integrable_method(method) || _throw_nd_oneshot_unsupported(method)
     fn, _, opts = _interp1d_route(method)
@@ -32,15 +33,21 @@ end
         fn(grids, data; opts..., store = StorePolicy(copy = false, cache_axis = false)) :
         fn(grids, data; opts...)
 end
-@inline integrate(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}; method::AbstractInterpMethod) where {N} =
+# A per-axis method tuple can't be built by the single-method one-shot path;
+# point at the persistent build instead of a bare kwarg MethodError.
+@noinline _oneshot_build_nd(method::Tuple, grids, data) = _throw_nd_oneshot_tuple(method)
+
+@inline integrate(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}; method) where {N} =
     integrate(_oneshot_build_nd(method, grids, data))
 @inline integrate(
     grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N},
-    lo::NTuple{N, Real}, hi::NTuple{N, Real}; method::AbstractInterpMethod
+    lo::NTuple{N, Real}, hi::NTuple{N, Real}; method
 ) where {N} = integrate(_oneshot_build_nd(method, grids, data), lo, hi)
 
-@inline _nd_integrable_method(::Union{LinearInterp, CubicInterp, QuadraticInterp, ConstantInterp}) = true
-@inline _nd_integrable_method(::AbstractInterpMethod) = false
+# Single source of truth for "has an ND separable integral": the type-keyed
+# predicate the engine uses (`_is_separable_method_type`, integrate_fulldomain.jl),
+# so the supported-family list lives in exactly one place.
+@inline _nd_integrable_method(m::AbstractInterpMethod) = _is_separable_method_type(typeof(m))
 
 @noinline function _throw_nd_oneshot_unsupported(method)
     throw(
@@ -50,6 +57,17 @@ end
                 "QuadraticInterp, and ConstantInterp. Hermite-family methods " *
                 "(Pchip/Akima/Cardinal) have no ND integral yet; integrate axis-by-axis " *
                 "on per-fiber 1-D interpolants instead."
+        )
+    )
+end
+
+@noinline function _throw_nd_oneshot_tuple(method)
+    throw(
+        ArgumentError(
+            "one-shot ND `integrate(grids, data; method=…)` takes a single tensor-product " *
+                "method, not a per-axis tuple ($(method)). Build the interpolant first and " *
+                "integrate it: `integrate(interp(grids, data; method=$(method)))` " *
+                "(add `coeffs=PreCompute()` for Cubic/Quadratic axes)."
         )
     )
 end

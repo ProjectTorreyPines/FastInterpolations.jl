@@ -21,8 +21,9 @@
     _cache_axis(g, bc, Tg)
 
 # Method-aware `_store_axis` (the hetero arm of the single ctor axis entry):
-# `cache_axis` is not plumbed here — hetero has no `integrate`, and interp axes
-# keep the cached wrap (NoInterp axes are raw by design already).
+# `cache_axis` is not plumbed here — the one-shot integrate API never builds a
+# hetero interpolant (its single-method signature can't form a per-axis tuple),
+# and interp axes keep the cached wrap (NoInterp axes are raw by design already).
 @inline _store_axis(g, bc::AbstractBC, ::Type{Tg}, m::AbstractInterpMethod, store::StorePolicy) where {Tg} =
     _own_or_ref_axis(_cache_axis_for_method(g, bc, Tg, m), Tg, store)
 

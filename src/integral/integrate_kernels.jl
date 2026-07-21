@@ -152,9 +152,9 @@ end
 # with t = u/h, dx = h dt
 @inline function _hermite_integral_kernel_1d(
         fL, fR, dfL, dfR,
-        h::Tg, inv_h::Tg,
-        u0::Real, u1::Real
-    ) where {Tg}
+        h::Tg, inv_h::Ti,
+        u0, u1
+    ) where {Tg, Ti}
     t0 = u0 * inv_h
     t1 = u1 * inv_h
     dH00 = _IH00(t1) - _IH00(t0)

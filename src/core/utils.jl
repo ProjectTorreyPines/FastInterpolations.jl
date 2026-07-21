@@ -260,7 +260,9 @@ end
 # Int axis stops minting `inv(Int)::Float64` beside narrower data. The width-less
 # forms delegate with `Tw = eltype(x)`: bit-identical to the historic raw behavior.
 @inline function _forward_secant(::Type{Tw}, x, y, i) where {Tw}
-    Tc = _promote_eltype(_coeff_op, Tw, eltype(y))
+    # Value-space widen: the diff stays in value units; the 1/X dimension
+    # enters via the cached reciprocal (coeff-space Tc would convert y).
+    Tc = _promote_eltype(_interp_op, Tw, eltype(y), Tw)
     return @inbounds _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(Tw, x, i)
 end
 @inline _forward_secant(x, y, i) = _forward_secant(eltype(x), x, y, i)
@@ -271,7 +273,7 @@ end
 
 # Centered (2-cell-span) secant (y[i+1]-y[i-1]) / (x[i+1]-x[i-1]) via `_get_inv_2cell`.
 @inline function _centered_secant(::Type{Tw}, x, y, i) where {Tw}
-    Tc = _promote_eltype(_coeff_op, Tw, eltype(y))
+    Tc = _promote_eltype(_interp_op, Tw, eltype(y), Tw)   # value-space (see above)
     return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(Tw, x, i)
 end
 @inline _centered_secant(x, y, i) = _centered_secant(eltype(x), x, y, i)

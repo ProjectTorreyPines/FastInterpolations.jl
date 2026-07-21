@@ -195,3 +195,46 @@ end
         @test integrate(itp, 0.5u"s", 2.5u"s") ≈ integrate(tw, 0.5, 2.5) * u"W*s"
     end
 end
+
+# ========================================
+# Phase 4 — local-slope families (PCHIP/Akima/Cardinal/Hermite)
+# ========================================
+
+@testitem "Unitful 1D: local-slope families" begin
+    using Unitful
+
+    xu = [0.0, 1.0, 2.0, 3.0, 4.0] .* u"s"
+    yw = [0.0, 1.0, 0.5, 2.0, 1.0] .* u"W"
+    xf = [0.0, 1.0, 2.0, 3.0, 4.0]
+    yf = [0.0, 1.0, 0.5, 2.0, 1.0]
+
+    @testset "PCHIP" begin
+        itp = pchip_interp(xu, yw)
+        tw = pchip_interp(xf, yf)
+        @test itp(1.5u"s") ≈ tw(1.5) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s"
+    end
+
+    @testset "Akima" begin
+        itp = akima_interp(xu, yw)
+        tw = akima_interp(xf, yf)
+        @test itp(1.5u"s") ≈ tw(1.5) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s"
+    end
+
+    @testset "Cardinal" begin
+        itp = cardinal_interp(xu, yw)
+        tw = cardinal_interp(xf, yf)
+        @test itp(1.5u"s") ≈ tw(1.5) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s"
+    end
+
+    @testset "Hermite (explicit slopes, Y/X units)" begin
+        dyu = [1.0, 0.5, 0.0, -0.5, -1.0] .* u"W/s"
+        dyf = [1.0, 0.5, 0.0, -0.5, -1.0]
+        itp = hermite_interp(xu, yw, dyu)
+        tw = hermite_interp(xf, yf, dyf)
+        @test itp(1.5u"s") ≈ tw(1.5) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s"
+    end
+end

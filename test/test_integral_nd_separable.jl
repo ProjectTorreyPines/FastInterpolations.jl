@@ -497,3 +497,34 @@ end
         end
     end
 end
+
+# Out-of-domain bounds on the single ND entry point must reject cleanly. The
+# preamble's domain check is shared by every separable family and the mixed-grid
+# @generated path; pin it on homogeneous builds and one heterogeneous build.
+@testitem "ND separable: out-of-domain bounds throw DomainError" begin
+    x = range(0.0, 2.0, length = 6);  y = range(0.0, 3.0, length = 5)
+    data = [xi + yj for xi in x, yj in y]
+    builds = (
+        linear_interp((x, y), data; extrap = NoExtrap()),
+        cubic_interp((x, y), data; extrap = NoExtrap()),
+        constant_interp((x, y), data; extrap = NoExtrap()),
+        interp((x, y), data; method = (CubicInterp(), LinearInterp()), coeffs = PreCompute(), extrap = NoExtrap()),
+    )
+    for itp in builds
+        @test_throws DomainError integrate(itp, (-0.5, 0.5), (1.0, 2.0))   # lo below domain
+        @test_throws DomainError integrate(itp, (0.5, 0.5), (2.5, 2.0))    # hi above domain
+    end
+end
+
+# The separable emitter hard-codes per-axis rank ≤ 2; a rank-≥3 family would
+# silently drop slots, so the generator guards and errors loudly at generation
+# rather than miscompiling. Exercises the guard directly (no rank-≥3 type exists).
+@testitem "ND separable: rank-≥3 guard errors instead of miscompiling" begin
+    emit = FastInterpolations._separable_emit_common
+    for rs in ((1,), (2,), (1, 2), (2, 2), (1, 2, 1))     # real ranks: transparent
+        @test emit(rs, false) isa Tuple
+    end
+    for rs in ((3,), (1, 3), (2, 3, 1))                    # hypothetical rank ≥ 3: rejected
+        @test_throws "rank ≤ 2" emit(rs, false)
+    end
+end

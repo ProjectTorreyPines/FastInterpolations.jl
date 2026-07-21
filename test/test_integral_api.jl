@@ -44,11 +44,12 @@ end
     x_rng = range(0.0, 2.0, length = 21)
     y = @. x_vec^2 + 1.0
 
-    @testset "matches the persistent build" begin
-        for x in (x_vec, x_rng)
-            @test integrate(x, y; method = LinearInterp()) ≈ integrate(linear_interp(x, y)) atol = 1.0e-12
-            @test integrate(x, y; method = CubicInterp()) ≈ integrate(cubic_interp(x, y)) atol = 1.0e-12
-            @test integrate(x, y; method = QuadraticInterp()) ≈ integrate(quadratic_interp(x, y)) atol = 1.0e-12
+    @testset "matches the persistent build (all methods)" begin
+        for x in (x_vec, x_rng), m in (
+                    LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp(),
+                    PchipInterp(), AkimaInterp(), CardinalInterp(),
+                )
+            @test integrate(x, y; method = m) ≈ integrate(interp(x, y; method = m)) atol = 1.0e-12
         end
     end
 
@@ -148,6 +149,9 @@ end
         for m in (PchipInterp(), AkimaInterp(), CardinalInterp(), NoInterp())
             @test_throws "ND integration is implemented" integrate((xr, yr), data; method = m)
         end
+        # a per-axis method tuple is one-shot-unsupported → clean ArgumentError, not MethodError
+        @test_throws "per-axis tuple" integrate((xr, yr), data; method = (CubicInterp(), LinearInterp()))
+        @test_throws "per-axis tuple" integrate((xr, yr), data, (0.3, 0.4), (2.5, 1.5); method = (CubicInterp(), LinearInterp()))
         # …while the same methods DO integrate in 1-D:
         xv1 = collect(xr)
         yv1 = sin.(xv1)

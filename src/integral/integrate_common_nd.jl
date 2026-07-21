@@ -18,7 +18,7 @@ end
 # `d` as a runtime Int, so `grids[d]` on a MIXED grid tuple (e.g. Vector × Range)
 # returns the element Union and the downstream `search_interval` dispatches
 # dynamically → boxing. Emitting literal `grids[1]`, `grids[2]` keeps each axis
-# concrete. See [[project_tg_closure_lts_alloc]] for the same bug class.
+# concrete. Pinned by the mixed-grid 0-alloc testitem in test_integral_nd_separable.jl.
 @generated function _nd_cell_ranges(
         grids::NTuple{N, AbstractVector},
         lo::Tuple{Vararg{Real, N}},

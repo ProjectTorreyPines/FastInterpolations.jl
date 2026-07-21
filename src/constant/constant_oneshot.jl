@@ -28,7 +28,7 @@
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     if _extract_primal(xi) == _extract_primal(last(x))
         # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic
         # `inner[1]`). `one(Tq) * one(Tg)` threads both query and grid carriers
@@ -55,7 +55,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     # Thread `extrap_eff` into the search (not a hardcoded InBounds()) so this core matches the other
     # 1D wrappers and stays correct for any extrap that reaches it — today only NoExtrap does
     # (ExtendExtrap → ClampExtrap; Clamp/Fill/Wrap have own methods). Seam branch mirrors the InBounds core.
@@ -81,7 +81,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     return _constant_eval_at_point(x, y, xi, ClampExtrap(), side, op, searcher)
 end
 
@@ -94,7 +94,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
     # Dual), matching the in-domain selection. Identity on Float64; Int grids stay Int.
     xi = _promote_coord(xi, eltype(x))
@@ -117,7 +117,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     xi_wrapped = _wrap_to_domain(xi, x)
     # Right-edge short-circuit (closed-domain): `xi == last(x)` collapses
     # uniformly to `last(y)`, bypassing side semantics. Mirrors the InBounds
@@ -209,7 +209,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info

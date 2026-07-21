@@ -178,14 +178,14 @@ end
 #
 # `_CachedVector`: idx-indexed cache wins (1 load, no fp ops). The xL/xR
 # fields are ignored — they're already encoded in `c.inv_h[idx]`.
-@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::Any, ::Any) =
     @inbounds x.h[idx]
 @inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
     @inbounds x.inv_h[idx]
 
 # Raw `AbstractVector` fallback: no cache → `xR - xL` straight from search.
 # `idx` is ignored here (kept in signature for uniform call shape).
-@inline _get_h(::AbstractVector, ::Int, xL::Real, xR::Real) = xR - xL
+@inline _get_h(::AbstractVector, ::Int, xL, xR) = xR - xL
 @inline _get_inv_h(::AbstractVector, ::Int, xL::Real, xR::Real) = inv(xR - xL)
 
 # ── Width-first forms: `_get_*(Tw, x, i)` ────────────────────────────────────

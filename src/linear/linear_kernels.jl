@@ -142,6 +142,6 @@ end
 #     `one`, so LLVM folds the `×inv_h` away (α = q - L). No `_UnitStep` method needed.
 #   - plain `AbstractVector`: divide by the on-the-fly `R - L` (EvalValue can then DCE
 #     the separately-extracted `inv_h`, which only EvalDeriv1 kernels use).
-@inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
-@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * _get_inv_h(x)
-@inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)
+@inline _alpha_of(q, L, inv_h) = (q - L) * inv_h
+@inline _alpha_of(q, L, R, x::_CachedRange) = (q - L) * _get_inv_h(x)
+@inline _alpha_of(q, L, R, ::AbstractVector) = (q - L) / float(R - L)

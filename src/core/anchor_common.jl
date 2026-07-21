@@ -32,7 +32,7 @@ widened bracket is handled in one place (a query at the true endpoint is
 `IN_DOMAIN`). `_extract_primal` on bounds and query keeps it partial-sign
 independent for Dual grids.
 """
-@inline function _oob_state(x::AbstractVector, xq::Real)
+@inline function _oob_state(x::AbstractVector, xq)
     lo, hi = _domain_bounds(x)
     xqp = _extract_primal(xq)
     # `_lt`/`_gt` promote-compare: dodge Base's exact mixed `<(Int, Float)` on an

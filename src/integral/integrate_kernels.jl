@@ -14,7 +14,7 @@
         ::_EvalIntegralPartial,
         zL::Tz, zR::Tz, yL::Ty, yR::Ty,
         h::Tg, u0::Td, u1::Td
-    ) where {Tz, Ty, Tg <: Real, Td <: Real}
+    ) where {Tz, Ty, Tg, Td}
     inv_h = inv(h)
     a4 = (zR - zL) * (inv_h * inv(Tg(24)))   # a/4 = (zR-zL)/(24h)
     b3 = inv(Tg(6)) * zL                     # b/3 = zL/6
@@ -28,7 +28,7 @@ end
 @inline function _cubic_integral_kernel(
         ::_EvalIntegralCell,
         zL::Tz, zR::Tz, yL::Ty, yR::Ty, h::Tg
-    ) where {Tz, Ty, Tg <: Real}
+    ) where {Tz, Ty, Tg}
     h2 = h * h
     return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, _fieldsum(Tz, yL, yR))
 end
@@ -44,10 +44,13 @@ end
 @inline function _linear_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
-    ) where {Tv, Tg <: Real, Td <: Real}
+    ) where {Tv, Tg, Td}
     du = u1 - u0
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    half_slope = _fielddiff(Tc, yR, yL) * inv(2h)
+    # Value-space widened field (wrap-free): the diff stays in value units; the
+    # slope's 1/X dimension enters via `inv(2h)` (coeff-space Tc would convert
+    # unit-carrying values into slope units — DimensionError).
+    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)
+    half_slope = _fielddiff(Tw, yR, yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
 end
 
@@ -55,9 +58,9 @@ end
 @inline function _linear_integral_kernel(
         ::_EvalIntegralCell,
         yL::Tv, yR::Tv, h::Tg
-    ) where {Tv, Tg <: Real}
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    return (h / 2) * _fieldsum(Tc, yL, yR)
+    ) where {Tv, Tg}
+    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)   # value-space (see partial-cell note)
+    return (h / 2) * _fieldsum(Tw, yL, yR)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -72,7 +75,7 @@ end
 @inline function _quadratic_integral_kernel(
         ::_EvalIntegralPartial,
         a::Ta, d::Td2, y0::Ty, u0::Td, u1::Td
-    ) where {Ta, Td2, Ty, Td <: Real}
+    ) where {Ta, Td2, Ty, Td}
     a_3 = inv(Td(3)) * a
     d_2 = inv(Td(2)) * d
     return u1 * @evalpoly(u1, y0, d_2, a_3) -
@@ -83,7 +86,7 @@ end
 @inline function _quadratic_integral_kernel(
         ::_EvalIntegralCell,
         a::Ta, d::Td2, y0::Ty, h::Tg
-    ) where {Ta, Td2, Ty, Tg <: Real}
+    ) where {Ta, Td2, Ty, Tg}
     return h * @evalpoly(h, y0, inv(Tg(2)) * d, inv(Tg(3)) * a)
 end
 
@@ -96,7 +99,7 @@ end
 @inline function _constant_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::LeftSide
-    ) where {Tv, Tg <: Real, Td <: Real}
+    ) where {Tv, Tg, Td}
     return yL * (u1 - u0)
 end
 
@@ -104,7 +107,7 @@ end
 @inline function _constant_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::RightSide
-    ) where {Tv, Tg <: Real, Td <: Real}
+    ) where {Tv, Tg, Td}
     return yR * (u1 - u0)
 end
 
@@ -112,7 +115,7 @@ end
 @inline function _constant_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::NearestSide
-    ) where {Tv, Tg <: Real, Td <: Real}
+    ) where {Tv, Tg, Td}
     mid = h / 2
     if u1 <= mid
         return yL * (u1 - u0)

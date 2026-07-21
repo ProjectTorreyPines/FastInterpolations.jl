@@ -624,7 +624,7 @@ end
 # core in `@inbounds` — so the cores' former `@boundscheck _check_domain` never actually elided.
 # Mirrors the vector/batch `_check_domain` (which likewise returns `InBounds()` / the extrap).
 "Scalar domain check for NoExtrap: throws DomainError if OOB, else promotes to InBounds."
-@inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap, dim::Int = 0)
+@inline function _check_domain(x::AbstractVector, xi, ::NoExtrap, dim::Int = 0)
     xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
     c = _clamp(xip, x_min, x_max)
@@ -634,7 +634,7 @@ end
 
 # _CachedRange: bounds via `_domain_bounds` — `lo`/`hi` for exact tags (shared
 # with the search's `lo` load), the widened bracket only for `_WidenedDomain`.
-@inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap, dim::Int = 0)
+@inline function _check_domain(x::_CachedRange, xi, ::NoExtrap, dim::Int = 0)
     xip = _extract_primal(xi)
     lo, hi = _domain_bounds(x)
     c = _clamp(xip, _extract_primal(lo), _extract_primal(hi))
@@ -649,7 +649,7 @@ end
 @inline _check_domain_axis(x, xi, extrap::NoExtrap, dim::Int) = _check_domain(x, xi, extrap, dim)
 
 "No-op scalar domain check for non-NoExtrap modes: returns the extrap unchanged (InBounds stays lean)."
-@inline _check_domain(::AbstractVector, ::Real, extrap::AbstractExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::Any, extrap::AbstractExtrap) = extrap
 
 "GridIdx is in-domain by construction (bounds-checked at resolution time)."
 # GridIdx must NOT promote to InBounds: it has its own `search_interval(s, x, ::GridIdx)` fast path
@@ -677,7 +677,14 @@ exact `_CachedRange`s and Vectors use `lo/hi` / `first/last`) and is
 partial-sign-safe under ForwardDiff. Throw message uses `first(x)/last(x)` —
 exact endpoints, not the widened bracket.
 """
-@inline function _check_domain(x::AbstractVector, xi::AbstractArray{<:Real}, ::NoExtrap, dim::Int = 0)
+@inline function _check_domain(x::AbstractVector, xi::AbstractArray, ::NoExtrap, dim::Int = 0)
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi, dim)
+    return InBounds()
+end
+
+# Disambiguation diagonal: `_CachedRange` (scalar arm's axis is unbounded in `xi`)
+# × Real-batch query — same batch body as the generic-axis method above.
+@inline function _check_domain(x::_CachedRange, xi::AbstractArray, ::NoExtrap, dim::Int = 0)
     @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi, dim)
     return InBounds()
 end
@@ -700,7 +707,7 @@ end
     return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
 end
 
-@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractArray{<:Real}, dim::Int = 0)
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractArray, dim::Int = 0)
     qmin, qmax = minimum(xi), maximum(xi)
     x_min = _extract_primal(first(x))
     x_max = _extract_primal(last(x))
@@ -708,13 +715,13 @@ end
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
-@inline _check_domain(::AbstractVector, ::AbstractArray{<:Real}, extrap::AbstractExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::AbstractArray, extrap::AbstractExtrap) = extrap
 
 # Closed-domain batch fast path: every OOB policy (`ClampExtrap`, `FillExtrap`,
 # `WrapExtrap`) treats `[first(x), last(x)]` as the in-domain interval, so they
 # share one batch promotion to `InBounds()`.
 @inline function _check_domain(
-        x::AbstractVector, xi::AbstractArray{<:Real},
+        x::AbstractVector, xi::AbstractArray,
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     )
     return _is_all_inbounds(x, xi) ? InBounds() : e
@@ -784,7 +791,7 @@ the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 # partial sign at equal primals, so a Float query at the boundary against a Dual
 # grid endpoint must classify on primal alone (see test/ext/test_linear_dual_grid.jl).
 # Routes through `_domain_bounds` (widened bracket in one place); `&&` short-circuits.
-@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractArray{<:Real})
+@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractArray)
     isempty(queries) && return true
     lo, hi = _domain_bounds(x)
     # `_ge`/`_le` promote-compare (see search.jl): dodge Base's exact mixed
@@ -814,14 +821,17 @@ end
 # Guarded by test/test_extrap_carrier_guards.jl.
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
-@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
+# `zero(xq) * inv(oneunit(xq))` = the DIMENSIONLESS query-carrier zero: same
+# carrier type as `zero(xq)` (Dual, etc.), but unit-free so `* zero(val)` stays
+# in value dimensions (a raw `zero(xq)` factor would make the term query×value).
+@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * inv(oneunit(xq)) * zero(val)
 # AbstractArray Tv (e.g. `SVector` y) — broadcast the carrier-propagating
 # pattern so scalar OOB matches in-domain kernel's `y * one(dL)` shape and
 # agrees with batch path's trait-sized buffer.
-@inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* zero(eltype(val))
+@inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_val(val, xq) = val
-@inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * zero(val)
-@inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
+@inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * inv(oneunit(xq)) * zero(val)
+@inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".

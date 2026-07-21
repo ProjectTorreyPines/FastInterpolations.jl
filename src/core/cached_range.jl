@@ -196,7 +196,7 @@ end
 # `search_interval`) — ignore the extra args and delegate to the no-arg form.
 @inline _get_h(x::_CachedRange, ::Int) = _get_h(x)
 @inline _get_inv_h(x::_CachedRange, ::Int) = _get_inv_h(x)
-@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_h(x)
+@inline _get_h(x::_CachedRange, ::Int, ::Any, ::Any) = _get_h(x)
 @inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_inv_h(x)
 
 # Raw `AbstractRange` (non-_CachedRange) fallback via `step()` — pre-normalization paths only.

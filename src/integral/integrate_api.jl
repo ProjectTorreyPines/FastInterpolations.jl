@@ -74,7 +74,7 @@ end
 
 
 # ── Fallback stub (bounded 1D) ──
-function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search = nothing, hint = nothing)
+function integrate(itp::AbstractInterpolant, x0, x1; search = nothing, hint = nothing)
     throw(ArgumentError("integrate(itp, x0, x1) is not implemented for $(typeof(itp)) yet"))
 end
 
@@ -113,10 +113,10 @@ end
 
 @inline function integrate(
         itp::LinearInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     x = itp.x
     y = itp.y
     Tspan = promote_type(typeof(x0), typeof(x1))
@@ -172,10 +172,10 @@ end
 
 @inline function integrate(
         itp::ConstantInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(itp.x, x0, search, hint)
@@ -241,10 +241,10 @@ end
 
 @inline function integrate(
         sitp::LinearSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     x = sitp.x
     y = sitp.y
     Tspan = promote_type(typeof(x0), typeof(x1))
@@ -296,10 +296,10 @@ end
 
 @inline function integrate(
         sitp::ConstantSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(sitp.x, x0, search, hint)

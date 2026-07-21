@@ -511,7 +511,7 @@ Uses `unsafe_trunc` for ~40% faster index calculation.
 Unlike `_search_binary`, this function computes the interval index directly
 via arithmetic rather than iterative search, exploiting uniform grid spacing.
 """
-@inline function _search_direct(x::AbstractRange{T}, xq::Real) where {T}
+@inline function _search_direct(x::AbstractRange{T}, xq) where {T}
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
@@ -534,7 +534,7 @@ Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
 Pulls `h`/`inv_h` through the accessors; the unit-step family takes its own
 index-space method below.
 """
-@inline function _search_direct(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
+@inline function _search_direct(x::_CachedRange{T, Tinv}, xq) where {T, Tinv}
     # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
     inv_h = _get_inv_h(x)
     h = _get_h(x)
@@ -573,7 +573,7 @@ provably dead — only the top-cell cap `min(·, len-1)` remains. `xL`/`xR` are 
 identically, so the returned interval is **bit-identical** to `_search_direct` for any
 in-bounds `xq`. Unit-step grids take the `<:_AbstractUnitStep` method below.
 """
-@inline function _search_direct_inbounds(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
+@inline function _search_direct_inbounds(x::_CachedRange{T, Tinv}, xq) where {T, Tinv}
     inv_h = _get_inv_h(x)
     h = _get_h(x)
     lo = first(x)
@@ -623,7 +623,7 @@ end
 # `_WidenedDomain` keeps its guarded fallback through the same 2-arg dispatch. Range
 # call sites that hold the actual `e::InBounds` thread it here so a stricter endpoint
 # contract can select a leaner arm; everything else is bit-identical to the 2-arg form.
-@inline _search_direct_inbounds(x::_CachedRange, xq::Real, ::InBounds) =
+@inline _search_direct_inbounds(x::_CachedRange, xq, ::InBounds) =
     _search_direct_inbounds(x, xq)
 
 # `last = :exclusive` + unit-step: NO top-cell cap. The caller promises
@@ -683,7 +683,7 @@ Uses branchless `for` loop with precomputed iteration count via `leading_zeros`
 for predictable loop exit on modern CPUs. The inner comparison uses `ifelse` to
 compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 """
-@inline function _search_binary(x::AbstractVector{T}, xq::Real) where {T <: Real}
+@inline function _search_binary(x::AbstractVector{T}, xq) where {T}
     n = length(x)
     @inbounds begin
         # Endpoint guards via `first`/`last` (not `x[1]`/`x[end]`) so a wrapper's
@@ -727,7 +727,7 @@ search; the win shrinks as `n` grows). Routed
 to only when the extrap is `InBounds` (the standard search keeps the guards for the OOB
 early-out that Clamp/Fill/Extend rely on).
 """
-@inline function _search_binary_inbounds(x::AbstractVector{T}, xq::Real) where {T <: Real}
+@inline function _search_binary_inbounds(x::AbstractVector{T}, xq) where {T}
     n = length(x)
     @inbounds begin
         lo, hi = 1, n
@@ -767,7 +767,7 @@ No bounds checking (except initial clamp), no binary fallback.
 """
 @inline function _search_linear!(
         x::AbstractVector{T},
-        xq::Real,
+        xq,
         hint_ref::Base.RefValue{Int},
     ) where {T <: Real}
     ix = hint_ref[]
@@ -905,11 +905,11 @@ window-overflow binary variant (`InBounds()` → lean); the hint `clamp` is alwa
 """
 @inline function _search_linear_binary!(
         x::AbstractVector{T},
-        xq::Real,
+        xq,
         hint_ref::Base.RefValue{Int},
         ::Val{MAX},
         fallback::AbstractExtrap = NoExtrap(),
-    ) where {T <: Real, MAX}
+    ) where {T, MAX}
     ix = hint_ref[]
     n = length(x)
     ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)
@@ -951,7 +951,7 @@ The hint is not used for computation (Range arithmetic is already O(1)),
 but updated for correct state tracking in heterogeneous ND grids.
 """
 @inline function _search_direct!(
-        x::AbstractRange{T}, xq::Real, hint_ref::Base.RefValue{Int}
+        x::AbstractRange{T}, xq, hint_ref::Base.RefValue{Int}
     ) where {T}
     idx, xL, xR = _search_direct(x, xq)
     hint_ref[] = idx
@@ -1019,7 +1019,7 @@ end
 # --- Real-query AbstractVector dispatch: pack 3-tuple search result into 4-tuple.
 # Seam handling for `:exclusive` PeriodicBC is performed by axis-level dispatch on
 # `_ExclusivePeriodicAxis` (`periodic_axis.jl`); callers wrap the axis upstream.
-@inline function search_interval(s::Searcher, x::AbstractVector, xq::Real)
+@inline function search_interval(s::Searcher, x::AbstractVector, xq)
     # Promote the query to the grid's coordinate type (`_coord_eltype`) so the
     # interval search compares same-typed values — an Int query on a Float grid
     # otherwise promotes per comparison (~log2(n)/query), which dominates a
@@ -1046,12 +1046,12 @@ end
 # ExtendExtrap, which may be OOB and needs the two-sided clamp) delegate to the standard
 # 4-arg search. `_CachedRange` is the more-specific overload, so it wins over the
 # `AbstractVector` one.
-@inline function search_interval(s::Searcher, x::_CachedRange, xq::Real, e::InBounds)
+@inline function search_interval(s::Searcher, x::_CachedRange, xq, e::InBounds)
     idx, xL, xR = _search_direct_inbounds(x, xq, e)
     _write_hint!(s.hint, idx)
     return idx, idx + 1, xL, xR
 end
-@inline function search_interval(s::Searcher, x::AbstractVector, xq::Real, ::InBounds)
+@inline function search_interval(s::Searcher, x::AbstractVector, xq, ::InBounds)
     xq = _promote_coord(xq, eltype(x))
     idx, xL, xR = _search_interval_real_inbounds(s, x, xq)
     return idx, idx + 1, xL, xR
@@ -1073,30 +1073,30 @@ end
 # --- Layer 2: Policy-specific Real dispatch ---
 
 # BinarySearch + NoHint (zero-overhead)
-@inline _search_interval_real(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
+@inline _search_interval_real(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq) =
     _search_binary(x, xq)
 
 # BinarySearch + RefHint (pure binary + hint write-back, zero search overhead)
-@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
+@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq)
     idx, xL, xR = _search_binary(x, xq)
     p.hint.idx[] = idx
     return idx, xL, xR
 end
 
 # LinearSearch + RefHint
-@inline _search_interval_real(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq::Real) =
+@inline _search_interval_real(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq) =
     _search_linear!(x, xq, p.hint.idx)
 
 # LinearBinarySearch{MAX} + RefHint
-@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::Real) where {MAX} =
+@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
 # DirectSearch + NoHint (Range grids, zero-overhead)
-@inline _search_interval_real(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq::Real) =
+@inline _search_interval_real(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq) =
     _search_direct(x, xq)
 
 # DirectSearch + RefHint (Range grids with persistent hint)
-@inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::Real) =
+@inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq) =
     _search_direct!(x, xq, p.hint.idx)
 
 # --- Layer 2 (InBounds): drop the guards that only a bad *query* would need (the query is
@@ -1105,16 +1105,16 @@ end
 # but passes `InBounds()` so its window-overflow binary fallback leans. `LinearSearch` has no binary
 # fallback, and `DirectSearch` is the `_CachedRange` path (handled one level up), so both fall through
 # unchanged. Hint write-back is preserved (RefHint). ---
-@inline _search_interval_real_inbounds(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
+@inline _search_interval_real_inbounds(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq) =
     _search_binary_inbounds(x, xq)
-@inline function _search_interval_real_inbounds(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
+@inline function _search_interval_real_inbounds(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq)
     idx, xL, xR = _search_binary_inbounds(x, xq)
     p.hint.idx[] = idx
     return idx, xL, xR
 end
-@inline _search_interval_real_inbounds(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::Real) where {MAX} =
+@inline _search_interval_real_inbounds(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX), InBounds())
-@inline _search_interval_real_inbounds(s::Searcher, x::AbstractVector, xq::Real) =
+@inline _search_interval_real_inbounds(s::Searcher, x::AbstractVector, xq) =
     _search_interval_real(s, x, xq)
 
 # ========================================
@@ -1123,11 +1123,11 @@ end
 # For module-internal use without explicit policy.
 # Pure delegation to _search_binary/_search_direct which have generic wrappers.
 
-@inline function _search_interval(x::AbstractVector, xq::Real)
+@inline function _search_interval(x::AbstractVector, xq)
     idx, xL, xR = _search_binary(x, xq)
     return idx, idx + 1, xL, xR
 end
-@inline function _search_interval(x::AbstractRange, xq::Real)
+@inline function _search_interval(x::AbstractRange, xq)
     idx, xL, xR = _search_direct(x, xq)
     return idx, idx + 1, xL, xR
 end

@@ -32,7 +32,7 @@ end
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray,
         extrap::E,
         deriv::O,
         searcher::P
@@ -45,7 +45,7 @@ end
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray,
         extrap::E,
         deriv::O,
         searcher::P

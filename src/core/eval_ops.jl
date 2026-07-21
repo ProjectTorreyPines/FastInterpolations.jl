@@ -130,7 +130,8 @@ Base.float(g::GridIdx) = float(g.val)
 Resolve a bare `GridIdx(k)` to `GridIdx{T}(k, grid[k])`.
 `Real` values pass through unchanged.
 """
-@inline _resolve_grididx(q::Real, ::AbstractVector) = q
+# Coordinate passthrough: unbounded (duck grids); `GridIdx` stays more specific.
+@inline _resolve_grididx(q, ::AbstractVector) = q
 @inline function _resolve_grididx(g::GridIdx, grid::AbstractVector{Tg}) where {Tg}
     @boundscheck (1 <= g.idx <= length(grid) || _throw_grididx_oob_resolve(g.idx, length(grid)))
     return @inbounds GridIdx{Tg}(g.idx, grid[g.idx])

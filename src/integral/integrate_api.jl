@@ -82,10 +82,10 @@ end
 
 @inline function integrate(
         itp::CubicInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     x = itp.cache.x
     y = itp.y
     z = itp.z
@@ -143,10 +143,10 @@ end
 
 @inline function integrate(
         itp::QuadraticInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     x = itp.x
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
@@ -186,7 +186,7 @@ end
 # Uses the generic _integrate_1d_cellwise path — side is already concrete here.
 @inline function _integrate_constant_1d_impl(
         x::AbstractVector, y::AbstractVector, side::AbstractSide, extrap::AbstractExtrap,
-        x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+        x0, x1, searcher::SR, ::Type{Tg}, ::Type{Tout}
     ) where {SR <: Searcher, Tg, Tout}
     partial = @inline (i, xL, h, a2, b2) -> begin
         @inbounds _constant_integral_kernel(
@@ -212,10 +212,10 @@ end
 
 @inline function integrate(
         sitp::CubicSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     x = sitp.cache.x
     y = sitp.y
     z = sitp.z
@@ -269,10 +269,10 @@ end
 
 @inline function integrate(
         sitp::QuadraticSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Tq0, x1::Tq1;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv, Tq0, Tq1}
     x = sitp.x
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
@@ -308,7 +308,7 @@ end
 
 @inline function _integrate_constant_series_1d(
         x::AbstractVector, y::AbstractMatrix, side::AbstractSide, extrap::AbstractExtrap,
-        x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+        x0, x1, searcher::SR, ::Type{Tg}, ::Type{Tout}
     ) where {SR <: Searcher, Tg, Tout}
     n = size(y, 2)
     results = Vector{Tout}(undef, n)

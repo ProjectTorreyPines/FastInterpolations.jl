@@ -16,9 +16,10 @@
         h::Tg, u0::Td, u1::Td
     ) where {Tz, Ty, Tg, Td}
     inv_h = inv(h)
-    a4 = (zR - zL) * (inv_h * inv(Tg(24)))   # a/4 = (zR-zL)/(24h)
-    b3 = inv(Tg(6)) * zL                     # b/3 = zL/6
-    c2 = _fielddiff(Tz, yR, yL) * (inv_h / 2) - (h * inv(Tg(12))) * (2zL + zR)  # c/2
+    a4 = (zR - zL) * (inv_h * _inv_const(Tg, 24))   # a/4 = (zR-zL)/(24h)
+    b3 = _inv_const(Tg, 6) * zL                     # b/3 = zL/6
+    Tw = _promote_eltype(_interp_op, Tg, Ty, Tg)    # value-space widen (see linear kernel)
+    c2 = _fielddiff(Tw, yR, yL) * (inv_h / 2) - (h * _inv_const(Tg, 12)) * (2zL + zR)  # c/2
     d = yL
     return u1 * @evalpoly(u1, d, c2, b3, a4) -
         u0 * @evalpoly(u0, d, c2, b3, a4)
@@ -30,7 +31,8 @@ end
         zL::Tz, zR::Tz, yL::Ty, yR::Ty, h::Tg
     ) where {Tz, Ty, Tg}
     h2 = h * h
-    return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, _fieldsum(Tz, yL, yR))
+    Tw = _promote_eltype(_interp_op, Tg, Ty, Tg)    # value-space widen
+    return (h / 2) * muladd(-(h2 * _inv_const(Tg, 12)), zL + zR, _fieldsum(Tw, yL, yR))
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -76,8 +78,8 @@ end
         ::_EvalIntegralPartial,
         a::Ta, d::Td2, y0::Ty, u0::Td, u1::Td
     ) where {Ta, Td2, Ty, Td}
-    a_3 = inv(Td(3)) * a
-    d_2 = inv(Td(2)) * d
+    a_3 = _inv_const(Td, 3) * a
+    d_2 = _inv_const(Td, 2) * d
     return u1 * @evalpoly(u1, y0, d_2, a_3) -
         u0 * @evalpoly(u0, y0, d_2, a_3)
 end
@@ -87,7 +89,7 @@ end
         ::_EvalIntegralCell,
         a::Ta, d::Td2, y0::Ty, h::Tg
     ) where {Ta, Td2, Ty, Tg}
-    return h * @evalpoly(h, y0, inv(Tg(2)) * d, inv(Tg(3)) * a)
+    return h * @evalpoly(h, y0, _inv_const(Tg, 2) * d, _inv_const(Tg, 3) * a)
 end
 
 # ═══════════════════════════════════════════════════════════════

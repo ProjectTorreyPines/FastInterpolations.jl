@@ -96,9 +96,11 @@ The trailing `* one(α)` carries the query's carrier (Dual partials,
 Measurement uncertainty, …) — for plain `Real` `α`, LLVM const-folds the
 `1.0` factor away.
 """
-@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    return _fielddiff(Tc, yR, yL) * inv_h * one(α)
+@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Ti, α) where {Ti, Tv}
+    # Value-space widen: the diff stays in Tv units; the 1/X dimension enters
+    # via `* inv_h` (coeff-space Tc would convert y into slope units).
+    Tw = _promote_eltype(_interp_op, Ti, Tv, Ti)
+    return _fielddiff(Tw, yR, yL) * inv_h * one(α)
 end
 
 """

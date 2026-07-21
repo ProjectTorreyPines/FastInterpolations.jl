@@ -37,10 +37,10 @@ for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations
 @inline function _cubic_kernel(
         ::EvalValue,
         zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Tv, Td <: Real}
+        h::Tg, inv_h::Ti, dL::Td, dR::Td
+    ) where {Tg, Ti, Tz, Tv, Td}
     # Native (ARM64) instruction breakdown:
-    div6 = inv(Tg(6))                                   # (const-folded)
+    div6 = _inv_const(Tg, 6)                                   # (const-folded)
     # inv_h passed as parameter (fdiv eliminated)
 
     dL_cu = dL^3                                        # fmul, fmul
@@ -74,12 +74,12 @@ Formula:
 @inline function _cubic_kernel(
         ::EvalDeriv1,
         zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Tv, Td <: Real}
+        h::Tg, inv_h::Ti, dL::Td, dR::Td
+    ) where {Tg, Ti, Tz, Tv, Td}
     # inv_h passed as parameter (fdiv eliminated)
 
-    inv_2h = inv_h * inv(Tg(2))
-    h_div6 = h * inv(Tg(6))
+    inv_2h = inv_h * _inv_const(Tg, 2)
+    h_div6 = h * _inv_const(Tg, 6)
 
     dL_sq = dL * dL
     dR_sq = dR * dR
@@ -90,8 +90,10 @@ Formula:
     # z_term = (z_mix)/(2h) + (zL - zR)*(h/6)
     z_term = muladd(inv_2h, z_mix, (zL - zR) * h_div6)
 
-    # (yR-yL)/h + z_term
-    return muladd(inv_h, _fielddiff(Tz, yR, yL), z_term)
+    # (yR-yL)/h + z_term — diff widens in VALUE space (Tz is z-space; converting
+    # unit-carrying y into it would be dimensionally wrong)
+    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)
+    return muladd(inv_h, _fielddiff(Tw, yR, yL), z_term)
 end
 
 """
@@ -112,8 +114,8 @@ Formula:
 @inline function _cubic_kernel(
         ::EvalDeriv2,
         zL::Tz, zR::Tz, _, _,
-        ::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Td <: Real}
+        ::Tg, inv_h::Ti, dL::Td, dR::Td
+    ) where {Tg, Ti, Tz, Td}
     return muladd(zL, dR, zR * dL) * inv_h
 end
 
@@ -144,8 +146,8 @@ Third derivative (constant, independent of x within interval):
 @inline function _cubic_kernel(
         ::EvalDeriv3,
         zL::Tz, zR::Tz, _, _,
-        ::Tg, inv_h::Tg, dL::Td, ::Td
-    ) where {Tg, Tz, Td <: Real}
+        ::Tg, inv_h::Ti, dL::Td, ::Td
+    ) where {Tg, Ti, Tz, Td}
     return (zR - zL) * inv_h * one(dL)
 end
 
@@ -158,7 +160,7 @@ Julia dispatch ensures `DerivOp{0..3}` methods (more specific) are selected firs
 @inline function _cubic_kernel(
         ::DerivOp{N},
         zL::Tz, _, _, _,
-        ::Tg, ::Tg, dL::Td, ::Td
-    ) where {N, Tg, Tz, Td <: Real}
+        ::Tg, ::Ti, dL::Td, ::Td
+    ) where {N, Tg, Ti, Tz, Td}
     return 0 * zL * one(dL)
 end

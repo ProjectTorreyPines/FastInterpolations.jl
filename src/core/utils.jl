@@ -216,6 +216,12 @@ end
 # Unitful inverse units and duck carriers.
 @inline _inv_op(h) = inv(h)
 
+# Grid-precision DIMENSIONLESS constant `1/n` (kernel coefficients like 1/24):
+# `Tg(n)` would demand a unit for unit-carrying grids — `one(Tg)` keeps the
+# float width while staying dimensionless. Real arm is codegen-identical.
+@inline _inv_const(::Type{Tg}, n::Int) where {Tg <: Real} = inv(Tg(n))
+@inline _inv_const(::Type{Tg}, n::Int) where {Tg} = inv(one(Tg) * n)
+
 # `_integrate_op` (3-arg): the definite-integral element type — value × spacing.
 # ∫ ≈ Σ yᵢ·hᵢ is dimensionally distinct from the eval witnesses (which weight the value
 # by the dimensionless offset `dL/h`). `span` is the integration length (`b2 - xL` for a

@@ -317,7 +317,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Same surface-level resolution as the in-place vector form. Zero-alloc:

@@ -157,7 +157,7 @@ Constant (step/piecewise constant) interpolation at a single point.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
-- `xi::Real`: Query point
+- `xi::Number`: Query point
 - `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
   `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
   for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
@@ -209,7 +209,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info

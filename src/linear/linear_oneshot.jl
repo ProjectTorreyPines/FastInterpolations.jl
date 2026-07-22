@@ -134,14 +134,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
+    linear_interp(x, y, xq::Number; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
 - For general `AbstractVector` x: Search algorithm determined by `search` parameter
 
 # Arguments
-- `xq::Real`: Single interpolation query point
+- `xq::Number`: Single interpolation query point
 - `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
   `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
   for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
@@ -317,7 +317,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Same surface-level resolution as the in-place vector form. Zero-alloc:

@@ -165,7 +165,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
@@ -230,7 +230,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     Tg <: Real || return quadratic_interp(
         x, y; bc = bc, extrap = extrap, search = search
     )(output, x_targets; deriv = deriv, hint = hint)
@@ -285,7 +285,7 @@ function quadratic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq}
+    ) where {Tg <: Number, Tq <: Number}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
     output = _alloc_query_output(Tr, x_targets)
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)

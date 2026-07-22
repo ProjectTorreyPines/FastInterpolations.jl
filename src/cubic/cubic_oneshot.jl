@@ -36,7 +36,7 @@ Thread-safe: workspaces allocated from task-local pool.
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, Tq, X, F, BC}
+    ) where {Tg <: Number, Tv, Tq <: Number, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     _check_query_output_size(output, x_query)
 
@@ -247,7 +247,7 @@ In-place cubic spline interpolation with optional automatic caching.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     Tg <: Real || return cubic_interp(
         x, y; bc = bc, extrap = extrap, search = search
     )(output, x_query; deriv = deriv, hint = hint)
@@ -298,7 +298,7 @@ function cubic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     Tr = _promote_eltype(_interp_op, eltype(cache.x), Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
@@ -342,7 +342,7 @@ function cubic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     Tg <: Real || return cubic_interp(
         x, y; bc = bc, extrap = extrap, search = search
     )(x_query; deriv = deriv, hint = hint)
@@ -356,7 +356,7 @@ end
 cubic_interp(
     cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
     x_query::Tq; extrap::AbstractExtrap = NoExtrap(), deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = AutoSearch(), hint::Union{Nothing, Base.RefValue{Int}} = nothing
-) where {Tg, Tv, Tq} =
+) where {Tg <: Number, Tv, Tq <: Number} =
     cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
 
 # Primary scalar method - AD-compatible
@@ -371,7 +371,7 @@ function cubic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     # Unit-carrying grids route through the persistent strip→solve→reattach
     # build — the direct pooled Thomas below runs in unit space and throws.
     Tg <: Real || return cubic_interp(

@@ -255,3 +255,33 @@ end
         @test typeof(integrate(interp(g32, data; method = LinearInterp()))) === Float64
     end
 end
+
+@testitem "Number boundary: public coordinate/query params are `<:Number`" begin
+    using Unitful
+
+    # The public API relaxed `<:Real` to `<:Number` (numeric-coordinate admission
+    # boundary), NOT to unbounded. A non-Number scalar query/grid must be rejected at
+    # the boundary (no silent fall-through), while every Number coordinate — Real,
+    # Unitful, Dual — is admitted. Guards this against re-loosening to `Any`, which
+    # the `<:Real` lint cannot catch.
+    x = [0.0, 1.0, 2.0, 3.0]
+    y = [1.0, 2.0, 4.0, 8.0]
+    itp = linear_interp(x, y)
+
+    @testset "non-Number query rejected (callable + one-shot)" begin
+        @test_throws MethodError itp("nope")               # scalar callable is `xq::Number`
+        @test_throws MethodError itp(["a", "b"])           # batch is `AbstractArray{<:Number}`
+        @test_throws MethodError linear_interp(x, y, "nope")     # one-shot scalar query
+        # `x0::Number` bounds skip the impl → the generic "not implemented" fallback.
+        @test_throws Exception integrate(itp, "a", "b")         # integrate bounds are `::Number`
+    end
+
+    @testset "Number coordinates admitted (Real + Unitful)" begin
+        @test itp(1.5) == 3.0
+        @test integrate(itp, 0.5, 2.5) isa Number
+        iu = linear_interp(x .* u"s", y .* u"W")
+        @test iu(1.5u"s") == 3.0u"W"
+        @test linear_interp(x .* u"s", y .* u"W", 1.5u"s") == 3.0u"W"
+        @test integrate(iu, 0.5u"s", 2.5u"s") isa Unitful.Quantity
+    end
+end

@@ -12,7 +12,7 @@
 end
 @inline integrate(x::AbstractVector, y::AbstractVector; method::AbstractInterpMethod) =
     integrate(_oneshot_build_1d(method, x, y))
-@inline integrate(x::AbstractVector, y::AbstractVector, a::Tq0, b::Tq1; method::AbstractInterpMethod) where {Tq0, Tq1} =
+@inline integrate(x::AbstractVector, y::AbstractVector, a::Number, b::Number; method::AbstractInterpMethod) =
     integrate(_oneshot_build_1d(method, x, y), a, b)
 
 # ── One-shot cumulative: cumulative_integrate(x, y; method) ──
@@ -82,10 +82,10 @@ end
 
 @inline function integrate(
         itp::CubicInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     x = itp.cache.x
     y = itp.y
     z = itp.z
@@ -113,10 +113,10 @@ end
 
 @inline function integrate(
         itp::LinearInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     x = itp.x
     y = itp.y
     Tspan = promote_type(typeof(x0), typeof(x1))
@@ -143,10 +143,10 @@ end
 
 @inline function integrate(
         itp::QuadraticInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     x = itp.x
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
@@ -172,10 +172,10 @@ end
 
 @inline function integrate(
         itp::ConstantInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(itp.x, x0, search, hint)
@@ -212,10 +212,10 @@ end
 
 @inline function integrate(
         sitp::CubicSeriesInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     x = sitp.cache.x
     y = sitp.y
     z = sitp.z
@@ -241,10 +241,10 @@ end
 
 @inline function integrate(
         sitp::LinearSeriesInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     x = sitp.x
     y = sitp.y
     Tspan = promote_type(typeof(x0), typeof(x1))
@@ -269,10 +269,10 @@ end
 
 @inline function integrate(
         sitp::QuadraticSeriesInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     x = sitp.x
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
@@ -296,10 +296,10 @@ end
 
 @inline function integrate(
         sitp::ConstantSeriesInterpolant{Tg, Tv},
-        x0::Tq0, x1::Tq1;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq0, Tq1}
+    ) where {Tg, Tv}
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(sitp.x, x0, search, hint)

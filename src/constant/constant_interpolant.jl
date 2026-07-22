@@ -121,7 +121,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {Tg, Tv}
+    ) where {Tg <: Number, Tv}
     _check_grid_orderable(Tg)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic/Linear).
     # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).

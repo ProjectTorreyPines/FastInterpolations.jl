@@ -151,7 +151,7 @@ function linear_interp end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {TX, TY}
+    ) where {TX <: Number, TY}
     _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic).

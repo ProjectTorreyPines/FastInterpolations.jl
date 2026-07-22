@@ -184,7 +184,7 @@ function cubic_interp(
         autocache::Bool = true,
         search::P = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {Tg, Tv, P <: AbstractSearchPolicy}
+    ) where {Tg <: Number, Tv, P <: AbstractSearchPolicy}
     _check_grid_orderable(Tg)
     Tg_f = _promote_grid_float(Tg, Tv)
     # Non-Real (unit-carrying) grids: strip→solve→reattach (type-level branch folds).

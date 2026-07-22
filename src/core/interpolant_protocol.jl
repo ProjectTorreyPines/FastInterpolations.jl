@@ -95,11 +95,12 @@ end
 # ========================================
 # 1D Scalar Call — Hot Path
 # ========================================
-# @inline for broadcast fusion. Accepts any xq (Real, Dual for AD).
-# @boundscheck normalized: always checked here, not in per-type eval.
+# @inline for broadcast fusion. `xq::Number` is the numeric-coordinate admission
+# boundary (Real, Unitful, Dual for AD); GriddedQuery/anchored queries carry their
+# own more-specific callables. @boundscheck normalized: always here, not per-type eval.
 
 @inline function (itp::AbstractInterpolant1D{Tg, Tv})(
-        xq;
+        xq::Number;
         deriv::DerivOp = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
@@ -150,7 +151,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg, Tv, Tq <: Number}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     output = Vector{_promote_eltype(itp, Tq, deriv)}(undef, length(xq))
@@ -170,7 +171,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg, Tv, Tq <: Number}
     @assert length(output) == length(xq) "output length must match xq length"
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
@@ -193,7 +194,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg, Tv, Tq <: Number}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), q)
@@ -209,7 +210,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg, Tv, Tq <: Number}
     _check_query_output_size(output, q)
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)

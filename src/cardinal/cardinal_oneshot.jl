@@ -149,7 +149,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis (tension follows).
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     tension_f = oftype(one(float(eltype(x))) * 1, tension)   # dimensionless (unit Tg: one() strips)
@@ -178,7 +178,7 @@ In-place cardinal spline interpolation.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     tension_f = oftype(one(float(eltype(x))) * 1, tension)   # dimensionless (unit Tg: one() strips)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
@@ -206,7 +206,7 @@ function cardinal_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     cardinal_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)

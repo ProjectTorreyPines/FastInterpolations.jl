@@ -29,7 +29,7 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     # Value space = y ∪ dy: the axis floats against both widths (matching ND partials).
     x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
@@ -60,7 +60,7 @@ function hermite_interp!(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
@@ -91,7 +91,7 @@ function hermite_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     # Disjoint chains for `Tv` and `eltype(dy)` over the shared kernel shape —
     # a single trait call would let SVector `eltype(dy)` collapse the duck-Tq
     # fallback to `Any`. Mirrors the `AbstractHermiteInterpolant1D` persistent

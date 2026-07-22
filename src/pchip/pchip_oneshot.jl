@@ -136,7 +136,7 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     # Unified entry — bc flows through the BC-aware extrap/search resolvers and
     # into the slope routines. No `_is_periodic_bc` branch, no extension copy:
     # `_resolve_search`'s seam dispatch + bc-aware slope formulas handle the
@@ -167,7 +167,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
@@ -193,7 +193,7 @@ function pchip_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     pchip_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)

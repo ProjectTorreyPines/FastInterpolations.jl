@@ -33,7 +33,7 @@ itp(0.5)
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {TX, TY}
+    ) where {TX <: Number, TY}
     _check_grid_orderable(TX)
     # Periodic extension (no-op for NoBC). bc_eff flips :exclusive → :extended
     # post-extension; :inclusive passes through. Slope-side dispatches on bc_eff.

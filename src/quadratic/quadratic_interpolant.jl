@@ -127,7 +127,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {TX, TY}
+    ) where {TX <: Number, TY}
     _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
     # Non-Real (unit-carrying) grids: strip→solve→reattach (type-level branch folds).

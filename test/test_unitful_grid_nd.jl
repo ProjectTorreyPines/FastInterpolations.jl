@@ -72,6 +72,32 @@ end
     end
 end
 
+@testitem "Unitful ND: inference stability (@inferred, review pin F14)" begin
+    using Unitful
+    using Test: @inferred
+
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    xs2 = [0.0, 0.5, 1.0, 1.5] .* u"s"
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+    TW = typeof(1.0u"W")
+
+    @testset "same-unit ND: eval / SoA batch / integrate" begin
+        itp = interp((xs, xs2), data; method = LinearInterp())
+        @test (@inferred itp((1.5u"s", 0.75u"s"))) isa TW
+        @test (@inferred itp(([1.5, 2.0] .* u"s", [0.75, 1.0] .* u"s"))) isa Vector{TW}
+        @test (@inferred integrate(itp)) isa typeof(1.0u"W*s^2")
+    end
+
+    @testset "mixed-unit ND (abstract-Tg): eval / integrate / gradient" begin
+        itp = interp((xs, ym), data; method = LinearInterp())
+        @test (@inferred itp((1.5u"s", 0.75u"m"))) isa TW
+        @test (@inferred integrate(itp)) isa typeof(1.0u"W*s*m")
+        g = @inferred gradient(itp, (1.5u"s", 0.75u"m"))
+        @test g isa Tuple{typeof(1.0u"W/s"), typeof(1.0u"W/m")}
+    end
+end
+
 @testitem "Unitful ND: 1-tuple adapters, vector-point, unit-Range axes (review F13)" begin
     using Unitful
 

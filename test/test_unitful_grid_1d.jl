@@ -439,6 +439,64 @@ end
     end
 end
 
+@testitem "Unitful 1D: inference stability (@inferred, review pin F14)" begin
+    using Unitful
+    using Test: @inferred
+
+    # Runtime-type pins (F1–F13) freeze WHAT comes out; these freeze that the
+    # compiler can PROVE it — duck paths must be as inferable as the Real ones
+    # (same standard as the Real files' "Type stability" testsets).
+    xu = [0.0, 1.0, 2.5, 3.0, 4.0] .* u"s"
+    yu = [1.0, 2.0, 4.0, 8.0, 5.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0, 5.0]
+    TW = typeof(1.0u"W")
+    TWs = typeof(1.0u"W/s")
+    TWi = typeof(1.0u"W*s")
+    qs = [0.5, 1.5] .* u"s"
+
+    @testset "persistent eval / deriv / batch" begin
+        for f in (linear_interp, cubic_interp, quadratic_interp, pchip_interp, akima_interp, cardinal_interp)
+            itp = f(xu, yu)
+            @test (@inferred itp(1.5u"s")) isa TW
+            @test (@inferred itp(qs)) isa Vector{TW}
+        end
+        litp = linear_interp(xu, yu)
+        @test (@inferred litp(1.5u"s"; deriv = DerivOp(1))) isa TWs
+        @test (@inferred litp(qs; deriv = DerivOp(1))) isa Vector{TWs}
+    end
+
+    @testset "integrate family" begin
+        litp = linear_interp(xu, yu)
+        citp = cubic_interp(xu, yu)
+        @test (@inferred integrate(litp)) isa TWi
+        @test (@inferred integrate(citp)) isa TWi
+        @test (@inferred integrate(litp, 0.5u"s", 2.5u"s")) isa TWi
+        @test (@inferred cumulative_integrate(litp)) isa Vector{TWi}
+    end
+
+    @testset "one-shot forms (incl. gated solver routes)" begin
+        @test (@inferred linear_interp(xu, yu, 1.5u"s")) isa TW
+        @test (@inferred cubic_interp(xu, yu, 1.5u"s")) isa TW
+        @test (@inferred quadratic_interp(xu, yu, 1.5u"s")) isa TW
+        @test (@inferred pchip_interp(xu, yu, 1.5u"s")) isa TW
+        @test (@inferred integrate(xu, yu; method = LinearInterp())) isa TWi
+    end
+
+    @testset "OOB extrap: same inferred type as in-domain" begin
+        itc = linear_interp(xu, yu; extrap = ClampExtrap())
+        @test (@inferred itc(5.0u"s")) isa TW
+        @test (@inferred itc(5.0u"s"; deriv = DerivOp(1))) isa TWs
+        ci = constant_interp([0, 1, 2, 3, 4], [10, 20, 40, 80, 50]; extrap = ClampExtrap())
+        @test (@inferred ci(7)) === 50
+    end
+
+    @testset "unit grid + unitless values" begin
+        itp = linear_interp(xu, yf)
+        @test (@inferred itp(1.5u"s")) isa Float64
+        @test (@inferred integrate(itp)) isa typeof(1.0u"s")
+    end
+end
+
 @testitem "Unitful 1D: unit grid + unitless values (review pin F5)" begin
     using Unitful
 

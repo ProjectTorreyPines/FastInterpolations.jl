@@ -224,3 +224,34 @@ end
         @test_throws Unitful.DimensionError itp(1.5u"m")   # m vs s
     end
 end
+
+@testitem "Duck grid: Real type-identity insurance pins (review F10)" begin
+    # The witness homogenization (value-space `_coeff_op`/`Tw` swaps) was
+    # verified type-identical on Real inputs; these `===` pins freeze that so
+    # a future witness edit that silently widens narrow/mixed Real combos
+    # fails HERE, not in a downstream perf regression.
+    x32 = Float32[0, 1, 2.5, 3, 4]
+    y32 = Float32[1, 2, 4, 8, 5]
+    y64 = Float64[1, 2, 4, 8, 5]
+
+    @testset "narrow-type deriv1 stays narrow" begin
+        @test typeof(linear_interp(x32, y32)(1.5f0; deriv = DerivOp(1))) === Float32
+        @test typeof(cubic_interp(x32, y32)(1.5f0; deriv = DerivOp(1))) === Float32
+    end
+
+    @testset "local-slope families: cross-type widens to value precision" begin
+        @test typeof(pchip_interp(x32, y64)(1.5f0)) === Float64
+        @test typeof(pchip_interp(x32, y64)(1.5f0; deriv = DerivOp(1))) === Float64
+        @test typeof(akima_interp(x32, y64)(1.5f0)) === Float64
+        @test typeof(cardinal_interp(x32, y64)(1.5f0)) === Float64
+    end
+
+    @testset "ND 3D integrate out-fold types (`_integrate_nd_out_grids`)" begin
+        g64 = (collect(0.0:1.0:2.0), collect(0.0:0.5:1.5), collect(0.0:0.25:0.75))
+        g32 = map(g -> Float32.(g), g64)
+        data = rand(3, 4, 4)
+        @test typeof(integrate(interp(g64, data; method = LinearInterp()))) === Float64
+        @test typeof(integrate(interp(g32, Float32.(data); method = LinearInterp()))) === Float32
+        @test typeof(integrate(interp(g32, data; method = LinearInterp()))) === Float64
+    end
+end

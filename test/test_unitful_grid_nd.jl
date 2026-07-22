@@ -201,3 +201,33 @@ end
     @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
     @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
 end
+
+@testitem "Unitful ND: Constant derivative carries grid⁻ᴺ units (Range-duck audit)" begin
+    using Unitful
+    Wps = typeof(1.0u"W/s")
+    Wps2 = typeof(1.0u"W/s^2")
+
+    # Same as 1D but for the ND `_constant_nd_evaluate` deriv path (`kernel * 0` dropped
+    # the per-axis grid⁻ᴺ scale). Same-unit axes give a CONCRETE `W/s` buffer, so the
+    # batch deriv CRASHED (DimensionError) — mixed-unit hid it behind an abstract eltype.
+    data = [Float64(i * j) for i in 1:4, j in 1:4] .* u"W"
+    for (gname, xg, yg) in (
+            ("Vector", [0.0, 1.0, 2.0, 3.0] .* u"s", [0.0, 1.0, 2.0, 3.0] .* u"s"),
+            ("LinRange", LinRange(0.0u"s", 3.0u"s", 4), LinRange(0.0u"s", 3.0u"s", 4)),
+        )
+        itp = interp((xg, yg), data; method = ConstantInterp())
+        @testset "$gname: scalar ∂/∂x units" begin
+            d1 = itp((1.5u"s", 1.5u"s"); deriv = (DerivOp(1), DerivOp(0)))
+            d2 = itp((1.5u"s", 1.5u"s"); deriv = (DerivOp(1), DerivOp(1)))
+            @test d1 isa Wps
+            @test iszero(d1)
+            @test d2 isa Wps2
+            @test iszero(d2)
+        end
+        @testset "$gname: batch deriv (was DimensionError)" begin
+            out = itp(([1.0, 2.0] .* u"s", [1.0, 2.0] .* u"s"); deriv = (DerivOp(1), DerivOp(0)))
+            @test eltype(out) === Wps
+            @test all(iszero, out)
+        end
+    end
+end

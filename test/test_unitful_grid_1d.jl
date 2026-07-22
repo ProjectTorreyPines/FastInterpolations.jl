@@ -598,3 +598,36 @@ end
         @test FI._alpha_of(3.5u"s", xL, xR, g) == 0.5
     end
 end
+
+@testitem "Unitful 1D: Constant derivative carries grid⁻¹ units (Range-duck audit)" begin
+    using Unitful
+    Wps = typeof(1.0u"W/s")
+    Wps2 = typeof(1.0u"W/s^2")
+
+    yw = [1.0, 4.0, 9.0, 16.0, 25.0] .* u"W"
+
+    # The Constant deriv kernel returned `0 * y * one(dL)` — value units (W), dropping
+    # the derivative's grid⁻¹ scale. Scalar gave wrong units (W not W/s); the batch loop
+    # then CRASHED (DimensionError) storing a W value into a W/s buffer. Not Range-
+    # specific (Vector too), but the Range-duck audit surfaced it.
+    for (gname, xg) in (
+            ("Vector", [0.0, 1.0, 2.0, 3.0, 4.0] .* u"s"),
+            ("LinRange", LinRange(0.0u"s", 4.0u"s", 5)),
+            ("StepRangeLen", 0.0u"s":1.0u"s":4.0u"s"),
+        )
+        itp = constant_interp(xg, yw)
+        @testset "$gname: scalar deriv units" begin
+            d1 = itp(1.5u"s"; deriv = DerivOp(1))
+            d2 = itp(1.5u"s"; deriv = DerivOp(2))
+            @test d1 isa Wps            # value 0, units W/s
+            @test iszero(d1)
+            @test d2 isa Wps2
+            @test iszero(d2)
+        end
+        @testset "$gname: batch deriv (was DimensionError)" begin
+            out = itp([0.5, 1.5, 2.5] .* u"s"; deriv = DerivOp(1))
+            @test eltype(out) === Wps
+            @test all(iszero, out)
+        end
+    end
+end

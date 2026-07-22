@@ -284,6 +284,18 @@ end
     @test occursin("PeriodicBC", msg)
     @test occursin("unit-carrying", msg)
     @test occursin("ustrip", msg)   # actionable workaround named
+
+    @testset "unhandled BC type: catch-all is actionable, not a solve MethodError" begin
+        struct _F7UnknownBC <: FastInterpolations.AbstractBC end
+        err2 = try
+            FastInterpolations._strip_bc_units(_F7UnknownBC(), 1.0u"W", 1.0u"s")
+            nothing
+        catch e
+            e
+        end
+        @test err2 isa ArgumentError
+        @test occursin("ustrip", sprint(showerror, err2))
+    end
 end
 
 @testitem "Unitful 1D: batch eval across families (review pin F8)" begin

@@ -631,3 +631,52 @@ end
         end
     end
 end
+
+@testitem "Unitful 1D: unit Range grids on the _CachedRange path (LinRange/StepRangeLen)" begin
+    using Unitful
+    using Test: @inferred
+    FI = FastInterpolations
+
+    # Existing unit coverage builds Vector grids (`collect`). A `LinRange`/`StepRangeLen`
+    # of Quantities must wrap into a `_CachedRange` (concrete `h`/`inv_h`) and drive the
+    # same zero-alloc, inference-stable, value-correct path as a Real Range.
+    xf = LinRange(1.0, 10.0, 10)
+    yf = [Float64(i^2) for i in 1:10]
+    yw = yf .* u"W"
+    TW = typeof(1.0u"W")
+    qf = [1.4, 3.7, 5.5, 8.2, 9.9]
+
+    for (gname, xu) in (
+            ("LinRange", LinRange(1.0u"s", 10.0u"s", 10)),
+            ("StepRangeLen", 1.0u"s":1.0u"s":10.0u"s"),
+        )
+        @testset "$gname: _CachedRange wrap + value/inference/alloc parity" begin
+            for (nm, f) in (
+                    ("linear", linear_interp), ("cubic", cubic_interp),
+                    ("quadratic", quadratic_interp), ("pchip", pchip_interp),
+                    ("akima", akima_interp), ("constant", constant_interp),
+                )
+                iu = f(xu, yw)
+                ir = f(xf, yf)
+                # Axis is a _CachedRange (not silently demoted to a Vector).
+                # `_itp_grid` is the family-uniform accessor (Cubic stores `cache.x`).
+                @test FI._itp_grid(iu) isa FI._CachedRange
+                # Value parity with the Real-Range interpolant.
+                @test iu(3.5u"s") ≈ ir(3.5) * u"W"
+                @test iu(qf .* u"s") ≈ ir(qf) .* u"W"
+                # Inference-stable, concrete unit output.
+                @test (@inferred iu(3.5u"s")) isa TW
+                # Zero-alloc scalar eval (warm).
+                iu(3.5u"s")
+                @test (@allocated iu(3.5u"s")) == 0
+            end
+        end
+    end
+
+    @testset "integrate parity on unit LinRange" begin
+        iu = linear_interp(LinRange(1.0u"s", 10.0u"s", 10), yw)
+        ir = linear_interp(xf, yf)
+        @test integrate(iu) ≈ integrate(ir) * u"W*s"
+        @test (@inferred integrate(iu)) isa typeof(1.0u"W*s")
+    end
+end

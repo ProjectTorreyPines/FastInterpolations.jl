@@ -231,3 +231,31 @@ end
         end
     end
 end
+
+@testitem "Unitful ND: unit LinRange axes on the _CachedRange path" setup = [AllocConstants] begin
+    using Unitful
+    FI = FastInterpolations
+
+    # F13 covers ND StepRange axes; a `LinRange` of Quantities must wrap the same way
+    # (`_CachedRange` per axis) and stay value-correct + zero-alloc on the hot path.
+    gu1 = LinRange(0.0u"s", 3.0u"s", 4)
+    gu2 = LinRange(0.0u"m", 2.0u"m", 5)
+    gf1 = LinRange(0.0, 3.0, 4)
+    gf2 = LinRange(0.0, 2.0, 5)
+    data = [Float64(i * j) for i in 1:4, j in 1:5] .* u"W"
+    dataf = [Float64(i * j) for i in 1:4, j in 1:5]
+
+    itp = interp((gu1, gu2), data; method = LinearInterp())
+    tw = interp((gf1, gf2), dataf; method = LinearInterp())
+
+    @test itp.grids[1] isa FI._CachedRange
+    @test itp.grids[2] isa FI._CachedRange
+    @test itp((1.5u"s", 0.75u"m")) ≈ tw((1.5, 0.75)) * u"W"
+    @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
+
+    q = (1.5u"s", 0.75u"m")
+    itp(q)
+    integrate(itp)   # warmup
+    @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
+    @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+end

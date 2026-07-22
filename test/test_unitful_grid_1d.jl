@@ -317,6 +317,36 @@ end
     end
 end
 
+@testitem "Unitful 1D: Fill/Wrap extrapolation (review pin F9)" begin
+    using Unitful
+
+    # Extrap coverage was NoExtrap+Clamp only; the relaxation touched
+    # Fill/Wrap bounded signatures broadly — exercise both OOB on unit grids.
+    xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0]
+    yw = [1.0, 2.0, 4.0, 8.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0]
+
+    @testset "FillExtrap: value-typed fill" begin
+        itp = linear_interp(xs, yw; extrap = FillExtrap(0.0u"W"))
+        @test itp(5.0u"s") === 0.0u"W"
+        @test itp(1.5u"s") ≈ linear_interp(xf, yf)(1.5) * u"W"   # in-domain untouched
+    end
+
+    @testset "FillExtrap: dimensionless fill vs unit values errors loudly" begin
+        # The mismatch surfaces at BUILD (fill value promoted against Tv) —
+        # earlier than eval, which is the better failure point.
+        @test_throws Unitful.DimensionError linear_interp(xs, yw; extrap = FillExtrap(0.0))
+    end
+
+    @testset "WrapExtrap: periodic OOB matches Float64 twin" begin
+        itp = linear_interp(xs, yw; extrap = WrapExtrap())
+        tw = linear_interp(xf, yf; extrap = WrapExtrap())
+        @test itp(4.5u"s") ≈ tw(4.5) * u"W"
+        @test itp(-0.5u"s") ≈ tw(-0.5) * u"W"
+    end
+end
+
 @testitem "Unitful 1D: unit grid + unitless values (review pin F5)" begin
     using Unitful
 

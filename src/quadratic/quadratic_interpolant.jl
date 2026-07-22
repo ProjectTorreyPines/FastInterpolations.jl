@@ -30,13 +30,13 @@ end
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
-        xq::AbstractArray{<:Real},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap_eff = _check_domain(x, xq, extrap)
     return _quadratic_vector_loop_inner!(output, x, y, a, d, xq, extrap_eff, deriv, searcher)
 end
@@ -45,13 +45,13 @@ end
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
-        xq::AbstractArray{<:Real},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
     end

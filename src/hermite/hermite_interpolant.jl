@@ -26,11 +26,13 @@ end
 # Two-call pattern over `_interp_op` keeps `Tv` and `eltype(dy)` in
 # disjoint promote chains so a duck-typed `dy` (e.g., Float64 y + Vector{Dual} dy
 # for AD on slopes) widens the result without poisoning the `y` chain.
+# The dy term enters the kernel as `h·dy` (span × slope = VALUE space) — the
+# chain must see that product, or a unit dy (Y/X) promotes W against W/s → abstract.
 @inline function _promote_eltype(itp::AbstractHermiteInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq}
-    Tdy = eltype(itp.dy)
+    Tdy_val = Base.promote_op(*, Tg, eltype(itp.dy))
     return promote_type(
         _promote_eltype(_interp_op, Tg, Tv, Tq),
-        _promote_eltype(_interp_op, Tg, Tdy, Tq),
+        _promote_eltype(_interp_op, Tg, Tdy_val, Tq),
     )
 end
 

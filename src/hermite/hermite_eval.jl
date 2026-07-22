@@ -106,11 +106,11 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap_eff = _check_domain(x, xq, extrap)
     return _hermite_vector_loop_inner!(output, x, y, dy, xq, extrap_eff, deriv, searcher)
 end
@@ -120,11 +120,11 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
     end
@@ -231,11 +231,11 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap_eff = _check_domain(x, xq, extrap)
     return _hermite_vector_loop_inner!(output, x, y, sm, xq, extrap_eff, deriv, searcher)
 end
@@ -245,11 +245,11 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, sm, xq[i], extrap, deriv, searcher)
     end

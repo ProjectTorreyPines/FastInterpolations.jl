@@ -279,6 +279,44 @@ end
     @test occursin("ustrip", msg)   # actionable workaround named
 end
 
+@testitem "Unitful 1D: batch eval across families (review pin F8)" begin
+    using Unitful
+
+    # Batch (Vector-of-Quantity) eval was only exercised for Linear: the
+    # persistent vector loops of Cubic/Quadratic/hermite-family kept
+    # `AbstractArray{<:Real}` query bounds → MethodError on unit queries.
+    # Default AutoSearch exercises batch search-policy resolution too.
+    xs = [0.0, 1.0, 2.5, 3.0, 4.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0, 4.0]
+    yw = [1.0, 2.0, 4.0, 8.0, 5.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0, 5.0]
+    qf = [0.25, 0.75, 1.25, 2.6, 3.9]
+    qs = qf .* u"s"
+
+    dyf = [1.0, 0.5, 0.0, -0.5, -1.0]
+    dyu = dyf .* u"W/s"
+
+    fams = [
+        ("linear", linear_interp(xs, yw), linear_interp(xf, yf)),
+        ("cubic", cubic_interp(xs, yw), cubic_interp(xf, yf)),
+        ("quadratic", quadratic_interp(xs, yw), quadratic_interp(xf, yf)),
+        ("pchip", pchip_interp(xs, yw), pchip_interp(xf, yf)),
+        ("akima", akima_interp(xs, yw), akima_interp(xf, yf)),
+        ("cardinal", cardinal_interp(xs, yw), cardinal_interp(xf, yf)),
+        ("hermite", hermite_interp(xs, yw, dyu), hermite_interp(xf, yf, dyf)),
+    ]
+    for (nm, itp, tw) in fams
+        @testset "$nm: allocating + in-place batch" begin
+            out = itp(qs)
+            @test eltype(out) === typeof(1.0u"W")
+            @test out ≈ tw(qf) .* u"W"
+            buf = similar(out)
+            itp(buf, qs)
+            @test buf ≈ out
+        end
+    end
+end
+
 @testitem "Unitful 1D: unit grid + unitless values (review pin F5)" begin
     using Unitful
 

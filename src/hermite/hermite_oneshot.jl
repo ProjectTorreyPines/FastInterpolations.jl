@@ -95,11 +95,12 @@ function hermite_interp(
     # Disjoint chains for `Tv` and `eltype(dy)` over the shared kernel shape —
     # a single trait call would let SVector `eltype(dy)` collapse the duck-Tq
     # fallback to `Any`. Mirrors the `AbstractHermiteInterpolant1D` persistent
-    # override that pulls `eltype(itp.dy)` at the type level.
+    # override that pulls `eltype(itp.dy)` at the type level. The dy chain sees
+    # the kernel's `h·dy` product (span × slope = value space).
     Tg_p = _promote_grid_float(Tg, Tv)
     Tr = promote_type(
         _promote_eltype(_interp_op, Tg_p, Tv, Tq),
-        _promote_eltype(_interp_op, Tg_p, eltype(dy), Tq),
+        _promote_eltype(_interp_op, Tg_p, Base.promote_op(*, Tg_p, eltype(dy)), Tq),
     )
     output = _alloc_query_output(Tr, x_query)
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)

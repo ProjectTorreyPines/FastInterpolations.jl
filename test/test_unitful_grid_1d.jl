@@ -239,6 +239,42 @@ end
     end
 end
 
+@testitem "Unitful 1D: unit grid + unitless values (review pin F5)" begin
+    using Unitful
+
+    # `_promote_grid_float` assumed Tg <: Real: a duck grid + PROMOTABLE value
+    # hit `float(promote_type(Quantity, Float64))` → abstract Quantity → throw.
+    # Duck grids must pass through raw — never promoted against the value type,
+    # never `float`ed (mirrors the ND gate `Tg_raw <: Real ? ... : Tg_raw`).
+    FI = FastInterpolations
+    xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0]
+    yf = [1.0, 2.0, 4.0, 8.0]   # unitless values on a unit grid
+
+    @testset "witness: duck Tg passes through raw" begin
+        Tq = typeof(1.0u"s")
+        @test FI._promote_grid_float(Tq, Float64) === Tq
+        @test FI._promote_grid_float(Tq, Float32) === Tq
+        # Real grids keep value-precision widening (unchanged contract)
+        @test FI._promote_grid_float(Float32, Float64) === Float64
+        @test FI._promote_grid_float(Int, Float64) === Float64
+    end
+
+    @testset "build/eval/integrate: Linear, Constant, Cubic, PCHIP" begin
+        for method in (LinearInterp(), ConstantInterp(), CubicInterp(), PchipInterp())
+            itp = interp(xs, yf; method)
+            tw = interp(xf, yf; method)
+            @test itp(1.5u"s") ≈ tw(1.5)
+            @test integrate(itp) ≈ integrate(tw) * u"s"
+        end
+    end
+
+    @testset "one-shot eval" begin
+        @test interp(xs, yf, 1.5u"s"; method = LinearInterp()) ≈
+            interp(xf, yf, 1.5; method = LinearInterp())
+    end
+end
+
 @testitem "Unitful 1D: LinearSearch + spacing accessors (review pin F4)" begin
     using Unitful
     using InteractiveUtils: @which

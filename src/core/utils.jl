@@ -95,6 +95,10 @@ _promote_grid_float(Int, Dual)       # → Float64 (duck: float(Int) only)
 ```
 """
 @inline function _promote_grid_float(::Type{Tg}, ::Type{Tv}) where {Tg, Tv}
+    # Duck grids pass through RAW: cross-family `promote_type` yields abstract
+    # types (e.g. `Quantity` × `Float64`), and `float` is not part of the duck
+    # contract. Precision widening is a Real-family concern only.
+    Tg <: Real || return Tg
     if Tv <: _PromotableValue
         return float(promote_type(Tg, _real_eltype(Tv)))
     else

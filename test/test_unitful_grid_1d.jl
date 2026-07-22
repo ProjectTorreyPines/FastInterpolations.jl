@@ -239,6 +239,46 @@ end
     end
 end
 
+@testitem "Unitful 1D: zero-alloc hot path (review pin F6)" setup = [AllocConstants] begin
+    using Unitful
+
+    # The point of the relaxation is that the 0-alloc contract SURVIVES the
+    # abstraction — pin it for unit grids exactly as the Real files do.
+    xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    yw = [1.0, 2.0, 4.0, 8.0] .* u"W"
+    q = 1.5u"s"
+
+    for (nm, itp) in (("linear", linear_interp(xs, yw)), ("cubic", cubic_interp(xs, yw)))
+        @testset "$nm: eval / integrate" begin
+            itp(q)
+            integrate(itp)   # warmup
+            @test (@allocated itp(q)) <= ALLOC_THRESHOLD
+            @test (@allocated integrate(itp)) <= ALLOC_THRESHOLD
+        end
+    end
+end
+
+@testitem "Unitful 1D: cubic PeriodicBC rejection is friendly (review pin F7)" begin
+    using Unitful
+
+    # `_cubic_interp_units` deliberately rejects PeriodicBC (strip→solve→reattach
+    # has no periodic factorization path yet) — pin the ERROR QUALITY, not just
+    # that it throws: message must name the feature and the workaround.
+    xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    yw = [1.0, 2.0, 4.0, 8.0] .* u"W"
+    err = try
+        cubic_interp(xs, yw; bc = PeriodicBC())
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    msg = sprint(showerror, err)
+    @test occursin("PeriodicBC", msg)
+    @test occursin("unit-carrying", msg)
+    @test occursin("ustrip", msg)   # actionable workaround named
+end
+
 @testitem "Unitful 1D: unit grid + unitless values (review pin F5)" begin
     using Unitful
 

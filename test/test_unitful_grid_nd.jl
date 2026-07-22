@@ -71,3 +71,20 @@ end
         @test_throws ArgumentError interp((xs, ym), data; method = CubicInterp())
     end
 end
+
+@testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
+    using Unitful
+
+    # Mixed-unit axes exercise the abstract-Tg per-axis machinery — the alloc
+    # contract must hold there too (devirtualized axis maps, no closure boxes).
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+    itp = interp((xs, ym), data; method = LinearInterp())
+    q = (1.5u"s", 0.75u"m")
+
+    itp(q)
+    integrate(itp)   # warmup
+    @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
+    @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+end

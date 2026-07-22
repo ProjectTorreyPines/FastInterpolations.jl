@@ -92,7 +92,7 @@ Formula:
 
     # (yR-yL)/h + z_term — diff widens in VALUE space (Tz is z-space; converting
     # unit-carrying y into it would be dimensionally wrong)
-    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)
+    Tw = _value_space_eltype(Tg, Tv)
     return muladd(inv_h, _fielddiff(Tw, yR, yL), z_term)
 end
 

@@ -51,7 +51,7 @@ end
     # Value-space widened field (wrap-free): the diff stays in value units; the
     # slope's 1/X dimension enters via `inv(2h)` (coeff-space Tc would convert
     # unit-carrying values into slope units — DimensionError).
-    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)
+    Tw = _value_space_eltype(Tg, Tv)
     half_slope = _fielddiff(Tw, yR, yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
 end
@@ -61,7 +61,7 @@ end
         ::_EvalIntegralCell,
         yL::Tv, yR::Tv, h::Tg
     ) where {Tv, Tg}
-    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)   # value-space (see partial-cell note)
+    Tw = _value_space_eltype(Tg, Tv)   # (see partial-cell note)
     return (h / 2) * _fieldsum(Tw, yL, yR)
 end
 

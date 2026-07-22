@@ -135,6 +135,19 @@ end
     )
 )
 
+# Same contract for the per-axis (hetero) ND engine — which also backs
+# PCHIP/Akima/Cardinal ND. Neither builder path (OnTheFly eval kernels nor the
+# PreCompute partials store) handles unit-carrying grids yet; without this gate
+# the failure is a deep MethodError (or a "successful" build whose eval throws).
+@inline _check_nd_hetero_grid(::Type{<:Real}) = nothing
+@noinline _check_nd_hetero_grid(::Type{Tg}) where {Tg} = throw(
+    ArgumentError(
+        "Per-axis (hetero) ND interpolants — including PCHIP/Akima/Cardinal ND — " *
+            "do not support unit-carrying grids yet (grid eltype $(Tg)). " *
+            "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or strip units."
+    )
+)
+
 """
     _value_type(::Type{Ty}, ::Type{Tg}) -> Type
 
@@ -212,6 +225,13 @@ end
 # in type when `h` is the (floated) grid type, which it always is at eltype sites.
 @inline _interp_op(h::Tg, yv::Tv, dL::Tq) where {Tg, Tv, Tq} = yv + yv * (dL / h)
 
+# Value-space width witness: `_interp_op` with the GRID type in both the axis
+# and query slots, so `dL/h` cancels and the result stays in VALUE space. The
+# 3rd-arg convention is easy to get wrong at call sites (a stray `Tq` there
+# silently drags query blood into coefficient space) — fixed here once.
+@inline _value_space_eltype(::Type{Tgw}, ::Type{Tv}) where {Tgw, Tv} =
+    _promote_eltype(_interp_op, Tgw, Tv, Tgw)
+
 # `_coeff_op` (2-arg): FIRST-ORDER divided difference `Δy/h`, accumulated by the
 # solve → the order-1 COEFFICIENT eltype (slopes: hermite/pchip/akima/cardinal `dy`,
 # secants). Modeled as `yv*inv(h) + yv*inv(h)`: `* inv(h)` (NOT `/ h`) mirrors the
@@ -279,7 +299,7 @@ end
 @inline function _forward_secant(::Type{Tw}, x, y, i) where {Tw}
     # Value-space widen: the diff stays in value units; the 1/X dimension
     # enters via the cached reciprocal (coeff-space Tc would convert y).
-    Tc = _promote_eltype(_interp_op, Tw, eltype(y), Tw)
+    Tc = _value_space_eltype(Tw, eltype(y))
     return @inbounds _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(Tw, x, i)
 end
 @inline _forward_secant(x, y, i) = _forward_secant(eltype(x), x, y, i)
@@ -290,7 +310,7 @@ end
 
 # Centered (2-cell-span) secant (y[i+1]-y[i-1]) / (x[i+1]-x[i-1]) via `_get_inv_2cell`.
 @inline function _centered_secant(::Type{Tw}, x, y, i) where {Tw}
-    Tc = _promote_eltype(_interp_op, Tw, eltype(y), Tw)   # value-space (see above)
+    Tc = _value_space_eltype(Tw, eltype(y))   # value-space (see above)
     return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(Tw, x, i)
 end
 @inline _centered_secant(x, y, i) = _centered_secant(eltype(x), x, y, i)

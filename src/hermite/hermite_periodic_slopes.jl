@@ -107,7 +107,7 @@ end
     if jw == n
         period = _resolve_seam_period(x, bc)
         seam_h = period - (@inbounds x[n] - x[1])
-        Tc = _promote_eltype(_interp_op, eltype(x), eltype(y), eltype(x))   # value-space
+        Tc = _value_space_eltype(eltype(x), eltype(y))
         @inbounds return _fielddiff(Tc, y[1], y[n]) / seam_h
     end
     return _forward_secant(x, y, jw)
@@ -117,7 +117,7 @@ end
     jw = mod1(j, n)
     if jw == n
         seam_h = _periodic_cell_width(Tw, x, n, n, bc)
-        Tc = _promote_eltype(_interp_op, Tw, eltype(y), Tw)   # value-space
+        Tc = _value_space_eltype(Tw, eltype(y))
         @inbounds return _fielddiff(Tc, y[1], y[n]) / seam_h
     end
     return _forward_secant(Tw, x, y, jw)

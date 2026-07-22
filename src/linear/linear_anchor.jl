@@ -130,7 +130,7 @@ Evaluate first derivative using anchor's precomputed inv_h.
 No division: uses `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe).
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg, Tv}
-    Tw = _promote_eltype(_interp_op, Tg, Tv, Tg)   # value-space (see linear_kernels.jl)
+    Tw = _value_space_eltype(Tg, Tv)   # (see linear_kernels.jl)
     return _fielddiff(Tw, yR, yL) * aq.inv_h
 end
 

@@ -72,6 +72,35 @@ end
     end
 end
 
+@testitem "Unitful ND: hetero engine rejects unit grids friendly (review F11)" begin
+    using Unitful
+
+    # The per-axis (hetero) ND engine — which also backs PCHIP/Akima/Cardinal ND —
+    # missed the solver-grid guard: unit grids died in deep MethodErrors
+    # (`_collapse_dims`, `_build_nd_coeffs_hetero`, ctor). Pin the friendly error
+    # for both builders (OnTheFly + PreCompute) and both unit layouts.
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    xs2 = [0.0, 0.5, 1.0, 1.5] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+
+    for build in (
+            () -> interp((xs, ym), data; method = (LinearInterp(), ConstantInterp())),
+            () -> interp((xs, xs2), data; method = (LinearInterp(), CubicInterp())),
+            () -> pchip_interp((xs, xs2), data),
+            () -> cardinal_interp((xs, ym), data),
+        )
+        err = try
+            build()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("unit-carrying", sprint(showerror, err))
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 

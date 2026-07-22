@@ -1318,19 +1318,16 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
     if Tg_raw <: Real
         Tg = _promote_grid_float(Tg_raw, Tv_all)
         grids_typed = _convert_grids_typed(grids, Tg)
-        Tv = _value_type(Tv_all, Tg)
-        Tz = _promote_eltype(Tv, Tg)
-        return grids_typed, Tg, Tv, Tz
     else
         # Unit/duck axes: per-axis value-match, NO common-eltype convert (mixed
         # units promote `Tg` to an ABSTRACT type — promotion-tag only, never
         # instantiated; witnesses must come from per-axis eltypes downstream).
         grids_typed = _float_grids_peraxis(grids)
         Tg = _promote_grid_eltype(grids_typed)
-        Tv = _value_type(Tv_all, Tg)
-        Tz = _promote_eltype(Tv, Tg)
-        return grids_typed, Tg, Tv, Tz
     end
+    Tv = _value_type(Tv_all, Tg)
+    Tz = _promote_eltype(Tv, Tg)
+    return grids_typed, Tg, Tv, Tz
 end
 
 # Recursive tuple peel (NOT a closure-map — the source-lint bans closure-maps

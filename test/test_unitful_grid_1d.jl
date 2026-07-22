@@ -78,8 +78,15 @@ end
     itp = constant_interp(xu, yw)
 
     @testset "eval" begin
-        v = itp(1.4u"s")
-        @test v isa typeof(1.0u"W")
+        # Nearest-node oracle, not just the type (review: type-only assert).
+        @test itp(1.4u"s") === 1.0u"W"    # nearest node x=1s → y[2]
+        @test itp(1.6u"s") === 0.5u"W"    # nearest node x=2s → y[3]
+    end
+
+    @testset "StorePolicy(copy=false): unit grid/data alias round-trip" begin
+        itp_ref = constant_interp(xu, yw; store = StorePolicy(copy = false))
+        @test itp_ref.y === yw                      # data aliased, not copied
+        @test itp_ref(1.4u"s") === itp(1.4u"s")     # same results as owning build
     end
 
     @testset "integrate / cumulative" begin

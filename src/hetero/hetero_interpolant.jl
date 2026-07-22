@@ -297,6 +297,7 @@ function _build_hetero_nd(
     end
 
     # 2-5. Promote grid + data types
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = _own_or_ref_data(data, Tv, store)
 
@@ -343,6 +344,7 @@ function _build_hetero_precomputed(
     else
         _validate_nd_grids(grids, data)
     end
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     bcs_periodic = map(_bc_for_periodic_check, methods)
     # 4-arg expand-only — materialize deferred until after extension (post-extension

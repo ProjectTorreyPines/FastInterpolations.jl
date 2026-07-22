@@ -157,7 +157,7 @@ end
     h = _get_h(x)
     # Σy accumulates in VALUE space (Tout is value×spacing — unit-distinct);
     # the ×h happens once after the loop. Real types: Tw ≡ Tout.
-    Tw = _promote_eltype(_interp_op, eltype(x), eltype(y), eltype(x))
+    Tw = _value_space_eltype(eltype(x), eltype(y))
     s = zero(Tw === Float16 ? Float32 : Tw)
     @inbounds begin
         @simd for i in 2:(n - 1)

@@ -219,8 +219,13 @@ function _cubic_interp_units(x, y, bc, extrap, autocache, search, store)
     )
     z = tw.z .* (uy / (ux * ux))
     Tgu = eltype(x)
+    # Cubic 1D ALWAYS owns its axis (copy-then-wrap) — deliberately NOT the
+    # store-aware `_policy_axis` the quadratic units path uses; do not "unify".
     xc = _cache_axis(_convert_copy(x, Tgu), NoBC())
     bc_u = _normalize_bc(bc, first(y))
+    # NOTE: `thomas` is the STRIPPED twin's factorization paired with a unit
+    # axis — unused by eval/integrate, but do not feed this cache back into
+    # `cubic_interp(cache, y2)`-style rebuilds with unit data.
     cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, Vector{Tgu}())
     extrap_p = _resolve_extrap(extrap, xc, eltype(y))
     return CubicInterpolant(cache, y, z, bc_u, extrap_p, search; store = store)
@@ -234,6 +239,14 @@ end
 @inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.value / (uy / (ux * ux * ux)))
 @inline _strip_bc_units(bc::BCPair, uy, ux) =
     BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
+# Catch-all: an unhandled BC type must fail HERE with an actionable message,
+# not as a MethodError deep inside the stripped solve.
+@noinline _strip_bc_units(bc::AbstractBC, uy, ux) = throw(
+    ArgumentError(
+        "BC type $(typeof(bc)) is not supported on a unit-carrying grid yet — " *
+            "strip units (e.g. `ustrip`) or use a Real grid"
+    )
+)
 
 """
     cubic_interp(cache, y; extrap=NoExtrap(), search=AutoSearch()) -> CubicInterpolant

@@ -124,30 +124,25 @@ end
 # `_select_op` for selection kernels (Constant). Duck
 # `SVector × Dual` resolves via the trait's `Base.promote_op` fallback.
 
-# ── Deriv-aware buffer eltype ──
-# `DerivOp{N}` output lives in value/coordᴺ space; the value trait alone would
-# size a unit-grid deriv batch in value units and the loop's store would throw.
-# `N == 0` folds to the plain trait (Bool `true` = exact multiplicative
-# identity — no Float widening of narrow Real types).
-@inline function _promote_eltype_op(itp::AbstractInterpolant1D{Tg}, ::Type{Tq}, ::DerivOp{N}) where {Tg, Tq, N}
-    Tr = _promote_eltype(itp, Tq)
-    return N == 0 ? Tr : Base.promote_op(*, Tr, typeof(inv(oneunit(Tg))^N))
-end
-@inline function _promote_eltype_op(itp::AbstractInterpolantND, ::Type{Tq}, op::Union{DerivOp, Tuple}) where {Tq}
-    Tr = _promote_eltype(itp, Tq)
-    sc = _deriv_units_scale(itp.grids, op)
-    return sc isa Bool ? Tr : Base.promote_op(*, Tr, typeof(sc))
-end
-# Per-axis unit scale (a lone DerivOp broadcasts to every axis); recursive
-# tuple peel, `true` as the widening-free multiplicative identity.
-@inline _deriv_units_scale(::Tuple{}, ::Tuple{}) = true
-@inline _deriv_units_scale(grids::Tuple, ops::Tuple) =
-    _axis_deriv_scale(first(grids), first(ops)) * _deriv_units_scale(Base.tail(grids), Base.tail(ops))
-@inline _deriv_units_scale(::Tuple{}, ::DerivOp) = true
-@inline _deriv_units_scale(grids::Tuple, op::DerivOp) =
-    _axis_deriv_scale(first(grids), op) * _deriv_units_scale(Base.tail(grids), op)
-@inline _axis_deriv_scale(g, ::DerivOp{0}) = true
-@inline _axis_deriv_scale(g, ::DerivOp{N}) where {N} = inv(oneunit(eltype(g)))^N
+# ── Deriv-aware buffer eltype (3-arg sibling of the 2-arg trait) ──
+# Value eltype from the per-method 2-arg trait (Constant/Hermite overrides honored),
+# then scaled into value/coordᴺ space — else a unit-grid deriv batch sizes in value
+# units and the store throws. A lone DerivOp broadcasts to all axes; a Tuple is per-axis.
+@inline _promote_eltype(itp::AbstractInterpolant1D{Tg}, ::Type{Tq}, op::DerivOp) where {Tg, Tq} =
+    _deriv_eltype(_promote_eltype(itp, Tq), Tg, op)
+@inline _promote_eltype(itp::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}, op::DerivOp) where {Tg, Tv, N, Tq} =
+    _promote_eltype(itp, Tq, ntuple(_ -> op, Val(N)))
+@inline _promote_eltype(itp::AbstractInterpolantND, ::Type{Tq}, ops::Tuple) where {Tq} =
+    _deriv_eltype_nd(_promote_eltype(itp, Tq), itp.grids, ops)
+
+# Fold the `_deriv1_op` witness one order at a time (never `h^-N` — type-unstable for
+# units); `DerivOp{0}` is the identity. ND folds the single-axis helper across axes.
+@inline _deriv_eltype(::Type{Tr}, ::Type{Tg}, ::DerivOp{0}) where {Tr, Tg} = Tr
+@inline _deriv_eltype(::Type{Tr}, ::Type{Tg}, ::DerivOp{N}) where {Tr, Tg, N} =
+    _deriv_eltype(_promote_eltype(_deriv1_op, Tr, Tg), Tg, DerivOp{N - 1}())
+@inline _deriv_eltype_nd(::Type{Tr}, ::Tuple{}, ::Tuple{}) where {Tr} = Tr
+@inline _deriv_eltype_nd(::Type{Tr}, grids::Tuple, ops::Tuple) where {Tr} =
+    _deriv_eltype_nd(_deriv_eltype(Tr, eltype(first(grids)), first(ops)), Base.tail(grids), Base.tail(ops))
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
@@ -158,7 +153,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
-    output = Vector{_promote_eltype_op(itp, Tq, deriv)}(undef, length(xq))
+    output = Vector{_promote_eltype(itp, Tq, deriv)}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
     _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
@@ -201,7 +196,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
-    output = _alloc_query_output(_promote_eltype_op(itp, Tq, deriv), q)
+    output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), q)
     searcher = _resolve_search(grid, q, search, hint)
     _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
     return output
@@ -465,6 +460,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = _alloc_query_output(_promote_eltype_op(itp, Tq, deriv), queries)
+    output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), queries)
     return itp(output, queries; deriv = deriv, extrap = extrap, search = search, hint = hint)
 end

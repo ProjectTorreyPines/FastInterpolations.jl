@@ -366,6 +366,79 @@ end
     end
 end
 
+@testitem "Unitful 1D: Codex review batch (review pin F12)" begin
+    using Unitful
+
+    xu = [0.0, 1.0, 2.5, 3.0, 4.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0, 4.0]
+    yu = [1.0, 2.0, 4.0, 8.0, 5.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0, 5.0]
+    qs = [0.5, 1.5] .* u"s"
+
+    @testset "C1: batch deriv buffer carries derivative units" begin
+        itp = linear_interp(xu, yu)
+        tw = linear_interp(xf, yf)
+        out = itp(qs; deriv = DerivOp(1))
+        @test eltype(out) === typeof(1.0u"W/s")
+        @test out ≈ tw([0.5, 1.5]; deriv = DerivOp(1)) .* u"W/s"
+        # shaped-array form shares the fix
+        out2 = itp(reshape(qs, 1, 2); deriv = DerivOp(1))
+        @test eltype(out2) === typeof(1.0u"W/s")
+    end
+
+    @testset "C2: solver one-shots route through the units path" begin
+        for (f, tf) in ((cubic_interp, cubic_interp), (quadratic_interp, quadratic_interp))
+            @test f(xu, yu, 1.5u"s") ≈ tf(xf, yf, 1.5) * u"W"
+            @test f(xu, yu, qs) ≈ tf(xf, yf, [0.5, 1.5]) .* u"W"
+        end
+    end
+
+    @testset "C3: AutoCoeffs scalar one-shot (local-slope families)" begin
+        @test pchip_interp(xu, yu, 1.5u"s") ≈ pchip_interp(xf, yf, 1.5) * u"W"
+        @test akima_interp(xu, yu, 1.5u"s") ≈ akima_interp(xf, yf, 1.5) * u"W"
+    end
+
+    @testset "C4: cardinal one-shot tension stays dimensionless" begin
+        for coeffs in (OnTheFly(), PreCompute(), AutoCoeffs())
+            @test cardinal_interp(xu, yu, 1.5u"s"; coeffs) ≈
+                cardinal_interp(xf, yf, 1.5) * u"W"
+        end
+    end
+
+    @testset "C5: bounded one-shot integrate facade" begin
+        @test integrate(xu, yu, 0.5u"s", 2.5u"s"; method = LinearInterp()) ≈
+            integrate(xf, yf, 0.5, 2.5; method = LinearInterp()) * u"W*s"
+    end
+
+    @testset "C6: OnTheFly persistent bounded integrate" begin
+        itp = pchip_interp(xu, yu; coeffs = OnTheFly())
+        tw = pchip_interp(xf, yf; coeffs = OnTheFly())
+        @test integrate(itp, 0.5u"s", 2.5u"s") ≈ integrate(tw, 0.5, 2.5) * u"W*s"
+    end
+
+    @testset "C7: cardinal on a unit Range axis (2-cell reciprocal)" begin
+        itp = cardinal_interp(0.0u"s":1.0u"s":4.0u"s", yu)
+        tw = cardinal_interp(0.0:1.0:4.0, yf)
+        @test itp(1.5u"s") ≈ tw(1.5) * u"W"
+    end
+
+    @testset "C8: OOB deriv under Clamp/Fill carries derivative units" begin
+        itp = linear_interp(xu, yu; extrap = ClampExtrap())
+        v_in = itp(1.5u"s"; deriv = DerivOp(1))
+        v_oob = itp(5.0u"s"; deriv = DerivOp(1))
+        @test typeof(v_oob) === typeof(v_in)   # W/s both sides of the boundary
+        @test v_oob === 0.0u"W/s"
+        itf = linear_interp(xu, yu; extrap = FillExtrap(0.0u"W"))
+        @test typeof(itf(5.0u"s"; deriv = DerivOp(1))) === typeof(v_in)
+    end
+
+    @testset "C9: Int grid/data ClampExtrap keeps Int OOB (Real regression)" begin
+        ci = constant_interp([0, 1, 2, 3, 4], [10, 20, 40, 80, 50]; extrap = ClampExtrap())
+        @test ci(2) === 40
+        @test ci(7) === 50    # was 50.0 (Float64) — carrier minted inv(oneunit(Int))
+    end
+end
+
 @testitem "Unitful 1D: unit grid + unitless values (review pin F5)" begin
     using Unitful
 

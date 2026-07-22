@@ -152,7 +152,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
     ) where {Tg, Tv, Tq}
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis (tension follows).
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
-    tension_f = float(eltype(x))(tension)
+    tension_f = oftype(one(float(eltype(x))) * 1, tension)   # dimensionless (unit Tg: one() strips)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -180,7 +180,7 @@ In-place cardinal spline interpolation.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq}
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
-    tension_f = float(eltype(x))(tension)
+    tension_f = oftype(one(float(eltype(x))) * 1, tension)   # dimensionless (unit Tg: one() strips)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly

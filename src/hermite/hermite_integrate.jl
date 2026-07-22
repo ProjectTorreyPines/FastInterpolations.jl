@@ -90,8 +90,8 @@ end
 @inline function _integrate_hermite_onthefly_inner(
         sm::AbstractSlopeMethod,
         x::AbstractVector, y::AbstractVector,
-        a::Real, b::Real, searcher::Searcher, ::Type{Tout},
-    ) where {Tout}
+        a::Tq0, b::Tq1, searcher::Searcher, ::Type{Tout},
+    ) where {Tq0, Tq1, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
     sign == 0 && return zero(Tout)
     n = length(x)

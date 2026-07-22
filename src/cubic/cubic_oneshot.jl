@@ -75,7 +75,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_query::AbstractArray{<:Real},
+        x_query::AbstractArray,
         bc::BCPair{L, R},
         extrap::AbstractExtrap,
         autocache::Bool,
@@ -186,7 +186,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_query::AbstractArray{<:Real},
+        x_query::AbstractArray,
         bc::PeriodicBC,
         autocache::Bool,
         op::O,
@@ -240,14 +240,17 @@ In-place cubic spline interpolation with optional automatic caching.
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractArray{<:Real};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tq}
+    Tg <: Real || return cubic_interp(
+        x, y; bc = bc, extrap = extrap, search = search
+    )(output, x_query; deriv = deriv, hint = hint)
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis, so the spline
     # cache builds (and memoises — `_CachedRange` is isbits, objectid-deterministic)
     # at the value width instead of the blind Float64.
@@ -332,15 +335,17 @@ vals = cubic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_windo
 function cubic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractArray{<:Real};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv}
-    Tq = eltype(x_query)
+    ) where {Tg, Tv, Tq}
+    Tg <: Real || return cubic_interp(
+        x, y; bc = bc, extrap = extrap, search = search
+    )(x_query; deriv = deriv, hint = hint)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search, hint)
@@ -367,6 +372,11 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq}
+    # Unit-carrying grids route through the persistent strip→solve→reattach
+    # build — the direct pooled Thomas below runs in unit space and throws.
+    Tg <: Real || return cubic_interp(
+        x, y; bc = bc, extrap = extrap, search = search
+    )(xq; deriv = deriv, hint = hint)
     # Value-matched Tg (see the in-place form above): Ranges resolve to the value
     # width; raw Vectors pass through (identity-keyed cache — legacy width there).
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))

@@ -294,7 +294,7 @@ end
 @inline _resolve_search_policy(::AutoSearch, xq, ::Base.RefValue{Int}) = LinearBinarySearch()
 
 # AutoSearch + no hint + vector → adaptive per prefix monotonicity check.
-@inline function _resolve_search_policy(::AutoSearch, xq::AbstractArray{<:Real}, ::Nothing)
+@inline function _resolve_search_policy(::AutoSearch, xq::AbstractArray, ::Nothing)
     return _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
 end
 

@@ -164,15 +164,16 @@ end
 end
 
 # Scalar one-shot: bare scalar → `(q,)` → ND scalar one-shot (handles coeffs natively).
-@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
-    cubic_interp(grids, data, (q,); kwargs...)
+@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
+    eltype(only(grids)) <: Real ? cubic_interp(grids, data, (q,); kwargs...) :
+    cubic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: gated 1D one-shot
 
 # Batch one-shot (bare vector; the SoA `(xv,)` form below unwraps into it).
-@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
     coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_alloc(grids, data, q; coeffs, kwargs...)
     return cubic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 end
-@inline function cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+@inline function cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
     coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_batch!(output, grids, data, q; coeffs, kwargs...)
     return cubic_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 end

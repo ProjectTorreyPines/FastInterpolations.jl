@@ -866,8 +866,14 @@ end
 # Guarded by test/test_extrap_carrier_guards.jl.
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
-# `zero(xq) * inv(oneunit(xq))` = the DIMENSIONLESS query-carrier zero: same
-# carrier type as `zero(xq)` (Dual, etc.), but unit-free so `* zero(val)` stays
+# Real queries (incl. Dual): the historic carrier `zero(xq) * zero(val)` —
+# value ≡ carrier space, keeps Int results Int (no `inv(oneunit)` Float mint).
+@inline _promote_extrap_val(val::Number, xq::Real) = val + zero(xq) * zero(val)
+@inline _promote_extrap_val(val::AbstractArray, xq::Real) = val .+ zero(xq) .* zero(eltype(val))
+@inline _promote_extrap_zero(val::Number, xq::Real) = 0 * val + zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::AbstractArray, xq::Real) = 0 .* val .+ zero(xq) .* zero(eltype(val))
+# Duck queries: `zero(xq) * inv(oneunit(xq))` = the DIMENSIONLESS query-carrier
+# zero: same carrier type as `zero(xq)`, but unit-free so `* zero(val)` stays
 # in value dimensions (a raw `zero(xq)` factor would make the term query×value).
 @inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * inv(oneunit(xq)) * zero(val)
 # AbstractArray Tv (e.g. `SVector` y) — broadcast the carrier-propagating
@@ -878,6 +884,12 @@ end
 @inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * inv(oneunit(xq)) * zero(val)
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
+
+# Deriv-order aware form (1D OOB path): a flat extrap's derivative is zero in
+# value/coordᴺ units. Real queries: value ≡ deriv carrier space — no scale.
+@inline _promote_extrap_zero(val, xq::Real, ::DerivOp) = _promote_extrap_zero(val, xq)
+@inline _promote_extrap_zero(val, xq, ::DerivOp{N}) where {N} =
+    _promote_extrap_zero(val, xq) * inv(oneunit(xq))^N
 
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".
 #   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
@@ -897,5 +909,5 @@ end
 # the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
 @inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
-    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(op::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq, op)

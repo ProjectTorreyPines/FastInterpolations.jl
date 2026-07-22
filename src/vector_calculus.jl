@@ -92,7 +92,7 @@ end
 # Vector API for compatibility with ForwardDiff patterns
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector{<:Real};
+        query::AbstractVector;
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -187,7 +187,7 @@ end
 @inline function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector{<:Real};
+        query::AbstractVector;
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -292,7 +292,7 @@ end
 # Vector API
 @inline function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector{<:Real};
+        query::AbstractVector;
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -396,7 +396,7 @@ end
 # Vector API
 function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector{<:Real};
+        query::AbstractVector;
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -501,7 +501,7 @@ end
 @inline function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector{<:Real};
+        query::AbstractVector;
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -590,7 +590,7 @@ end
 # Vector API
 @inline function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector{<:Real};
+        query::AbstractVector;
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(

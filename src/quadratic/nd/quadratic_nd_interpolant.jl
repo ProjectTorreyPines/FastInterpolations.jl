@@ -136,13 +136,14 @@ end
 
 # N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot
 # (scalar output, not `[val]`). See linear_nd_interpolant.jl.
-@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
-    quadratic_interp(grids, data, (q,); kwargs...)
+@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
+    eltype(only(grids)) <: Real ? quadratic_interp(grids, data, (q,); kwargs...) :
+    quadratic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: gated 1D one-shot
 
 # N=1 batch one-shot → lean 1D batch one-shot (bit-identical). See linear_nd_interpolant.jl.
-@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =
+@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =
     quadratic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-@inline quadratic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =
+@inline quadratic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =
     quadratic_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 # Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
 @inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =

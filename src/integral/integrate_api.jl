@@ -12,7 +12,7 @@
 end
 @inline integrate(x::AbstractVector, y::AbstractVector; method::AbstractInterpMethod) =
     integrate(_oneshot_build_1d(method, x, y))
-@inline integrate(x::AbstractVector, y::AbstractVector, a::Real, b::Real; method::AbstractInterpMethod) =
+@inline integrate(x::AbstractVector, y::AbstractVector, a::Tq0, b::Tq1; method::AbstractInterpMethod) where {Tq0, Tq1} =
     integrate(_oneshot_build_1d(method, x, y), a, b)
 
 # ── One-shot cumulative: cumulative_integrate(x, y; method) ──

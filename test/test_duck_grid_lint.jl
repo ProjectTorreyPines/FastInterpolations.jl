@@ -16,7 +16,14 @@
         r"\bTd\s*<:\s*Real\b",
         r"\bxq::Real\b",
         r"\bx0::Real\b",
+        r"\bx1::Real\b",
         r"\bxi::Real\b",
+        # Codex-review additions: spellings that slipped the name-based net.
+        r"\bq::Real\b",
+        r"\ba::Real\b",
+        r"\bb::Real\b",
+        r"\b(q|x_query|xq|queries|x_targets)::AbstractArray\{<:Real\}",
+        r"\bquery::AbstractVector\{<:Real\}",
     ]
 
     # ── Enumerated allowlist (design doc § Durability) ──
@@ -27,6 +34,14 @@
             # 2. Index-space demotion-gate arms: reachable only for T<:Real grids
             #    by construction (`_to_float` gates); value≡index space holds there.
             (rel == joinpath("core", "search.jl") && occursin("xq::Real", line)) ||
+            # 2b. `_CachedRange` axis-search fast arms: generic siblings serve
+            #     duck queries (ND unit-range eval/integrate verified GREEN);
+            #     relaxing would reroute units onto index-leaning fast paths.
+            (rel == joinpath("core", "nd_utils.jl") && occursin("q::Real", line)) ||
+            # 2c. Extrap carrier Real arms: deliberate split — historic
+            #     `zero(xq)*zero(val)` carrier keeps Int results Int; the duck
+            #     arms add the dimensionless `inv(oneunit(xq))` factor.
+            (rel == joinpath("core", "utils.jl") && occursin("_promote_extrap", line)) ||
             # 3. `_inv_const` Real arm — dispatch pair with the dimensionless arm.
             occursin("_inv_const", line) ||
             # 3b. Type-level units-branch idiom (`Tg <: Real || return _*_units(...)`).
@@ -77,22 +92,30 @@
         "constant/constant_anchor.jl" => 3,
         "constant/constant_oneshot_series.jl" => 5,
         "constant/constant_series_interp.jl" => 3,
+        "constant/nd/constant_nd_adjoint.jl" => 1,
         "core/anchor_common.jl" => 3,
+        "core/nd_utils.jl" => 2,
         "core/search.jl" => 4,
         "core/series_lean_anchors.jl" => 1,
         "core/series_utils.jl" => 6,
-        "core/utils.jl" => 2,
+        "core/utils.jl" => 7,
         "cubic/cubic_adjoint.jl" => 1,
         "cubic/cubic_anchor.jl" => 4,
+        "cubic/cubic_oneshot.jl" => 3,
         "cubic/cubic_oneshot_series.jl" => 5,
         "cubic/cubic_series_interp.jl" => 4,
-        "derivative_view.jl" => 1,
+        "cubic/nd/cubic_nd_adjoint.jl" => 1,
+        "derivative_view.jl" => 2,
+        "hetero/hetero_adjoint.jl" => 1,
         "linear/linear_adjoint.jl" => 1,
         "linear/linear_anchor.jl" => 1,
         "linear/linear_oneshot_series.jl" => 5,
         "linear/linear_series_interp.jl" => 4,
+        "linear/nd/linear_nd_adjoint.jl" => 1,
+        "quadratic/nd/quadratic_nd_adjoint.jl" => 1,
         "quadratic/quadratic_anchor.jl" => 8,
         "quadratic/quadratic_interpolant.jl" => 1,
+        "quadratic/quadratic_oneshot.jl" => 2,
         "quadratic/quadratic_oneshot_series.jl" => 4,
         "quadratic/quadratic_series_interp.jl" => 4,
     )

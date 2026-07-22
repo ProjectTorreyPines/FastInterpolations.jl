@@ -190,7 +190,9 @@ end
 # (no division). 0.5 is exact (power of two) → one cached load + one multiply.
 @inline function _get_inv_2cell(x::_CachedRange, i::Int)
     inv_h = _get_inv_h(x, i)
-    return inv_h * oftype(inv_h, 0.5)
+    # Half must be DIMENSIONLESS at inv_h's precision — `oftype(inv_h, 0.5)`
+    # would demand (and wrongly square) inverse-coordinate units.
+    return inv_h * oftype(one(inv_h), 0.5)
 end
 # idx-shaped forms — `(x, idx)` (solver/coeff) and `(x, idx, xL, xR)` (from
 # `search_interval`) — ignore the extra args and delegate to the no-arg form.

@@ -72,6 +72,64 @@ end
     end
 end
 
+@testitem "Unitful ND: 1-tuple adapters, vector-point, unit-Range axes (review F13)" begin
+    using Unitful
+
+    xu = [0.0, 1.0, 2.5, 3.0, 4.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0, 4.0]
+    yu = [1.0, 2.0, 4.0, 8.0, 5.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0, 5.0]
+
+    @testset "1-tuple adapter: unit SCALAR query returns a scalar" begin
+        # `q::Real` forwarders didn't match Quantity — the call fell to a
+        # generic arm and SILENTLY returned a 1-element Vector. Pin the shape.
+        for f in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp, akima_interp, cardinal_interp)
+            v = f((xu,), yu, 1.5u"s")
+            @test v isa Unitful.Quantity
+            @test v ≈ f((xf,), yf, 1.5) * u"W"
+        end
+    end
+
+    @testset "1-tuple adapter: unit batch query" begin
+        qs = [0.5, 1.5] .* u"s"
+        @test linear_interp((xu,), yu, qs) ≈ linear_interp((xf,), yf, [0.5, 1.5]) .* u"W"
+        @test pchip_interp((xu,), yu, qs) ≈ pchip_interp((xf,), yf, [0.5, 1.5]) .* u"W"
+    end
+
+    @testset "ND vector-point query (ForwardDiff-style) ≡ tuple query" begin
+        gy = [0.0, 0.5, 1.0] .* u"m"
+        data = [Float64(i * j) for i in 1:5, j in 1:3] .* u"W"
+        itp = interp((xu, gy), data; method = LinearInterp())
+        @test itp([1.5u"s", 0.25u"m"]) === itp((1.5u"s", 0.25u"m"))
+    end
+
+    @testset "ND unit-Range axes (allowlisted `_CachedRange` arms: generic siblings serve)" begin
+        xr = 0.0u"s":1.0u"s":2.0u"s"
+        yr = 0.0u"m":0.5u"m":1.0u"m"
+        data = [Float64(i * j) for i in 1:3, j in 1:3] .* u"W"
+        itp = interp((xr, yr), data; method = LinearInterp())
+        tw = interp((0.0:1.0:2.0, 0.0:0.5:1.0), ustrip.(data); method = LinearInterp())
+        @test itp((1.5u"s", 0.25u"m")) ≈ tw((1.5, 0.25)) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
+    end
+end
+
+@testitem "Unitful ND: vector-calculus vector query (review F12/C10)" begin
+    using Unitful
+
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0] .* u"m"
+    data = [Float64(i * j) for i in 1:3, j in 1:3] .* u"W"
+    itp = interp((xs, ym), data; method = LinearInterp())
+
+    # The documented Vector-query overloads rejected Vector{Quantity} while
+    # the tuple form worked — mixed-unit coords make the vector eltype
+    # abstract, which is fine for a point query.
+    g_tuple = gradient(itp, (1.5u"s", 0.5u"m"))
+    @test all(gradient(itp, [1.5u"s", 0.5u"m"]) .≈ g_tuple)
+    @test value_gradient(itp, [1.5u"s", 0.5u"m"])[1] ≈ itp((1.5u"s", 0.5u"m"))
+end
+
 @testitem "Unitful ND: hetero engine rejects unit grids friendly (review F11)" begin
     using Unitful
 

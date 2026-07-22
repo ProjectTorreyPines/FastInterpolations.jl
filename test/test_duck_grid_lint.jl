@@ -39,6 +39,7 @@
     )
 
     violations = String[]
+    allowed_hits = Dict{String, Int}()
     for (root, _, files) in walkdir(src_dir), f in files
         endswith(f, ".jl") || continue
         rel = relpath(joinpath(root, f), src_dir)
@@ -50,8 +51,11 @@
             startswith(ls, "#") && continue
             for pat in banned
                 occursin(pat, line) || continue
-                allowed(rel, line) && continue
-                push!(violations, "$(rel):$(i): $(rstrip(line))")
+                if allowed(rel, line)
+                    allowed_hits[rel] = get(allowed_hits, rel, 0) + 1
+                else
+                    push!(violations, "$(rel):$(i): $(rstrip(line))")
+                end
             end
         end
     end
@@ -60,4 +64,45 @@
         @info "duck-grid lint violations" violations
     end
     @test isempty(violations)
+
+    # ── Ratchet: file-level allowlist classes must not absorb NEW debt ──
+    # The broad predicates above (whole series/anchor files, coeffs.jl, …)
+    # would otherwise mask fresh `<:Real` reintroductions inside those files.
+    # Any change to these counts — up OR down — must be conscious: update the
+    # table together with the source change (down = progress, shrink the entry;
+    # up = new debt, justify it in the PR).
+    expected_hits = Dict(
+        "coeffs.jl" => 4,
+        "constant/constant_adjoint.jl" => 1,
+        "constant/constant_anchor.jl" => 3,
+        "constant/constant_oneshot_series.jl" => 5,
+        "constant/constant_series_interp.jl" => 3,
+        "core/anchor_common.jl" => 3,
+        "core/search.jl" => 4,
+        "core/series_lean_anchors.jl" => 1,
+        "core/series_utils.jl" => 6,
+        "core/utils.jl" => 2,
+        "cubic/cubic_adjoint.jl" => 1,
+        "cubic/cubic_anchor.jl" => 4,
+        "cubic/cubic_oneshot_series.jl" => 5,
+        "cubic/cubic_series_interp.jl" => 4,
+        "derivative_view.jl" => 1,
+        "linear/linear_adjoint.jl" => 1,
+        "linear/linear_anchor.jl" => 1,
+        "linear/linear_oneshot_series.jl" => 5,
+        "linear/linear_series_interp.jl" => 4,
+        "quadratic/quadratic_anchor.jl" => 8,
+        "quadratic/quadratic_interpolant.jl" => 1,
+        "quadratic/quadratic_oneshot_series.jl" => 4,
+        "quadratic/quadratic_series_interp.jl" => 4,
+    )
+    if allowed_hits != expected_hits
+        drift = [
+            "$(k): expected $(get(expected_hits, k, 0)), got $(get(allowed_hits, k, 0))"
+                for k in union(keys(expected_hits), keys(allowed_hits))
+                if get(expected_hits, k, 0) != get(allowed_hits, k, 0)
+        ]
+        @info "duck-grid lint ratchet drift (update table consciously)" drift
+    end
+    @test allowed_hits == expected_hits
 end

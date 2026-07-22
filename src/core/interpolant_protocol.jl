@@ -348,12 +348,12 @@ end
 # ========================================
 # ND Scalar: Vector query → tuple conversion
 # ========================================
-# ForwardDiff/Optim compatibility — AbstractVector point queries (a duck/unit
-# vector may have an ABSTRACT eltype for mixed-unit coords; tuple-izing below
-# recovers the per-element concrete types).
-
+# ForwardDiff/Optim — AbstractVector point query. `{<:Number}` is the scalar-vs-container
+# gate: an AoS batch (`Vector{<:Tuple}`) stays on the batch method below, not misread as
+# one point. Every ND point path is Number-gated; tuple-izing recovers per-element
+# concrete types from an abstract mixed-unit eltype (`Quantity <: Number`).
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,

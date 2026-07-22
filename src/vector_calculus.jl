@@ -89,10 +89,12 @@ end
     return gradient(itp, q; kw...)
 end
 
-# Vector API for compatibility with ForwardDiff patterns
+# Vector API (ForwardDiff patterns). `{<:Number}` mirrors the `Vararg{Number,N}` sibling
+# — the scalar-vs-container gate — so an AoS batch (`Vector{<:Tuple}`) is never misread as
+# one point (`Quantity <: Number` keeps unit coords in). Same bound on every vector form.
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -187,7 +189,7 @@ end
 @inline function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -292,7 +294,7 @@ end
 # Vector API
 @inline function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -396,7 +398,7 @@ end
 # Vector API
 function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -501,7 +503,7 @@ end
 @inline function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(
@@ -590,7 +592,7 @@ end
 # Vector API
 @inline function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::AbstractVector;
+        query::AbstractVector{<:Number};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || throw(

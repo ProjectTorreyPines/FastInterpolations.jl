@@ -649,15 +649,12 @@ end
     # Fast path: purely inclusive → no extension needed.
     _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive}) || return (grids, data, bcs)
 
-    # Common float grid type for the exclusive-periodic extension below (non-periodic
-    # axes already returned raw above; `grids` may be raw/heterogeneous).
-    Tg = float(_promote_grid_eltype(grids))
-
-    # Per-axis grid extension + bc resolution via a `::Type{Tg}` function barrier:
-    # `Tg` must reach the extension closure as a static parameter, not a captured
-    # type-valued local — Julia 1.10 boxes such a local, making the extended grid
-    # type abstract (→ alloc + @inferred failure on the periodic-exclusive ctor).
-    processed = _extend_periodic_nd_axes(grids, bcs, extend_vector_grid, Tg)
+    # Per-axis grid extension + bc resolution. Each axis floats to its OWN eltype
+    # (`float(eltype(grid_d))` computed inside the `map` closure) so heterogeneous unit
+    # axes (s, m) don't collapse to an abstract common `Quantity{Float64}`. The per-element
+    # type is concrete within `map`'s specialization (computed locally, not captured), so it
+    # stays inferred — no closure box, unlike a captured type-valued local.
+    processed = _extend_periodic_nd_axes(grids, bcs, extend_vector_grid)
     grids_out = map(first, processed)
     bcs_out = map(last, processed)
 
@@ -676,18 +673,19 @@ end
     return (grids_out, data_out, bcs_out)
 end
 
-# Per-axis exclusive-periodic extension, factored out so `Tg` reaches the closure
-# as a static `::Type` parameter (not a captured type-valued local). Julia 1.10
-# boxes such a local → the extended grid type goes abstract (alloc + @inferred
-# failure on the periodic-exclusive constructor); the barrier keeps it concrete.
+# Per-axis exclusive-periodic extension. Each axis floats to its OWN eltype
+# (`Tg = float(eltype(grid_d))` computed inside the specialized closure body, NOT captured
+# from the caller) so heterogeneous unit axes stay concrete per element — `map` specializes
+# the closure per tuple element, so a locally-computed type folds to a constant (no box),
+# unlike a captured type-valued local which Julia 1.10 boxes → abstract grid type.
 @inline function _extend_periodic_nd_axes(
         grids::Tuple{Vararg{AbstractVector, N}},
         bcs::Tuple{Vararg{AbstractBC, N}},
         extend_vector_grid::F_ext,
-        ::Type{Tg},
-    ) where {N, F_ext, Tg}
+    ) where {N, F_ext}
     return map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
         bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
+        Tg = float(eltype(grid_d))
         period = _resolve_exclusive_period(grid_d, bc_d)
         _validate_exclusive_period(grid_d, period)
         x_end = first(grid_d) + Tg(period)

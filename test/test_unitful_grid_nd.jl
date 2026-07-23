@@ -369,3 +369,29 @@ end
         @test unit(laplacian(itp, q_oob)) === unit(1.0u"W" / 1.0u"s"^2)
     end
 end
+
+@testitem "Unitful ND: mixed-unit exclusive-periodic axes (review pin P1-periodic-nd)" begin
+    using Unitful
+    using Test: @inferred
+
+    # `_prepare_periodic_nd_impl` promoted all axes to one `float(_promote_grid_eltype)` type;
+    # mixed units (s, m) collapse to an abstract `Quantity{Float64}` → `zero(Quantity{Float64})`
+    # threw during the exclusive-periodic extension. Float each axis independently.
+    xs = (0.0:1.0:2.0) .* u"s"
+    ym = (0.0:1.0:2.0) .* u"m"
+    xs2 = (0.0:1.0:2.0) .* u"s"
+    data = [Float64(i + j) for i in 1:3, j in 1:3] .* u"W"
+    dataf = [Float64(i + j) for i in 1:3, j in 1:3]
+    bcx = (PeriodicBC(endpoint = :exclusive), PeriodicBC(endpoint = :exclusive))
+
+    @testset "mixed-unit builds + evals" begin
+        itp = linear_interp((xs, ym), data; bc = bcx)
+        @test itp((0.5u"s", 0.5u"m")) isa typeof(1.0u"W")
+    end
+    @testset "same-unit: value parity + inference (no per-axis boxing regression)" begin
+        iu = linear_interp((xs, xs2), data; bc = bcx)
+        ir = linear_interp((0.0:1.0:2.0, 0.0:1.0:2.0), dataf; bc = bcx)
+        @test iu((0.5u"s", 0.5u"s")) ≈ ir((0.5, 0.5)) * u"W"
+        @test (@inferred iu((0.5u"s", 0.5u"s"))) isa typeof(1.0u"W")   # concrete grid ⇒ no box
+    end
+end

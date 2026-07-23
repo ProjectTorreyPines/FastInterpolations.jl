@@ -162,5 +162,6 @@ Julia dispatch ensures `DerivOp{0..3}` methods (more specific) are selected firs
         zL::Tz, _, _, _,
         ::Tg, ::Ti, dL::Td, ::Td
     ) where {N, Tg, Ti, Tz, Td}
-    return 0 * zL * one(dL)
+    # `zL` is order-2 (value/grid²); an N-th derivative adds `inv(grid)^(N-2)`.
+    return 0 * zL * Base.literal_pow(^, inv(oneunit(dL)), Val(N - 2))
 end

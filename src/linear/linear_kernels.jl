@@ -117,7 +117,8 @@ but we return zero everywhere as a practical approximation.
     # ×0 (no curvature), but touch BOTH endpoints so a NaN/Inf in either cell corner
     # survives the multiply (cell-local propagation). `0*yL + 0*yR` avoids the overflow
     # of `yL+yR`/`yL*yR` that would manufacture a spurious NaN from large finite data.
-    return (0 * yL + 0 * yR) * one(α)
+    # `oneunit(inv_h)²` carries the value/grid² units (unit grids); `1.0` on Real grids.
+    return (0 * yL + 0 * yR) * oneunit(inv_h)^2 * one(α)
 end
 
 """
@@ -127,12 +128,14 @@ Third derivative of linear interpolation is always zero.
 Linear functions have constant first derivative (slope), zero second and third derivatives.
 """
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return (0 * yL + 0 * yR) * one(α)  # touch both endpoints for cell-local NaN — see EvalDeriv2
+    # value/grid³ units via `oneunit(inv_h)³`; NaN-propagating `0*yL + 0*yR` — see EvalDeriv2.
+    return (0 * yL + 0 * yR) * oneunit(inv_h)^3 * one(α)
 end
 
 """Generic fallback: N-th derivative of degree-1 polynomial is zero for N ≥ 2."""
-@inline function _linear_kernel(::DerivOp{N}, yL::Tv, yR::Tv, ::Tg, α) where {N, Tg, Tv}
-    return (0 * yL + 0 * yR) * one(α)  # touch both endpoints for cell-local NaN — see EvalDeriv2
+@inline function _linear_kernel(::DerivOp{N}, yL::Tv, yR::Tv, inv_h::Tg, α) where {N, Tg, Tv}
+    # value/gridᴺ units; `literal_pow` keeps `oneunit(inv_h)ᴺ` type-stable for a type-param N.
+    return (0 * yL + 0 * yR) * Base.literal_pow(^, oneunit(inv_h), Val(N)) * one(α)
 end
 
 # ========================================

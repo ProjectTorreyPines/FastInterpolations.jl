@@ -782,3 +782,42 @@ end
         @test out ≈ quadratic_interp(xf, yf, qf; deriv = d2) .* u"W/s^2"
     end
 end
+
+@testitem "Unitful 1D: higher zero-derivative units (review pin P1-2)" begin
+    using Unitful
+
+    # A zero higher-derivative (linear N≥2, quadratic N≥3, cubic/hermite-family N≥4)
+    # must live in value/gridᴺ space, not value space — like Constant's deriv. Otherwise
+    # a unit-grid deriv batch throws DimensionError storing value-unit 0 into a value/gridᴺ
+    # buffer, and the scalar returns the wrong (value) units.
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    qb = [2.5, 3.5] .* u"s"
+    dyu = fill(0.5u"W/s", length(xu))
+
+    # (name, itp, first zero-derivative order) — scalar carries W/sⁿ, batch stays storable.
+    cases = [
+        ("linear", linear_interp(xu, yw), 2),
+        ("quadratic", quadratic_interp(xu, yw), 3),
+        ("cubic", cubic_interp(xu, yw), 4),
+        ("pchip", pchip_interp(xu, yw), 4),
+        ("akima", akima_interp(xu, yw), 4),
+        ("hermite", hermite_interp(xu, yw, dyu), 4),
+    ]
+    for (nm, itp, n0) in cases
+        @testset "$nm zero-deriv scalar units (n0=$n0, n0+1)" begin
+            for n in (n0, n0 + 1)
+                v = itp(2.5u"s"; deriv = DerivOp(n))
+                @test unit(v) === unit(1.0u"W" / 1.0u"s"^n)   # value/gridⁿ
+                @test iszero(ustrip(v))
+            end
+        end
+    end
+
+    @testset "batch zero-deriv is storable (no DimensionError)" begin
+        @test eltype(linear_interp(xu, yw, qb; deriv = DerivOp(2))) === typeof(1.0u"W/s^2")
+        @test eltype(quadratic_interp(xu, yw, qb; deriv = DerivOp(3))) === typeof(1.0u"W/s^3")
+        @test eltype(cubic_interp(xu, yw, qb; deriv = DerivOp(4))) === typeof(1.0u"W/s^4")
+        @test eltype(pchip_interp(xu, yw, qb; deriv = DerivOp(4))) === typeof(1.0u"W/s^4")
+    end
+end

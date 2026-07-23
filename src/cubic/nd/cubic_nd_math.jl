@@ -201,7 +201,8 @@ Generic fallback: N-th derivative of cubic Hermite is zero for N ≥ 4.
         yL, ::Any, ::Any, ::Any,
         ::Tg, ::Tinv, dL::Tq
     ) where {N, Tg, Tinv, Tq}
-    return 0 * yL * one(dL)
+    # `yL` is value space; an N-th derivative carries `inv(grid)^N` (value/gridᴺ).
+    return 0 * yL * Base.literal_pow(^, inv(oneunit(dL)), Val(N))
 end
 
 # ========================================

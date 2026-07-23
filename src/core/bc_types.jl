@@ -250,7 +250,7 @@ end
 @inline periodic_check(::PeriodicBC{E, P, C}) where {E, P, C} = C
 
 # Keyword constructor with validation (also serves as zero-arg constructor via defaults)
-function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing} = nothing, check::Bool = true)
+function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Number, Nothing} = nothing, check::Bool = true)
     endpoint in (:inclusive, :exclusive) || throw(
         ArgumentError(
             "endpoint must be :inclusive or :exclusive, got :$endpoint"
@@ -266,7 +266,7 @@ function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing
     else # :exclusive
         if period !== nothing
             p = float(period)
-            p > 0 || throw(ArgumentError("period must be positive, got $period"))
+            p > zero(p) || throw(ArgumentError("period must be positive, got $period"))
             return PeriodicBC{:exclusive, typeof(p), check}(p)
         else
             return PeriodicBC{:exclusive, Nothing, check}(nothing)  # infer from Range at build time

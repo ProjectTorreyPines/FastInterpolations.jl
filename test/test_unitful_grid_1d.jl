@@ -926,3 +926,25 @@ end
     @test_throws MethodError interp(xf, yf, "nope"; method = LinearInterp())
     @test_throws MethodError interp(xf, yf, ["a", "b"]; method = LinearInterp())
 end
+
+@testitem "Unitful 1D: PeriodicBC admits a unit period (review pin P1-period)" begin
+    using Unitful
+    FI = FastInterpolations
+
+    # `PeriodicBC(; period::Union{Real,Nothing})` plus a dimensionless `p > 0` check rejected a
+    # unit period, so nonuniform unit periodic axes were unusable. Widen to `Union{Number,…}`
+    # and compare `p > zero(p)`.
+    @test PeriodicBC(endpoint = :exclusive, period = 2.0u"s") isa FI.PeriodicBC
+    @test_throws ArgumentError PeriodicBC(endpoint = :exclusive, period = -1.0u"s")  # still validated
+
+    # linear/constant exclusive-periodic on a nonuniform unit axis now build + eval.
+    x = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    y = [0.0, 1.0, 0.5, 0.0] .* u"W"
+    xf = [0.0, 1.0, 2.5, 3.0]
+    yf = [0.0, 1.0, 0.5, 0.0]
+    for f in (linear_interp, constant_interp)
+        iu = f(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0u"s"))
+        ir = f(xf, yf; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
+        @test iu(1.5u"s") ≈ ir(1.5) * u"W"
+    end
+end

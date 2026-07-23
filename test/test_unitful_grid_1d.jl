@@ -723,7 +723,7 @@ end
     end
 end
 
-@testitem "Unitful 1D: unit Range grids on the _CachedRange path (LinRange/StepRangeLen)" begin
+@testitem "Unitful 1D: unit Range grids on the _CachedRange path (LinRange/StepRangeLen)" setup = [AllocConstants] begin
     using Unitful
     using Test: @inferred
     FI = FastInterpolations
@@ -757,9 +757,10 @@ end
                 @test iu(qf .* u"s") ≈ ir(qf) .* u"W"
                 # Inference-stable, concrete unit output.
                 @test (@inferred iu(3.5u"s")) isa TW
-                # Zero-alloc scalar eval (warm).
+                # Zero-alloc scalar eval (warm). LTS keeps a small warm-path
+                # margin (`ALLOC_THRESHOLD`); ≥1.12 is strict 0.
                 iu(3.5u"s")
-                @test (@allocated iu(3.5u"s")) == 0
+                @test (@allocated iu(3.5u"s")) <= ALLOC_THRESHOLD
             end
         end
     end

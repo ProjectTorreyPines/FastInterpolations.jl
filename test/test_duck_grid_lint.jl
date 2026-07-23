@@ -60,7 +60,13 @@
         rel = relpath(joinpath(root, f), src_dir)
         in_doc = false
         for (i, line) in enumerate(eachline(joinpath(root, f)))
-            occursin("\"\"\"", line) && (in_doc = !in_doc; continue)
+            # A one-line docstring (`"""…"""`) has an EVEN delimiter count → no net toggle;
+            # only an odd count opens/closes a multi-line doc. (Old code toggled once per line
+            # with any delimiter, so a one-liner flipped `in_doc` and skipped code to EOF.)
+            if occursin("\"\"\"", line)
+                isodd(count("\"\"\"", line)) && (in_doc = !in_doc)
+                continue
+            end
             in_doc && continue
             ls = lstrip(line)
             startswith(ls, "#") && continue
@@ -108,7 +114,7 @@
         "derivative_view.jl" => 2,
         "hetero/hetero_adjoint.jl" => 1,
         "linear/linear_adjoint.jl" => 1,
-        "linear/linear_anchor.jl" => 1,
+        "linear/linear_anchor.jl" => 6,
         "linear/linear_oneshot_series.jl" => 5,
         "linear/linear_series_interp.jl" => 4,
         "linear/nd/linear_nd_adjoint.jl" => 1,

@@ -181,6 +181,42 @@ end
     @test g ≈ ref rtol = 1.0e-6
 end
 
+@testitem "Duck grid: Dual ∘ Unitful AD intersection" begin
+    using ForwardDiff, Unitful
+
+    # Dual and Unitful are each tested alone; this pins their INTERSECTION —
+    # ForwardDiff AD through an interpolant on a unit-carrying grid. The query
+    # case seeds a real `q`, so `q*u"s"` becomes a `Quantity{Dual}` and flows
+    # through eval; `ustrip` peels the value unit so ForwardDiff sees a Real.
+    xu = [0.0, 1.0, 2.0, 3.0, 4.0] .* u"s"
+    yw = [0.0, 1.0, 0.5, 2.0, 1.0] .* u"W"
+    itp = cubic_interp(xu, yw)
+
+    @testset "AD w.r.t. Unitful query ≡ analytic derivative" begin
+        ad = ForwardDiff.derivative(q -> ustrip(u"W", itp(q * u"s")), 1.5)
+        analytic = ustrip(u"W/s", itp(1.5u"s"; deriv = DerivOp(1)))
+        @test ad ≈ analytic rtol = 1.0e-10
+    end
+
+    @testset "gradient w.r.t. unit-grid data ≡ finite difference" begin
+        v0 = [0.0, 1.0, 0.5, 2.0, 1.0]
+        f(v) = ustrip(u"W", cubic_interp(xu, v .* u"W")(1.5u"s"))
+        g = ForwardDiff.gradient(f, v0)
+        ε = 1.0e-6
+        fd3 = let v1 = copy(v0)
+            v1[3] += ε
+            (f(v1) - f(v0)) / ε
+        end
+        @test g[3] ≈ fd3 rtol = 1.0e-4
+    end
+
+    @testset "Dual-valued data on a unit grid: primal ≡ plain eval" begin
+        yd = [ForwardDiff.Dual(v, 1.0) for v in [0.0, 1.0, 0.5, 2.0, 1.0]] .* u"W"
+        vd = cubic_interp(xu, yd)(1.5u"s")
+        @test ForwardDiff.value(ustrip(u"W", vd)) ≈ ustrip(u"W", itp(1.5u"s")) rtol = 1.0e-12
+    end
+end
+
 # ========================================
 # Phase 1 — axis machinery + witness homogeneity
 # ========================================

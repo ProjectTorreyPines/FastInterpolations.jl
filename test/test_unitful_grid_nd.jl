@@ -202,6 +202,28 @@ end
     @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
 end
 
+@testitem "Unitful ND: zero-alloc hot path, same-unit concrete-Tg (review pin F21)" setup = [AllocConstants] begin
+    using Unitful
+
+    # 5a same-unit axes route through the concrete-Tg "common-Tg machinery" — a distinct
+    # path from F6's abstract per-axis one, so its alloc contract needs its own pin. Both
+    # unit-supporting ND families (Linear/Constant) must stay 0-alloc.
+    xs = [0.0, 1.0, 2.0, 3.0] .* u"s"
+    ys = [0.0, 0.5, 1.0, 1.5, 2.0] .* u"s"   # same unit → concrete Tg
+    data = [Float64(i + j) for i in 1:4, j in 1:5] .* u"W"
+    q = (1.5u"s", 0.75u"s")
+
+    for (nm, method) in (("Linear", LinearInterp()), ("Constant", ConstantInterp()))
+        @testset "$nm: eval / integrate" begin
+            itp = interp((xs, ys), data; method = method)
+            itp(q)
+            integrate(itp)   # warmup
+            @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
+            @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+        end
+    end
+end
+
 @testitem "Unitful ND: Constant derivative carries grid⁻ᴺ units (Range-duck audit)" begin
     using Unitful
     Wps = typeof(1.0u"W/s")

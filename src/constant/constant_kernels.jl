@@ -68,8 +68,11 @@ end
 # N-th derivative of a degree-0 (constant) interpolant is zero for N ≥ 1, but lives in
 # `[value]/[grid]ᴺ` space: the `inv(oneunit(dL))ᴺ` factor carries the grid⁻ᴺ units so a
 # unit-grid deriv batch's buffer (`_deriv_eltype`) accepts the value (else DimensionError),
-# while `0 * y_left` keeps the zero, duck-typing, and NaN propagation. Real/Dual grids are
-# dimensionless → identity, unchanged. A literal exponent stays type-stable for Unitful.
+# while `0 * y_left` keeps the zero, duck-typing, and NaN propagation. The zero VALUE is
+# unchanged; its eltype is `typeof(y / gridᴺ)` — for an all-Int Real grid that floats to
+# Float64 (Int/Int → Float), which is the dimensionally correct derivative type, NOT a
+# Real-path regression (`Constant` keeps the primal Int; only the derivative floats). A
+# literal exponent stays type-stable for Unitful.
 """
     _constant_kernel(::EvalDeriv1, y_left, y_right, h, dL, side)
 

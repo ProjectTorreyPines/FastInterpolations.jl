@@ -289,3 +289,29 @@ end
         end
     end
 end
+
+@testitem "Unitful ND: solver/hetero guards fire on same-unit (concrete-Tg) axes (review pin F20)" begin
+    using Unitful
+
+    # Existing guard-throw coverage uses *mixed-unit* axes (u"s", u"m") → an abstract
+    # promoted grid eltype. Same-unit axes promote to a *concrete* `Quantity{Float64,𝐓,…}`
+    # Tg — a distinct dispatch. Pin that this concrete-Tg still reaches the guard (a future
+    # `_promote_grid_eltype` narrowing must not leak it to the Real fast path), for both the
+    # persistent builders and the one-shot entries.
+    xs = collect(1.0:5.0) .* u"s"
+    xs2 = collect(0.5:0.5:2.5) .* u"s"     # same unit → concrete Tg
+    data = [Float64(i + j) for i in 1:5, j in 1:5] .* u"W"
+    q = (2.5u"s", 1.5u"s")
+
+    @testset "solver families (Cubic/Quadratic): persistent + one-shot" begin
+        @test_throws ArgumentError cubic_interp((xs, xs2), data)
+        @test_throws ArgumentError quadratic_interp((xs, xs2), data)
+        @test_throws ArgumentError cubic_interp((xs, xs2), data, q)
+        @test_throws ArgumentError quadratic_interp((xs, xs2), data, q)
+    end
+
+    @testset "hetero families (PCHIP): persistent + one-shot" begin
+        @test_throws ArgumentError pchip_interp((xs, xs2), data)
+        @test_throws ArgumentError pchip_interp((xs, xs2), data, q)
+    end
+end

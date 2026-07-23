@@ -875,3 +875,18 @@ end
         end
     end
 end
+
+@testitem "Unitful 1D: cubic integer Unitful Range cache (review pin P1-5)" begin
+    using Unitful
+
+    # `(0:4)*u"s"` is an Int-backed Unitful Range; `_cache_axis` floats the stored axis, but
+    # the cache's empty coordinate payload was typed `Vector{eltype(x)}` (Int-unit) → a
+    # CubicSplineCache MethodError. `collect`ing the same axis happened to sidestep it.
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0] .* u"W"
+    xr = (0:4) .* u"s"          # Int-backed Unitful Range
+    itp_r = cubic_interp(xr, yw)
+    itp_c = cubic_interp(collect(xr), yw)   # control (Vector)
+    @test itp_r(2.5u"s") isa typeof(1.0u"W")
+    @test itp_r(2.5u"s") ≈ itp_c(2.5u"s")
+    @test itp_r(2.5u"s"; deriv = DerivOp(1)) ≈ itp_c(2.5u"s"; deriv = DerivOp(1))
+end

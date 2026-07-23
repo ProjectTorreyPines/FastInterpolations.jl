@@ -226,7 +226,10 @@ function _cubic_interp_units(x, y, bc, extrap, autocache, search, store)
     # NOTE: `thomas` is the STRIPPED twin's factorization paired with a unit
     # axis — unused by eval/integrate, but do not feed this cache back into
     # `cubic_interp(cache, y2)`-style rebuilds with unit data.
-    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, Vector{Tgu}())
+    # Empty coordinate payload must match the STORED axis eltype — `_cache_axis` floats an
+    # Int-backed Unitful Range, so `Vector{Tgu}` (the original Int eltype) would not unify
+    # with the `CubicSplineCache(::AbstractVector{Tg}, …, ::Vector{Tg})` constructor.
+    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, Vector{eltype(xc)}())
     extrap_p = _resolve_extrap(extrap, xc, eltype(y))
     return CubicInterpolant(cache, y, z, bc_u, extrap_p, search; store = store)
 end

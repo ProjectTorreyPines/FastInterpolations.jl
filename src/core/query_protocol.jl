@@ -63,7 +63,8 @@ end
 @inline _query_extract(q, k) = @inbounds q[k]
 
 # ── Internal: NTuple-guaranteed extraction for kernel consumption ──
-# Wraps _query_extract with _as_ntuple — ensures NTuple{N, <:Real} for @generated kernels.
+# Wraps _query_extract with _as_ntuple — normalizes to an NTuple{N} for @generated
+# kernels (a Real tuple short-circuits; duck/unit queries take the generic arm).
 # NOT part of the user protocol — users never override this.
 
 @inline _extract_query_point(q, k, ::Val{N}) where {N} =

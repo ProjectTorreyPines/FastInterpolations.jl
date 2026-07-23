@@ -21,7 +21,7 @@ Evaluate cubic spline value using moment (z) formulation.
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
 - `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 # Formula
     S(x) = zL*(dR³)/(6h) + zR*(dL³)/(6h)
@@ -64,7 +64,7 @@ Evaluate first derivative of cubic spline.
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
 - `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 Formula:
     S'(x) = (-zL*dR² + zR*dL²)/(2h)
@@ -106,7 +106,7 @@ This is simply a linear interpolation of the z (moment) values.
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
 - `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 Formula:
     S''(x) = (zL*dR + zR*dL) / h
@@ -128,7 +128,7 @@ Third derivative of cubic spline (constant within each interval).
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
 - `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 # Formula
     S'''(x) = (zR - zL) / h

@@ -337,3 +337,35 @@ end
         @test_throws ArgumentError pchip_interp((xs, xs2), data, q)
     end
 end
+
+@testitem "Unitful ND: FillExtrap OOB derivative units (review pin P1-fill)" begin
+    using Unitful
+
+    # FillExtrap OOB short-circuits derive the result from the value-space fill (`W`) and a
+    # non-derivative-aware zero, ignoring the requested derivative orders. On unit grids the
+    # scalar returns the wrong (value) units and the allocating batch throws DimensionError
+    # (a `W/s` buffer can't store the `W` zero). Fold the axis units per derivative order.
+    xs = [0.0, 1.0, 2.0, 3.0] .* u"s"
+    ys = [0.0, 0.5, 1.0, 1.5, 2.0] .* u"s"   # same unit → well-defined gradient/Hessian/Laplacian
+    data = [Float64(i + j) for i in 1:4, j in 1:5] .* u"W"
+    itp = interp((xs, ys), data; method = LinearInterp(), extrap = FillExtrap(0.0u"W"))
+    q_oob = (5.0u"s", 0.75u"s")   # axis-1 OOB → fill
+
+    @testset "eval OOB deriv carries grid⁻ⁿ units" begin
+        @test unit(itp(q_oob; deriv = (DerivOp(1), DerivOp(0)))) === unit(1.0u"W" / 1.0u"s")
+        @test unit(itp(q_oob; deriv = (DerivOp(1), DerivOp(1)))) === unit(1.0u"W" / 1.0u"s"^2)
+        @test iszero(ustrip(itp(q_oob; deriv = (DerivOp(1), DerivOp(0)))))
+        @test eltype(itp([q_oob, q_oob]; deriv = (DerivOp(1), DerivOp(0)))) === typeof(1.0u"W/s")
+    end
+
+    @testset "vector-calculus OOB zeros are derivative-scaled" begin
+        g = gradient(itp, q_oob)
+        @test all(c -> unit(c) === unit(1.0u"W" / 1.0u"s"), g)
+        G = [1.0u"W/s", 1.0u"W/s"]
+        gradient!(G, itp, q_oob)
+        @test all(c -> unit(c) === unit(1.0u"W" / 1.0u"s"), G)
+        H = hessian(itp, q_oob)
+        @test all(c -> unit(c) === unit(1.0u"W" / 1.0u"s"^2), H)
+        @test unit(laplacian(itp, q_oob)) === unit(1.0u"W" / 1.0u"s"^2)
+    end
+end

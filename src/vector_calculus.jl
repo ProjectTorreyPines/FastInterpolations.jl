@@ -34,7 +34,9 @@
                 :(_eval_at_cell(itp, cell, $ops))
             end for i in 1:N
     ]
-    zero_tuple = [:(0 * zref) for _ in 1:N]
+    # Gradient component i is ∂f/∂xᵢ — scale the value-space zero by `inv(gridᵢ unit)`
+    # so a unit-grid FillExtrap OOB returns `value/gridᵢ` (identity on Real grids).
+    zero_tuple = [:(0 * zref * inv(oneunit(eltype(itp.grids[$i])))) for i in 1:N]
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
@@ -132,7 +134,7 @@ end
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _sample_data(itp)
             @inbounds for i in 1:$N
-                G[i] = 0 * zref
+                G[i] = 0 * zref * inv(oneunit(eltype(itp.grids[i])))
             end
             return G
         end
@@ -219,7 +221,9 @@ end
                 :(_eval_at_cell(itp, cell, $ops))
             end for i in 1:N
     ]
-    zero_tuple = [:(0 * zref) for _ in 1:N]
+    # Gradient component i is ∂f/∂xᵢ — scale the value-space zero by `inv(gridᵢ unit)`
+    # so a unit-grid FillExtrap OOB returns `value/gridᵢ` (identity on Real grids).
+    zero_tuple = [:(0 * zref * inv(oneunit(eltype(itp.grids[$i])))) for i in 1:N]
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
@@ -338,7 +342,10 @@ end
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        Tq = promote_type(eltype(map(float, query_r)), $Tg, $Tv)
+        # Hessian entries are 2nd derivatives (value/grid²) — a derivative-aware element type,
+        # not `promote_type(coord, grid, value)` which goes abstract on unit grids (so
+        # `zero(Tq)` threw). Concrete `value/grid²` for same-unit axes; `Float64` on Real grids.
+        Tq = typeof(oneunit($Tv) * inv(oneunit($Tg))^2)
         H = Matrix{Tq}(undef, $N, $N)
         policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
@@ -537,7 +544,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            return 0 * _sample_data(itp)
+            return 0 * _sample_data(itp) * inv(oneunit(eltype(itp.grids[1])))^2
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
         return +($(deriv_calls...))

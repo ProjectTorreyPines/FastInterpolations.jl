@@ -113,7 +113,7 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
     return quote
         Base.@_inline_meta
         @inbounds if $oob_expr
-            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref, query[1])
+            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref, query[1], grids)
         end
         return nothing
     end
@@ -125,14 +125,23 @@ end
 # deriv, NaN fill_value propagates through IEEE multiplication.
 # 4th arg `qe` (query element) promotes result to kernel return type.
 # `zero_ref` arg retained for signature stability; intentionally unused.
-@inline _fill_extrap_result(::EvalValue, fill_val, _, qe) = _promote_extrap_val(fill_val, qe)
-@inline _fill_extrap_result(::AbstractEvalOp, fill_val, _, qe) = _promote_extrap_zero(fill_val, qe)
-@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, _, qe)
+@inline _fill_extrap_result(::EvalValue, fill_val, _, qe, _) = _promote_extrap_val(fill_val, qe)
+@inline _fill_extrap_result(op::AbstractEvalOp, fill_val, _, qe, grids) =
+    _promote_extrap_zero(fill_val, qe) * _nd_fill_deriv_scale(grids, op)
+@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, _, qe, grids)
     for i in 1:length(ops)
-        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(fill_val, qe)
+        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(fill_val, qe) * _nd_fill_deriv_scale(grids, ops)
     end
     return _promote_extrap_val(fill_val, qe)
 end
+
+# Per-axis inverse-coordinate-unit product for a FillExtrap OOB derivative zero: scales the
+# value-space zero into value/∏gridᵈ space (units only — the value stays 0/NaN). A scalar op
+# broadcasts to every axis. `true` (dimensionless) on Real grids, so no runtime cost there.
+@inline _nd_fill_deriv_scale(grids::Tuple, op::AbstractEvalOp) = _nd_fill_deriv_scale(grids, map(_ -> op, grids))
+@inline _nd_fill_deriv_scale(::Tuple{}, ::Tuple{}) = true
+@inline _nd_fill_deriv_scale(grids::Tuple, ops::Tuple) =
+    _constant_axis_deriv_scale(oneunit(eltype(first(grids))), first(ops)) * _nd_fill_deriv_scale(Base.tail(grids), Base.tail(ops))
 
 # Extract fill_value from the first FillExtrap in extraps tuple.
 # Only called on OOB cold path (guarded by _is_fill_oob).

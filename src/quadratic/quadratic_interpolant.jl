@@ -179,3 +179,5 @@ end
 # Quadratic side-selector BCs wrap PointBC payloads — recurse into them.
 @inline _strip_bc_units(bc::Left, uy, ux) = Left(_strip_bc_units(bc.bc, uy, ux))
 @inline _strip_bc_units(bc::Right, uy, ux) = Right(_strip_bc_units(bc.bc, uy, ux))
+# MinCurvFit is a payload-free marker (like QuadraticFit/PolyFit) — strip is identity.
+@inline _strip_bc_units(bc::MinCurvFit, uy, ux) = bc

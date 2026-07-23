@@ -203,6 +203,38 @@ end
     end
 end
 
+@testitem "Unitful 1D: Quadratic BC unit-strip (MinCurvFit + side selectors, review pin F18)" begin
+    using Unitful
+
+    # `_quadratic_interp_units` strips units, solves the dimensionless twin, then
+    # reattaches per-order units. `MinCurvFit` — a payload-free marker BC valid on
+    # Real grids — hit the throwing `_strip_bc_units` catch-all because it lacked the
+    # identity strip the other marker BCs get. Side selectors `Left/Right(QuadraticFit())`
+    # were also unexercised on unit grids.
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    xf = collect(1.0:6.0)
+    yf = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0]
+    TW = typeof(1.0u"W")
+
+    @testset "MinCurvFit: unit grid ≡ Real twin" begin
+        itp = quadratic_interp(xu, yw; bc = MinCurvFit())
+        tw = quadratic_interp(xf, yf; bc = MinCurvFit())
+        @test itp(2.5u"s") isa TW
+        @test itp(2.5u"s") ≈ tw(2.5) * u"W"
+        @test eltype(itp.a) === typeof(1.0u"W/s^2")
+        @test eltype(itp.d) === typeof(1.0u"W/s")
+    end
+
+    @testset "side selectors: Left/Right(QuadraticFit()) unit-strip" begin
+        for bc in (Left(QuadraticFit()), Right(QuadraticFit()))
+            itp = quadratic_interp(xu, yw; bc = bc)
+            tw = quadratic_interp(xf, yf; bc = bc)
+            @test itp(2.5u"s") ≈ tw(2.5) * u"W"
+        end
+    end
+end
+
 # ========================================
 # Phase 4 — local-slope families (PCHIP/Akima/Cardinal/Hermite)
 # ========================================

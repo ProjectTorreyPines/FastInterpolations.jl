@@ -821,3 +821,29 @@ end
         @test eltype(pchip_interp(xu, yw, qb; deriv = DerivOp(4))) === typeof(1.0u"W/s^4")
     end
 end
+
+@testitem "Unitful 1D: Constant right-endpoint derivative units (review pin P1-3)" begin
+    using Unitful
+
+    # The exact-right-endpoint short-circuit skips the unit-carrying kernel, so its deriv
+    # branch returned value-unit 0 (`W`) instead of value/gridⁿ (`W/sⁿ`). A batch mixing an
+    # interior point (kernel → W/s) with the endpoint (W) threw DimensionError, and the
+    # scalar return type became a unit union.
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    xend = 6.0u"s"   # exact last node
+
+    @testset "scalar deriv at endpoint carries grid⁻ⁿ units" begin
+        @test unit(constant_interp(xu, yw)(xend; deriv = DerivOp(1))) === unit(1.0u"W" / 1.0u"s")
+        @test unit(constant_interp(xu, yw)(xend; deriv = DerivOp(2))) === unit(1.0u"W" / 1.0u"s"^2)
+        @test iszero(ustrip(constant_interp(xu, yw)(xend; deriv = DerivOp(1))))
+        # WrapExtrap routes through the wrapped short-circuit (a different site).
+        @test unit(constant_interp(xu, yw; extrap = WrapExtrap())(xend; deriv = DerivOp(1))) === unit(1.0u"W" / 1.0u"s")
+    end
+
+    @testset "batch mixing interior + endpoint is storable" begin
+        out = constant_interp(xu, yw, [2.5u"s", xend]; deriv = DerivOp(1))
+        @test eltype(out) === typeof(1.0u"W/s")
+        @test all(iszero, ustrip.(out))
+    end
+end

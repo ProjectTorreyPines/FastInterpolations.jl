@@ -36,7 +36,7 @@
         # inference becomes `Union{Tv, Dual}` when grid is Dual and query is Float.
         return op isa EvalValue ?
             last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * one(Tq) * one(Tg)
+            0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
     end
     # Reached only in-domain (genuine InBounds; NoExtrap post-throw; Clamp/Fill/Extend after
     # their IN_DOMAIN check — ExtendExtrap is routed to Clamp above), so the lean InBounds
@@ -63,7 +63,7 @@ end
     if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ?
             last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * one(Tq) * one(Tg)
+            0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi, extrap_eff)
     dL = xi - xL
@@ -128,7 +128,7 @@ end
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
         return op isa EvalValue ?
         last(y) * one(Tq) * one(Tg) :
-        0 * last(y) * one(Tq) * one(Tg)
+        0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1

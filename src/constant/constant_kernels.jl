@@ -31,7 +31,7 @@
 
 Constant interpolation with left-continuous (floor) convention.
 Always returns the left boundary value `y_left`.
-dL can be any Real (including ForwardDiff.Dual for AD).
+dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates via `one(dL)`.
 """
 @inline function _constant_kernel(::EvalValue, y_left::Tv, ::Tv, ::Tg, dL::Td, ::LeftSide) where {Tv, Tg, Td}
     return y_left * one(dL)
@@ -42,7 +42,7 @@ end
 
 Constant interpolation with right-continuous (ceiling) convention.
 Returns `y_left` at grid point (dL == 0), `y_right` otherwise.
-dL can be any Real (including ForwardDiff.Dual for AD).
+dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates via `one(dL)`.
 """
 @inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, ::Tg, dL::Td, ::RightSide) where {Tv, Tg, Td}
     # Use primal value for comparison (supports ForwardDiff.Dual)
@@ -56,7 +56,7 @@ end
 
 Constant interpolation with nearest-neighbor convention and left tie-breaking.
 Returns `y_left` if dL <= h/2 (including midpoint), `y_right` otherwise.
-dL can be any Real (including ForwardDiff.Dual for AD).
+dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates via `one(dL)`.
 """
 @inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, h::Tg, dL::Td, ::NearestSide) where {Tv, Tg, Td}
     # Use primal value for comparison (supports ForwardDiff.Dual)

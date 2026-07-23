@@ -143,6 +143,10 @@ end
         )
         @test Base.promote_op(FI._interp_op, T, T, T) === R
         @test Base.promote_op(FI._coeff_op, T, T) === R
+        # order-2 witness (cubic z / quadratic a): on Real grids it must stay
+        # identical to order-1 — the Unitful branch splits them (Y/X vs Y/X²),
+        # but that split must not leak a widened Real `Tout`.
+        @test Base.promote_op(FI._coeff_op2, T, T) === R
         @test Base.promote_op(FI._integrate_op, T, T, T) === R
         @test Base.promote_op(FI._inv_op, T) === R
     end
@@ -152,6 +156,7 @@ end
         @test Base.promote_op(FI._interp_op, Float32, Float64, Float32) === Float64
         # inv(Int)::Float64 dominates Float32 values — current (pinned) behavior.
         @test Base.promote_op(FI._coeff_op, Int, Float32) === Float64
+        @test Base.promote_op(FI._coeff_op2, Int, Float32) === Float64
     end
 end
 

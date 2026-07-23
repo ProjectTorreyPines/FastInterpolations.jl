@@ -42,6 +42,9 @@ function cubic_interp(
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     Tv_p = _promote_eltype(_coeff_op2, Tg, Tv)
     _validate_nd_grids(grids, data)
+    # PreCompute/OnTheFly ND cubic solve does not support unit-carrying grids —
+    # match the persistent builder's actionable error instead of a deep MethodError.
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     Tq = promote_type(typeof.(query)...)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
 
@@ -87,6 +90,7 @@ function _cubic_interp_nd_oneshot_alloc(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
@@ -246,8 +250,10 @@ Writes results into pre-allocated `output` vector.
 """
 # Public ND in-place batch one-shot (N≥2; N=1 is intercepted by the collapse method
 # below and only reaches here via the OnTheFly branch, which has no 1D equivalent).
-@inline cubic_interp!(output::AbstractArray, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N} =
-    _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
+@inline function cubic_interp!(output::AbstractArray, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N}
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
+    return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
+end
 
 function _cubic_interp_nd_oneshot_batch!(
         output::AbstractArray,

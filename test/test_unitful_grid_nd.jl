@@ -259,3 +259,33 @@ end
     @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
     @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
 end
+
+@testitem "Unitful ND: one-shot builders reject unit grids with a friendly error (review pin F17)" begin
+    using Unitful
+
+    # The persistent 2-arg builders gate unit-carrying solver/hetero ND grids with an
+    # actionable ArgumentError (`_check_nd_solver_grid` / `_check_nd_hetero_grid`). The
+    # one-shot 3-arg entries skipped the guard and fell into deep, non-actionable errors
+    # (`TypeError: Quantity … is not a valid key`, `MethodError: _collapse_dims(::Type{Quantity…})`).
+    # Both paths fail (unit ND solver/hetero builds are unsupported); this pins error *quality*.
+    xs = collect(1.0:5.0) .* u"s"
+    ys = collect(1.0:5.0) .* u"m"
+    data = [Float64(i + j) for i in 1:5, j in 1:5] .* u"W"
+    qsc = (2.5u"s", 2.5u"m")
+    qb = [(2.5u"s", 2.5u"m"), (3.5u"s", 3.5u"m")]
+
+    # (name, scalar one-shot, batch one-shot)
+    fams = [
+        ("cubic", () -> cubic_interp((xs, ys), data, qsc), () -> cubic_interp((xs, ys), data, qb)),
+        ("quadratic", () -> quadratic_interp((xs, ys), data, qsc), () -> quadratic_interp((xs, ys), data, qb)),
+        ("pchip", () -> pchip_interp((xs, ys), data, qsc), () -> pchip_interp((xs, ys), data, qb)),
+        ("akima", () -> akima_interp((xs, ys), data, qsc), () -> akima_interp((xs, ys), data, qb)),
+        ("cardinal", () -> cardinal_interp((xs, ys), data, qsc), () -> cardinal_interp((xs, ys), data, qb)),
+    ]
+    for (nm, fsc, fb) in fams
+        @testset "$nm one-shot: scalar + batch → ArgumentError" begin
+            @test_throws ArgumentError fsc()
+            @test_throws ArgumentError fb()
+        end
+    end
+end

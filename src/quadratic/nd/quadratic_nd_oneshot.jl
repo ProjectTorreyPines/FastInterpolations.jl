@@ -159,6 +159,9 @@ function quadratic_interp(
     # Float32 data → Float32) so eval + witness `Tr` agree. Batch keeps eager-convert.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     _validate_nd_grids(grids, data)
+    # PreCompute/OnTheFly ND quadratic solve does not support unit-carrying grids —
+    # match the persistent builder's actionable error instead of a deep MethodError.
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
@@ -232,6 +235,7 @@ function quadratic_interp!(
     _query_check_ndims(queries, Val(N))
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)

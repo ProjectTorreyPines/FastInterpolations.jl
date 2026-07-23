@@ -1170,7 +1170,9 @@ end
         @testset "hessian — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)
             itp_ref = cubic_interp((xg, yg), data_2d_flat)
-            H = hessian(itp, q2d)
+            # `@inferred`: the 2nd-deriv element type is a compile-time witness fold
+            # (`_deriv_eltype`), so a value duck type (no `one`/`oneunit`) stays inferable.
+            H = @inferred hessian(itp, q2d)
             H_ref = hessian(itp_ref, q2d)
             @test size(H) == (2, 2)
             @test H[1, 1] isa MyDuck

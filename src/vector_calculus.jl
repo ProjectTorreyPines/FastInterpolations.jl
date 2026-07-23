@@ -342,10 +342,13 @@ end
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        # Hessian entries are 2nd derivatives (value/grid²) — a derivative-aware element type,
-        # not `promote_type(coord, grid, value)` which goes abstract on unit grids (so
-        # `zero(Tq)` threw). Concrete `value/grid²` for same-unit axes; `Float64` on Real grids.
-        Tq = typeof(oneunit($Tv) * inv(oneunit($Tg))^2)
+        # Hessian entries are 2nd derivatives (value/grid²) — fold the `_deriv1_op` witness
+        # twice via `_deriv_eltype`, the same type-level machinery the one-shot deriv paths
+        # use. Pure `Base.promote_op`, so it needs neither `oneunit(Tv)` (value duck types
+        # like colorants define `Real*T` but not `one`) nor `oneunit(Tg)`, stays concrete,
+        # and is type-stable for units (one `inv(h)` per order, never `h^-2`). The old
+        # `promote_type(coord, grid, value)` went abstract on unit grids, so `zero(Tq)` threw.
+        Tq = _deriv_eltype($Tv, $Tg, DerivOp{2}())
         H = Matrix{Tq}(undef, $N, $N)
         policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))

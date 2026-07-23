@@ -286,7 +286,9 @@ function quadratic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tq <: Number}
-    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tgq = _promote_grid_float(Tg, eltype(y))
+    Tr = _deriv_eltype(_promote_eltype(_interp_op, Tgq, eltype(y), Tq), Tgq, deriv)
     output = _alloc_query_output(Tr, x_targets)
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output

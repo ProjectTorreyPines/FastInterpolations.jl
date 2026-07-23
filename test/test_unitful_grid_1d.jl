@@ -680,3 +680,50 @@ end
         @test (@inferred integrate(iu)) isa typeof(1.0u"W*s")
     end
 end
+
+@testitem "Unitful 1D: one-shot batch + deriv carries grid⁻ᴺ units (review pin F16)" begin
+    using Unitful
+
+    # The persistent call path sizes its deriv batch buffer via the deriv-aware
+    # `_promote_eltype(itp, Tq, deriv)` fold, but the *allocating one-shot* batch
+    # entries (`fam_interp(x, y, x_query; deriv=…)`) sized the output in value space
+    # and threw `DimensionError` on unit grids — a first derivative lives in
+    # value/grid space (W/s), not value space (W).
+    xs = [0.0, 1.0, 2.5, 3.0, 4.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0, 4.0]
+    yw = [1.0, 2.0, 4.0, 8.0, 5.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0, 5.0]
+    qf = [0.75, 1.25, 2.6, 3.9]
+    qs = qf .* u"s"
+    d1 = DerivOp(1)
+    TWs = typeof(1.0u"W/s")     # value/grid units for a first derivative
+
+    dyf = [1.0, 0.5, 0.0, -0.5, -1.0]
+    dyu = dyf .* u"W/s"
+
+    # (name, unit one-shot deriv closure, Real-twin deriv closure)
+    fams = [
+        ("linear", () -> linear_interp(xs, yw, qs; deriv = d1), () -> linear_interp(xf, yf, qf; deriv = d1)),
+        ("constant", () -> constant_interp(xs, yw, qs; deriv = d1), () -> constant_interp(xf, yf, qf; deriv = d1)),
+        ("quadratic", () -> quadratic_interp(xs, yw, qs; deriv = d1), () -> quadratic_interp(xf, yf, qf; deriv = d1)),
+        ("cubic", () -> cubic_interp(xs, yw, qs; deriv = d1), () -> cubic_interp(xf, yf, qf; deriv = d1)),
+        ("pchip", () -> pchip_interp(xs, yw, qs; deriv = d1), () -> pchip_interp(xf, yf, qf; deriv = d1)),
+        ("akima", () -> akima_interp(xs, yw, qs; deriv = d1), () -> akima_interp(xf, yf, qf; deriv = d1)),
+        ("cardinal", () -> cardinal_interp(xs, yw, qs; deriv = d1), () -> cardinal_interp(xf, yf, qf; deriv = d1)),
+        ("hermite", () -> hermite_interp(xs, yw, dyu, qs; deriv = d1), () -> hermite_interp(xf, yf, dyf, qf; deriv = d1)),
+    ]
+    for (nm, fu, fr) in fams
+        @testset "$nm: one-shot batch deriv → W/s" begin
+            out = fu()
+            @test eltype(out) === TWs
+            @test out ≈ fr() .* u"W/s"
+        end
+    end
+
+    @testset "second derivative → W/s² (N-fold witness)" begin
+        d2 = DerivOp(2)
+        out = quadratic_interp(xs, yw, qs; deriv = d2)
+        @test eltype(out) === typeof(1.0u"W/s^2")
+        @test out ≈ quadratic_interp(xf, yf, qf; deriv = d2) .* u"W/s^2"
+    end
+end

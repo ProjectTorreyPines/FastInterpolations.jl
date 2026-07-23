@@ -183,7 +183,9 @@ function akima_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
-    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tw = _promote_grid_float(Tg, Tv)
+    Tr = _deriv_eltype(_promote_eltype(_interp_op, Tw, Tv, Tq), Tw, deriv)
     output = _alloc_query_output(Tr, x_query)
     akima_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

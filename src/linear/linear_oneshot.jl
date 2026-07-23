@@ -354,7 +354,10 @@ function linear_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets))
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space, so scale the
+    # value eltype through the same `_deriv_eltype` fold as the persistent path
+    # (identity for `EvalValue`, so the value case is unchanged).
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets)), Tg, deriv)
     output = _alloc_query_output(T_out, x_targets)
     linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output

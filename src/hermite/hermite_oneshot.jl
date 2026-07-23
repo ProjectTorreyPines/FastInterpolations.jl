@@ -98,9 +98,13 @@ function hermite_interp(
     # override that pulls `eltype(itp.dy)` at the type level. The dy chain sees
     # the kernel's `h·dy` product (span × slope = value space).
     Tg_p = _promote_grid_float(Tg, Tv)
-    Tr = promote_type(
-        _promote_eltype(_interp_op, Tg_p, Tv, Tq),
-        _promote_eltype(_interp_op, Tg_p, Base.promote_op(*, Tg_p, eltype(dy)), Tq),
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tr = _deriv_eltype(
+        promote_type(
+            _promote_eltype(_interp_op, Tg_p, Tv, Tq),
+            _promote_eltype(_interp_op, Tg_p, Base.promote_op(*, Tg_p, eltype(dy)), Tq),
+        ),
+        Tg_p, deriv,
     )
     output = _alloc_query_output(Tr, x_query)
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)

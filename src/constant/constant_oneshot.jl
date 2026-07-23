@@ -315,7 +315,10 @@ function constant_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
-    output = _alloc_query_output(_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets)), x_targets)
+    # Deriv-aware: constant's nth derivative is zero but carries value/gridᴺ units,
+    # so the buffer must size in that space (identity fold for `EvalValue`).
+    Tr = _deriv_eltype(_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets)), eltype(x), deriv)
+    output = _alloc_query_output(Tr, x_targets)
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search, hint)
     return output
 end

@@ -222,7 +222,7 @@ function _gridded_fill_oob_sample!(
         for xq in targets[d]
             k += 1
             if _oob_state(grids[d], xq) != IN_DOMAIN
-                fill!(selectdim(out, d, k), _fill_extrap_result(ops, fill_value, data_sample, xq))
+                fill!(selectdim(out, d, k), _fill_extrap_result(ops, fill_value, data_sample, xq, grids))
             end
         end
     end

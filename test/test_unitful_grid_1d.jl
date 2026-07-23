@@ -278,6 +278,29 @@ end
     end
 end
 
+@testitem "Unitful 1D: Cardinal persistent tension stays dimensionless (review pin F19)" begin
+    using Unitful
+
+    # `tension` is a dimensionless shape parameter (field type `Tt`), independent of the
+    # grid's units. Default-tension (0.0) unit tests can't catch a `Tt → Tg` regression —
+    # a unit-carrying zero still compares equal. Pin a *nonzero* tension on a unit grid
+    # for both coefficient strategies (PreCompute and OnTheFly).
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    xf = collect(1.0:6.0)
+    yf = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0]
+
+    for (label, coeffs) in (("PreCompute", PreCompute()), ("OnTheFly", OnTheFly()))
+        @testset "tension=0.3 [$label]" begin
+            itp = cardinal_interp(xu, yw; tension = 0.3, coeffs = coeffs)
+            tw = cardinal_interp(xf, yf; tension = 0.3, coeffs = coeffs)
+            @test itp.tension isa Float64          # dimensionless, not a Quantity
+            @test itp.tension == 0.3
+            @test itp(2.5u"s") ≈ tw(2.5) * u"W"
+        end
+    end
+end
+
 @testitem "Unitful 1D: zero-alloc hot path (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 

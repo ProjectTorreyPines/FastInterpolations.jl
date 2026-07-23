@@ -210,6 +210,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info
@@ -266,6 +267,7 @@ function constant_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
+    _check_grid_orderable(eltype(x))
     @assert length(y) == length(x) "x and y must have same length"
     _check_query_output_size(output, x_targets)
 

@@ -30,6 +30,7 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     # Value space = y ∪ dy: the axis floats against both widths (matching ND partials).
     x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
@@ -61,6 +62,7 @@ function hermite_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")

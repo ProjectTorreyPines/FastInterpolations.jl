@@ -137,6 +137,7 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     # Unified entry — bc flows through the BC-aware extrap/search resolvers and
     # into the slope routines. No `_is_periodic_bc` branch, no extension copy:
     # `_resolve_search`'s seam dispatch + bc-aware slope formulas handle the
@@ -168,6 +169,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)

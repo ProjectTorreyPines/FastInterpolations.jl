@@ -67,6 +67,7 @@ function linear_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
+    _check_grid_orderable(eltype(x))
     @assert length(y) == length(x) "x and y must have same length"
     _check_query_output_size(output, x_targets)
 
@@ -318,6 +319,7 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Same surface-level resolution as the in-place vector form. Zero-alloc:

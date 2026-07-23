@@ -54,6 +54,41 @@
         @test_throws ArgumentError integrate(xc, yc; method = LinearInterp())
         @test_throws ArgumentError cumulative_integrate(xc, yc; method = LinearInterp())
     end
+
+    @testset "one-shot query entries (scalar / vector / in-place)" begin
+        # Every allocating & in-place one-shot sibling must funnel through the
+        # SAME guard as their persistent (x, y) factories — else a Complex grid
+        # leaks a raw search-internal MethodError, not the friendly ArgumentError.
+        # (Vector-alloc forms delegate to `interp!`, so guarding scalar + `!`
+        # covers all three query shapes; asserting each shape pins that coverage.)
+        q = 2.5 + 0im
+        qs = ComplexF64[2.5 + 0im, 3.5 + 0im]
+        out = zeros(ComplexF64, 2)
+        @testset "scalar" begin
+            @test_throws ArgumentError linear_interp(xc, yc, q)
+            @test_throws ArgumentError constant_interp(xc, yc, q)
+            @test_throws ArgumentError pchip_interp(xc, yc, q)
+            @test_throws ArgumentError akima_interp(xc, yc, q)
+            @test_throws ArgumentError cardinal_interp(xc, yc, q)
+            @test_throws ArgumentError hermite_interp(xc, yc, dyc, q)
+        end
+        @testset "vector-alloc" begin
+            @test_throws ArgumentError linear_interp(xc, yc, qs)
+            @test_throws ArgumentError constant_interp(xc, yc, qs)
+            @test_throws ArgumentError pchip_interp(xc, yc, qs)
+            @test_throws ArgumentError akima_interp(xc, yc, qs)
+            @test_throws ArgumentError cardinal_interp(xc, yc, qs)
+            @test_throws ArgumentError hermite_interp(xc, yc, dyc, qs)
+        end
+        @testset "in-place" begin
+            @test_throws ArgumentError linear_interp!(out, xc, yc, qs)
+            @test_throws ArgumentError constant_interp!(out, xc, yc, qs)
+            @test_throws ArgumentError pchip_interp!(out, xc, yc, qs)
+            @test_throws ArgumentError akima_interp!(out, xc, yc, qs)
+            @test_throws ArgumentError cardinal_interp!(out, xc, yc, qs)
+            @test_throws ArgumentError hermite_interp!(out, xc, yc, dyc, qs)
+        end
+    end
 end
 
 @testitem "Duck grid: Real-grid baselines (cross-type value identity)" begin

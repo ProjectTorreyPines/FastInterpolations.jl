@@ -225,7 +225,7 @@ end
 # (scalar), `itp(out, (xv,))` / `itp((xv,))` (SoA batch). Per-axis kwargs given as
 # 1-tuples (`extrap=(WrapExtrap(),)`, `deriv=(DerivOp(1),)`) unwrap to scalar. Each
 # just strips the 1-tuple and forwards to the positional 1D form above.
-@inline (itp::AbstractInterpolant1D)(q::Tuple{Real}; kwargs...) =
+@inline (itp::AbstractInterpolant1D)(q::Tuple{Number}; kwargs...) =
     itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 @inline (itp::AbstractInterpolant1D)(output::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
     itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)

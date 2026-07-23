@@ -890,3 +890,39 @@ end
     @test itp_r(2.5u"s") ≈ itp_c(2.5u"s")
     @test itp_r(2.5u"s"; deriv = DerivOp(1)) ≈ itp_c(2.5u"s"; deriv = DerivOp(1))
 end
+
+@testitem "Unitful 1D: persistent 1-tuple query adapter (review pin P2-1)" begin
+    using Unitful
+
+    # The collapsed-1D scalar tuple adapter `itp((q,))` was `Tuple{Real}`, so a Unitful
+    # 1-tuple query hit a MethodError while the scalar `itp(q)` worked. Generic tensor code
+    # that issues `(q,)` on a 1-axis grid must stay transparent for Number coordinates.
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    itp = linear_interp(xu, yw)
+    @test itp((2.5u"s",)) === itp(2.5u"s")
+    @test itp((2.5u"s",); deriv = (DerivOp(1),)) === itp(2.5u"s"; deriv = DerivOp(1))
+end
+
+@testitem "Unitful 1D: hetero interp facade keeps the Number query boundary (review pin P2-2)" begin
+    using Unitful
+
+    # The one-shot `interp`/`interp!` facades widened `q::Tq` to unbounded, unlike every other
+    # public query API (Number-bounded since the coordinate refactor). Number (Unitful) queries
+    # route through all three overloads; a non-Number query is rejected at the boundary.
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    xf = collect(1.0:6.0)
+    yf = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0]
+    qb = [2.5, 3.5] .* u"s"
+
+    @test interp(xu, yw, 2.5u"s"; method = LinearInterp()) === linear_interp(xu, yw, 2.5u"s")
+    @test interp(xu, yw, qb; method = LinearInterp()) == linear_interp(xu, yw, qb)
+    out = similar(interp(xu, yw, qb; method = LinearInterp()))
+    interp!(out, xu, yw, qb; method = LinearInterp())
+    @test out == linear_interp(xu, yw, qb)
+
+    # Non-Number queries do not dispatch to the facade (Number boundary, matching the API).
+    @test_throws MethodError interp(xf, yf, "nope"; method = LinearInterp())
+    @test_throws MethodError interp(xf, yf, ["a", "b"]; method = LinearInterp())
+end

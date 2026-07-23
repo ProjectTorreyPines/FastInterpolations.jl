@@ -111,7 +111,7 @@ one-shot call (e.g. `cubic_interp(x, y, q)`), with the method's options forwarde
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tq}
+    ) where {Tq <: Number}
     fn, _, opts = _interp1d_route(method)
     return fn(x, y, q; opts..., deriv = deriv, extrap = extrap, search = search, hint = hint)
 end
@@ -131,7 +131,7 @@ Equivalent to the dedicated 1D batch call (e.g. `cubic_interp(x, y, queries)`).
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
-    ) where {Tq}
+    ) where {Tq <: Number}
     fn, _, opts = _interp1d_route(method)
     return fn(x, y, queries; opts..., deriv = deriv, extrap = extrap, search = search)
 end
@@ -151,7 +151,7 @@ Equivalent to the dedicated 1D in-place call (e.g. `cubic_interp!(output, x, y, 
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
-    ) where {Tq}
+    ) where {Tq <: Number}
     _, fn!, opts = _interp1d_route(method)
     return fn!(output, x, y, queries; opts..., deriv = deriv, extrap = extrap, search = search)
 end

@@ -264,6 +264,13 @@ end
 @inline _inv_const(::Type{Tg}, n::Int) where {Tg <: Real} = inv(Tg(n))
 @inline _inv_const(::Type{Tg}, n::Int) where {Tg} = inv(one(Tg) * n)
 
+# Grid-precision DIMENSIONLESS cast for a shape parameter (Cardinal `tension`): the
+# load-bearing `one(float(Tg)) * 1` strips units (unit Tg → plain `1.0`) while keeping
+# the float width. Sibling of `_inv_const`; `float(Tg)` also floats a raw Int axis eltype.
+# `_dimensionless_type` is the matching field type — one source so value/type can't drift.
+@inline _dimensionless_type(::Type{Tg}) where {Tg} = typeof(one(float(Tg)) * 1)
+@inline _as_dimensionless(x, ::Type{Tg}) where {Tg} = oftype(one(float(Tg)) * 1, x)
+
 # `_integrate_op` (3-arg): the definite-integral element type — value × spacing.
 # ∫ ≈ Σ yᵢ·hᵢ is dimensionally distinct from the eval witnesses (which weight the value
 # by the dimensionless offset `dL/h`). `span` is the integration length (`b2 - xL` for a

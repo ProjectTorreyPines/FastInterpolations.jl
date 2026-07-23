@@ -63,9 +63,9 @@ struct CardinalInterpolant1D{
         yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dy = Vector{Tdy}(undef, length(yc))
-        _cardinal_slopes!(dy, xc, yc, oftype(one(Tg) * 1, tension))
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, typeof(one(Tg) * 1), PreCompute}(
-            xc, yc, dy, extrap, search, oftype(one(Tg) * 1, tension)
+        _cardinal_slopes!(dy, xc, yc, _as_dimensionless(tension, Tg))
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, _dimensionless_type(Tg), PreCompute}(
+            xc, yc, dy, extrap, search, _as_dimensionless(tension, Tg)
         )
     end
 
@@ -85,8 +85,8 @@ struct CardinalInterpolant1D{
         yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dyc = _convert_copy(dy, Tdy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, typeof(one(Tg) * 1), PreCompute}(
-            xc, yc, dyc, extrap, search, oftype(one(Tg) * 1, tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, _dimensionless_type(Tg), PreCompute}(
+            xc, yc, dyc, extrap, search, _as_dimensionless(tension, Tg)
         )
     end
 
@@ -103,8 +103,8 @@ struct CardinalInterpolant1D{
         Tv = _value_type(eltype(y), Tg)
         xc = _store_axis(x, bc, Tg, store)
         yc = _own_or_ref_values(y, Tv, store)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, typeof(one(Tg) * 1), OnTheFly}(
-            xc, yc, slope_strategy, extrap, search, oftype(one(Tg) * 1, tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, _dimensionless_type(Tg), OnTheFly}(
+            xc, yc, slope_strategy, extrap, search, _as_dimensionless(tension, Tg)
         )
     end
 end

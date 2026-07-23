@@ -182,8 +182,10 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
         h::Tg, inv_h::Tinv, dL::Tq
     ) where {Tg, Tinv, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
-    # `(yL - yR)` is widened into the moment field via `_fielddiff` so narrow y can't wrap.
-    value_contrib = 12 * _fielddiff(_promote_eltype(_coeff_op2, Tg, typeof(yL)), yL, yR)
+    # `(yL - yR)` widens in VALUE space (narrow y can't wrap) — a coeff-space `_coeff_op2`
+    # type (value/grid²) would make `_fielddiff` convert the `W` values and throw. The grid⁻³
+    # units enter only at the final `inv_h³`; `deriv_contrib = 6·h·dy` is likewise value-space.
+    value_contrib = 12 * _fielddiff(_promote_eltype(_interp_op, Tg, typeof(yL), Tg), yL, yR)
     deriv_contrib = 6 * h * (dyL + dyR)
 
     d3P_dt3 = value_contrib + deriv_contrib

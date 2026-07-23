@@ -847,3 +847,31 @@ end
         @test all(iszero, ustrip.(out))
     end
 end
+
+@testitem "Unitful 1D: Hermite-family third-derivative units (review pin P1-4)" begin
+    using Unitful
+
+    # `_hermite_kernel_1d(::EvalDeriv3)` widened the (yL−yR) value difference in coeff-space
+    # (`_coeff_op2` → W/s²), so `_fielddiff` tried to convert the `W` values into `W/s²` and
+    # threw. deriv3 lives in value/grid³ (W/s³); the value diff must stay value-space, with
+    # the grid⁻³ units entering only at the final `inv_h³`.
+    xu = collect(1.0:6.0) .* u"s"
+    yw = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0] .* u"W"
+    xf = collect(1.0:6.0)
+    yf = [1.0, 2.0, 4.0, 7.0, 5.0, 3.0]
+    dyu = fill(0.5u"W/s", length(xu))
+    dyf = fill(0.5, length(xf))
+
+    for (nm, iu, ir) in (
+            ("hermite", hermite_interp(xu, yw, dyu), hermite_interp(xf, yf, dyf)),
+            ("pchip", pchip_interp(xu, yw), pchip_interp(xf, yf)),
+            ("akima", akima_interp(xu, yw), akima_interp(xf, yf)),
+            ("cardinal", cardinal_interp(xu, yw), cardinal_interp(xf, yf)),
+        )
+        @testset "$nm deriv3 → W/s³, matches Real twin" begin
+            v = iu(2.5u"s"; deriv = DerivOp(3))
+            @test unit(v) === unit(1.0u"W" / 1.0u"s"^3)
+            @test ustrip(v) ≈ ir(2.5; deriv = DerivOp(3))
+        end
+    end
+end

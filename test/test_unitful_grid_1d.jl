@@ -180,6 +180,42 @@ end
     end
 end
 
+@testitem "Unitful 1D: Cubic derivative-BC unit-strip (Deriv1/2/3, review pin BC-strip)" begin
+    using Unitful
+
+    # `_cubic_interp_units` strips units, solves the dimensionless twin, and
+    # reattaches. `_strip_bc_units(::Deriv{1,2,3})` divides the payload by the
+    # matching derivative-order factor (Y/X, Y/X², Y/X³). This whole path had NO
+    # coverage: the strip read `bc.value` (the field is `val`) → a `FieldError`
+    # on every unit-grid Deriv BC, and the order exponents were unpinned.
+    xu = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] .* u"s"
+    yw = [0.0, 0.8, 0.9, 0.1, -0.8, -1.0] .* u"W"
+    xf = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    yf = [0.0, 0.8, 0.9, 0.1, -0.8, -1.0]
+
+    # Real twin ≡ unit grid, AND the left-endpoint derivative equals the
+    # specified BC value in the right units — the exponent witness: a wrong
+    # order factor (e.g. Y/X for Deriv2) would break the boundary match.
+    cases = (
+        (Deriv1(0.5), Deriv1(0.5u"W/s"), 1, u"W/s"),
+        (Deriv2(0.3), Deriv2(0.3u"W/s^2"), 2, u"W/s^2"),
+        (Deriv3(0.2), Deriv3(0.2u"W/s^3"), 3, u"W/s^3"),
+    )
+    for (bcR, bcU, order, uderiv) in cases
+        itp = cubic_interp(xu, yw; bc = bcU)
+        tw = cubic_interp(xf, yf; bc = bcR)
+        @test itp(2.3u"s") ≈ tw(2.3) * u"W"
+        @test ustrip(uderiv, itp(xu[1]; deriv = DerivOp(order))) ≈ tw(xf[1]; deriv = DerivOp(order)) rtol = 1.0e-9
+    end
+
+    @testset "BCPair mixes derivative orders per end" begin
+        itp = cubic_interp(xu, yw; bc = BCPair(Deriv1(0.5u"W/s"), Deriv2(0.3u"W/s^2")))
+        tw = cubic_interp(xf, yf; bc = BCPair(Deriv1(0.5), Deriv2(0.3)))
+        @test itp(2.3u"s") ≈ tw(2.3) * u"W"
+        @test ustrip(u"W/s", itp(xu[1]; deriv = DerivOp(1))) ≈ 0.5 rtol = 1.0e-9
+    end
+end
+
 @testitem "Unitful 1D: Quadratic full pipeline" begin
     using Unitful
 

@@ -237,9 +237,9 @@ end
 # BC payloads carry derivative units (`Y/X`, `Y/X²`, `Y/X³`) — strip to match
 # the nondimensionalized twin; structural BCs pass through.
 @inline _strip_bc_units(bc::Union{PolyFit, ZeroCurvBC, ZeroSlopeBC}, uy, ux) = bc
-@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.value / (uy / ux))
-@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.value / (uy / (ux * ux)))
-@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.value / (uy / (ux * ux * ux)))
+@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.val / (uy / ux))
+@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.val / (uy / (ux * ux)))
+@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.val / (uy / (ux * ux * ux)))
 @inline _strip_bc_units(bc::BCPair, uy, ux) =
     BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
 # Catch-all: an unhandled BC type must fail HERE with an actionable message,

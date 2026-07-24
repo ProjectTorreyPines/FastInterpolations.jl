@@ -98,7 +98,9 @@ end
 # with no runtime division — `inv` is only in the compile-time type
 # `Tinv = typeof(inv(oneunit(T)))` (Float64 for `T=Int`, `T` for Float, per the
 # `_CachedRange` contract; skips the generic path's runtime `inv(step(x))`).
-@inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T}
+# `T <: Real` = the index-space demotion gate (value-space ≡ index-space holds only
+# there; `one ≡ oneunit`). Non-Real targets fall to the generic arm above.
+@inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T <: Real}
     Tinv = typeof(inv(oneunit(T)))
     return _cached_range(_UnitStep(), T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
 end
@@ -107,7 +109,7 @@ end
 # `1:n` deliberately keeps `_UnitStep` — a runtime `first(x) == 1` tag promotion would
 # make the interpolant type value-dependent (2^N Union in ND); the search's predicted
 # `lo == 1` arm covers that case instead.
-@inline function _to_float(x::Base.OneTo, ::Type{T}) where {T}
+@inline function _to_float(x::Base.OneTo, ::Type{T}) where {T <: Real}   # demotion gate (see above)
     Tinv = typeof(inv(oneunit(T)))
     return _cached_range(_OneTo(), one(T), T(last(x)), one(T), one(Tinv), length(x))
 end
@@ -188,14 +190,16 @@ end
 # (no division). 0.5 is exact (power of two) → one cached load + one multiply.
 @inline function _get_inv_2cell(x::_CachedRange, i::Int)
     inv_h = _get_inv_h(x, i)
-    return inv_h * oftype(inv_h, 0.5)
+    # Half must be DIMENSIONLESS at inv_h's precision — `oftype(inv_h, 0.5)`
+    # would demand (and wrongly square) inverse-coordinate units.
+    return inv_h * oftype(one(inv_h), 0.5)
 end
 # idx-shaped forms — `(x, idx)` (solver/coeff) and `(x, idx, xL, xR)` (from
 # `search_interval`) — ignore the extra args and delegate to the no-arg form.
 @inline _get_h(x::_CachedRange, ::Int) = _get_h(x)
 @inline _get_inv_h(x::_CachedRange, ::Int) = _get_inv_h(x)
-@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_h(x)
-@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_inv_h(x)
+@inline _get_h(x::_CachedRange, ::Int, ::TL, ::TR) where {TL, TR} = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int, ::TL, ::TR) where {TL, TR} = _get_inv_h(x)
 
 # Raw `AbstractRange` (non-_CachedRange) fallback via `step()` — pre-normalization paths only.
 @inline _get_h(x::AbstractRange, ::Int) = step(x)
@@ -212,7 +216,7 @@ end
 @inline _get_inv_h(::Type{Tw}, x::AbstractRange, ::Int) where {Tw} =
     inv(convert(Tw, step(x)))
 # Search-result form: endpoints ignored — the cached (or step-derived) reciprocal wins.
-@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::Real, ::Real) where {Tw} =
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::TL, ::TR) where {Tw, TL, TR} =
     _get_inv_h(Tw, x, i)
 
 # ========================================

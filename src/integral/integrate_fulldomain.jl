@@ -139,7 +139,7 @@ integrate(x, y, 0.2, 1.5; method = LinearInterp())   # one-shot,   ∫ from 0.2 
 integrate((xs, ys), data; method = LinearInterp())   # one-shot,   2-D full-domain
 ```
 """
-@inline function integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
+@inline function integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg, Tv}
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     return _integrate_1d_fulldomain(_grid_1d(itp), _full_cell_fn(itp), Tout)
 end
@@ -155,7 +155,10 @@ end
     n = length(x)
     n < 2 && return zero(Tout)
     h = _get_h(x)
-    s = zero(Tout === Float16 ? Float32 : Tout)
+    # Σy accumulates in VALUE space (Tout is value×spacing — unit-distinct);
+    # the ×h happens once after the loop. Real types: Tw ≡ Tout.
+    Tw = _value_space_eltype(eltype(x), eltype(y))
+    s = zero(Tw === Float16 ? Float32 : Tw)
     @inbounds begin
         @simd for i in 2:(n - 1)
             s += y[i]
@@ -173,7 +176,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 # Generic Series: catches Cubic, Linear, Quadratic series
-@inline function integrate(sitp::AbstractSeriesInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
+@inline function integrate(sitp::AbstractSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     x = _grid_1d(sitp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n = n_series(sitp)
@@ -585,15 +588,16 @@ end
 
 @inline function integrate(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     tags, payload = _separable_spec(itp)
-    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
+    # Per-axis span-product fold (∫∫ f dx dy :: Tv·X₁·X₂) — see _integrate_nd_out_grids.
+    Tout = _integrate_nd_out_grids(Tv, itp.grids)
     z = _nd_int_zero(Tout, payload)
     return _integrate_separable_nd_fulldomain(tags, itp.grids, payload, Tout, z)
 end
 
 @inline function integrate(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}};
+        lo::Tuple{Vararg{Number, N}},
+        hi::Tuple{Vararg{Number, N}};
         search = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
@@ -609,9 +613,9 @@ end
     return sign * total
 end
 
-# Real bounds on an ND interpolant → point at the tuple form (otherwise the 1D
-# `(::AbstractInterpolant, ::Real, ::Real)` stub fires with a 1D-flavoured message).
-@inline function integrate(::AbstractInterpolantND, ::Real, ::Real; search = nothing, hint = nothing)
+# Scalar bounds on an ND interpolant → point at the tuple form (otherwise the 1D
+# `(::AbstractInterpolant, x0, x1)` stub fires with a 1D-flavoured message).
+@inline function integrate(::AbstractInterpolantND, ::Any, ::Any; search = nothing, hint = nothing)
     throw(
         ArgumentError(
             "ND `integrate` needs tuple bounds — pass lo/hi as `NTuple{N,Real}`, " *
@@ -676,7 +680,7 @@ In-place [`cumulative_integrate`](@ref): fills `out` with the running integral.
 """
 function cumulative_integrate!(
         out::AbstractVector, itp::AbstractInterpolant{Tg, Tv}
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = _grid_1d(itp)
     _check_cumulative_out(out, length(x))
     return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp))
@@ -692,7 +696,7 @@ node up to node `i`, so `out[1] == 0` and `out[end] == integrate(itp)`. The
 one-shot form builds the `method` interpolant (reference storage) first. 1-D
 only — ND cumulative integration has no unambiguous definition.
 """
-function cumulative_integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
+function cumulative_integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg, Tv}
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     out = Vector{Tout}(undef, length(_grid_1d(itp)))
     return cumulative_integrate!(out, itp)
@@ -701,7 +705,7 @@ end
 # Generic Series: catches Cubic, Linear, Quadratic series
 function cumulative_integrate(
         sitp::AbstractSeriesInterpolant{Tg, Tv}
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = _grid_1d(sitp)
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n_pts = length(x)

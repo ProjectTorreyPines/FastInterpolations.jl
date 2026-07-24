@@ -264,9 +264,9 @@ end
 #   - `idx == length(g.inner)` (seam cell): inner's idx-lookup would index
 #      out of `inv_h` (length n-1). Use `xR - xL` directly — caller already
 #      has `xR == g._x_max` from search, so this is the natural seam width.
-@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::TL, xR::TR) where {TL, TR} =
     idx < length(g.inner) ? _get_h(g.inner, idx, xL, xR) : xR - xL
-@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::TL, xR::TR) where {TL, TR} =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
 
 # Width-first search-result form: interior delegates to the inner axis's row
@@ -276,9 +276,9 @@ end
         ::Type{Tw},
         g::_ExclusivePeriodicAxis,
         idx::Int,
-        xL::Real,
-        xR::Real,
-    ) where {Tw}
+        xL::TL,
+        xR::TR,
+    ) where {Tw, TL, TR}
     return idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx, xL, xR) :
         inv(convert(Tw, xR - xL))
 end
@@ -301,7 +301,7 @@ end
 # `inner[end] < _x_max`, so `inner[idx+1] == _x_max` is unreachable for
 # interior cells. At the seam, the wrapper's `search_interval` returns
 # `xR = g._x_max` by direct field read — bit-equal to the comparand here.
-@inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
+@inline _alpha_of(q, L, R, g::_ExclusivePeriodicAxis) =
     R == g._x_max ? (q - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
 
 # ========================================
@@ -518,7 +518,7 @@ query is past `g.inner[n]`, return the seam tuple `(n, x[n], x[1]+period)`.
 Otherwise delegate to standard binary search on the raw inner Vector — zero
 wrapper overhead for the hot loop.
 """
-@inline function _search_binary(g::_ExclusivePeriodicAxis{T}, xq::Real) where {T}
+@inline function _search_binary(g::_ExclusivePeriodicAxis{T}, xq) where {T}
     n = length(g.inner)
     @inbounds if xq >= g.inner[n]
         return n, g.inner[n], g.inner[1] + g.period
@@ -564,7 +564,7 @@ end
 # in O(1) (single mul/floor/clamp). Forcing `_search_binary` instead would
 # downgrade Range axes to O(log n), which scales as the bench shows
 # (Range Per-excl: 3.5 ns @ N=10 → 44 ns @ N=10000).
-@inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real)
+@inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq)
     n = length(g.inner)
     @inbounds if xq >= g.inner[n]
         # Seam-cell write-back: `_search_interval_real` is the path that
@@ -587,7 +587,7 @@ end
 # `InBounds`-lean (WrapExtrap semantics), so route it to the seam-aware 3-arg search verbatim —
 # restoring the pre-lean-work dispatch. Reached e.g. from `_cubic_interp_periodic_scalar`'s
 # in-bounds branch, which passes `InBounds()` on a `_ExclusivePeriodicAxis` grid.
-@inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real, ::InBounds) =
+@inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq, ::InBounds) =
     search_interval(s, g, xq)
 # Disambiguate `_ExclusivePeriodicAxis × GridIdx × InBounds` (vs the generic GridIdx short-circuit)
 # → seam-aware 3-arg search, which has its own periodic `::GridIdx` overload.

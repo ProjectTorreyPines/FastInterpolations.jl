@@ -178,15 +178,15 @@ end
 #
 # `_CachedVector`: idx-indexed cache wins (1 load, no fp ops). The xL/xR
 # fields are ignored — they're already encoded in `c.inv_h[idx]`.
-@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::TL, ::TR) where {TL, TR} =
     @inbounds x.h[idx]
-@inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+@inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, idx::Int, ::TL, ::TR) where {TL, TR} =
     @inbounds x.inv_h[idx]
 
 # Raw `AbstractVector` fallback: no cache → `xR - xL` straight from search.
 # `idx` is ignored here (kept in signature for uniform call shape).
-@inline _get_h(::AbstractVector, ::Int, xL::Real, xR::Real) = xR - xL
-@inline _get_inv_h(::AbstractVector, ::Int, xL::Real, xR::Real) = inv(xR - xL)
+@inline _get_h(::AbstractVector, ::Int, xL::TL, xR::TR) where {TL, TR} = xR - xL
+@inline _get_inv_h(::AbstractVector, ::Int, xL::TL, xR::TR) where {TL, TR} = inv(xR - xL)
 
 # ── Width-first forms: `_get_*(Tw, x, i)` ────────────────────────────────────
 # `Tw` = value-matched coordinate width, computed ONCE at the caller's surface
@@ -214,9 +214,9 @@ end
 # Width-first SEARCH-RESULT form `(Tw, x, idx, xL, xR)` — same contract as above,
 # but the span comes from the search endpoints (raw axes never re-index). The
 # `_CachedVector` shield ignores the endpoints and reuses its cached reciprocal.
-@inline _get_inv_h(::Type{Tw}, ::AbstractVector, ::Int, xL::Real, xR::Real) where {Tw} =
+@inline _get_inv_h(::Type{Tw}, ::AbstractVector, ::Int, xL::TL, xR::TR) where {Tw, TL, TR} =
     inv(convert(Tw, xR - xL))
-@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::_CachedVector, idx::Int, ::Real, ::Real) where {Tw} =
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::_CachedVector, idx::Int, ::TL, ::TR) where {Tw, TL, TR} =
     _get_inv_h(Tw, x, idx)
 
 # Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):

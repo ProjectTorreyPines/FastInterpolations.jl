@@ -28,7 +28,7 @@
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     if _extract_primal(xi) == _extract_primal(last(x))
         # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic
         # `inner[1]`). `one(Tq) * one(Tg)` threads both query and grid carriers
@@ -36,7 +36,7 @@
         # inference becomes `Union{Tv, Dual}` when grid is Dual and query is Float.
         return op isa EvalValue ?
             last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * one(Tq) * one(Tg)
+            0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
     end
     # Reached only in-domain (genuine InBounds; NoExtrap post-throw; Clamp/Fill/Extend after
     # their IN_DOMAIN check — ExtendExtrap is routed to Clamp above), so the lean InBounds
@@ -55,7 +55,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     # Thread `extrap_eff` into the search (not a hardcoded InBounds()) so this core matches the other
     # 1D wrappers and stays correct for any extrap that reaches it — today only NoExtrap does
     # (ExtendExtrap → ClampExtrap; Clamp/Fill/Wrap have own methods). Seam branch mirrors the InBounds core.
@@ -63,7 +63,7 @@ end
     if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ?
             last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * one(Tq) * one(Tg)
+            0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi, extrap_eff)
     dL = xi - xL
@@ -81,7 +81,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     return _constant_eval_at_point(x, y, xi, ClampExtrap(), side, op, searcher)
 end
 
@@ -94,7 +94,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
     # Dual), matching the in-domain selection. Identity on Float64; Int grids stay Int.
     xi = _promote_coord(xi, eltype(x))
@@ -117,7 +117,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     xi_wrapped = _wrap_to_domain(xi, x)
     # Right-edge short-circuit (closed-domain): `xi == last(x)` collapses
     # uniformly to `last(y)`, bypassing side semantics. Mirrors the InBounds
@@ -128,7 +128,7 @@ end
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
         return op isa EvalValue ?
         last(y) * one(Tq) * one(Tg) :
-        0 * last(y) * one(Tq) * one(Tg)
+        0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
@@ -157,7 +157,7 @@ Constant (step/piecewise constant) interpolation at a single point.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
-- `xi::Real`: Query point
+- `xi::Number`: Query point
 - `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
   `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
   for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
@@ -209,7 +209,8 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info
@@ -266,6 +267,7 @@ function constant_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
+    _check_grid_orderable(eltype(x))
     @assert length(y) == length(x) "x and y must have same length"
     _check_query_output_size(output, x_targets)
 
@@ -315,7 +317,10 @@ function constant_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
-    output = _alloc_query_output(_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets)), x_targets)
+    # Deriv-aware: constant's nth derivative is zero but carries value/gridᴺ units,
+    # so the buffer must size in that space (identity fold for `EvalValue`).
+    Tr = _deriv_eltype(_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets)), eltype(x), deriv)
+    output = _alloc_query_output(Tr, x_targets)
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search, hint)
     return output
 end

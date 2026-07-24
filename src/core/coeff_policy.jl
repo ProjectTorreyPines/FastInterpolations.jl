@@ -15,7 +15,7 @@
 
 # ── AutoCoeffs: 1D scalar query → always OnTheFly ──
 # Single query: O(1) local slopes strictly beats O(n) bulk slopes.
-@inline _resolve_coeffs(::AutoCoeffs, ::AbstractVector, ::Real) = OnTheFly()
+@inline _resolve_coeffs(::AutoCoeffs, ::AbstractVector, ::Any) = OnTheFly()
 
 # ── AutoCoeffs: 1D vector query → runtime length check ──
 # Crossover: PreCompute O(n + K) vs OnTheFly O(2K). At K ≈ n, PreCompute wins.

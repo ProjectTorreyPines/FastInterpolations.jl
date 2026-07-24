@@ -12,7 +12,7 @@
 end
 @inline integrate(x::AbstractVector, y::AbstractVector; method::AbstractInterpMethod) =
     integrate(_oneshot_build_1d(method, x, y))
-@inline integrate(x::AbstractVector, y::AbstractVector, a::Real, b::Real; method::AbstractInterpMethod) =
+@inline integrate(x::AbstractVector, y::AbstractVector, a::Number, b::Number; method::AbstractInterpMethod) =
     integrate(_oneshot_build_1d(method, x, y), a, b)
 
 # ── One-shot cumulative: cumulative_integrate(x, y; method) ──
@@ -41,7 +41,7 @@ end
     integrate(_oneshot_build_nd(method, grids, data))
 @inline integrate(
     grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N},
-    lo::NTuple{N, Real}, hi::NTuple{N, Real}; method
+    lo::NTuple{N, Number}, hi::NTuple{N, Number}; method
 ) where {N} = integrate(_oneshot_build_nd(method, grids, data), lo, hi)
 
 # Single source of truth for "has an ND separable integral": the type-keyed
@@ -74,7 +74,7 @@ end
 
 
 # ── Fallback stub (bounded 1D) ──
-function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search = nothing, hint = nothing)
+function integrate(itp::AbstractInterpolant, x0, x1; search = nothing, hint = nothing)
     throw(ArgumentError("integrate(itp, x0, x1) is not implemented for $(typeof(itp)) yet"))
 end
 
@@ -82,10 +82,10 @@ end
 
 @inline function integrate(
         itp::CubicInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = itp.cache.x
     y = itp.y
     z = itp.z
@@ -113,10 +113,10 @@ end
 
 @inline function integrate(
         itp::LinearInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = itp.x
     y = itp.y
     Tspan = promote_type(typeof(x0), typeof(x1))
@@ -143,10 +143,10 @@ end
 
 @inline function integrate(
         itp::QuadraticInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = itp.x
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
@@ -172,10 +172,10 @@ end
 
 @inline function integrate(
         itp::ConstantInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(itp.x, x0, search, hint)
@@ -186,7 +186,7 @@ end
 # Uses the generic _integrate_1d_cellwise path — side is already concrete here.
 @inline function _integrate_constant_1d_impl(
         x::AbstractVector, y::AbstractVector, side::AbstractSide, extrap::AbstractExtrap,
-        x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+        x0, x1, searcher::SR, ::Type{Tg}, ::Type{Tout}
     ) where {SR <: Searcher, Tg, Tout}
     partial = @inline (i, xL, h, a2, b2) -> begin
         @inbounds _constant_integral_kernel(
@@ -212,10 +212,10 @@ end
 
 @inline function integrate(
         sitp::CubicSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = sitp.cache.x
     y = sitp.y
     z = sitp.z
@@ -241,10 +241,10 @@ end
 
 @inline function integrate(
         sitp::LinearSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = sitp.x
     y = sitp.y
     Tspan = promote_type(typeof(x0), typeof(x1))
@@ -269,10 +269,10 @@ end
 
 @inline function integrate(
         sitp::QuadraticSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     x = sitp.x
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
@@ -296,10 +296,10 @@ end
 
 @inline function integrate(
         sitp::ConstantSeriesInterpolant{Tg, Tv},
-        x0::Real, x1::Real;
+        x0::Number, x1::Number;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: Real, Tv}
+    ) where {Tg, Tv}
     Tspan = promote_type(typeof(x0), typeof(x1))
     Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(sitp.x, x0, search, hint)
@@ -308,7 +308,7 @@ end
 
 @inline function _integrate_constant_series_1d(
         x::AbstractVector, y::AbstractMatrix, side::AbstractSide, extrap::AbstractExtrap,
-        x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+        x0, x1, searcher::SR, ::Type{Tg}, ::Type{Tout}
     ) where {SR <: Searcher, Tg, Tout}
     n = size(y, 2)
     results = Vector{Tout}(undef, n)
@@ -338,6 +338,26 @@ end
         lo2::Tuple{Vararg{Any, N}},
         hi2::Tuple{Vararg{Any, N}}
     ) where {Tv, Tg, N}
-    Tspan = promote_type(map(typeof, lo2)..., map(typeof, hi2)...)
-    return _promote_eltype(_integrate_op, Tg, Tv, Tspan)
+    return _integrate_nd_out_fold(Tv, lo2, hi2)
+end
+
+# ND output type folds ONE span dimension per axis (`∫∫ f dx dy :: Tv·X₁·X₂`) —
+# a single shared `Tspan` collapses to one span power and would be wrong for
+# unit-carrying grids (Real: identical promoted float). Recursive tuple peel
+# keeps it inferable without a generated function.
+@inline _integrate_nd_out_fold(::Type{Tacc}, ::Tuple{}, ::Tuple{}) where {Tacc} = Tacc
+@inline function _integrate_nd_out_fold(
+        ::Type{Tacc}, lo2::Tuple, hi2::Tuple
+    ) where {Tacc}
+    Ts = promote_type(typeof(first(lo2)), typeof(first(hi2)))
+    Tnext = _promote_eltype(_integrate_op, Ts, Tacc, Ts)
+    return _integrate_nd_out_fold(Tnext, Base.tail(lo2), Base.tail(hi2))
+end
+
+# Full-domain twin: spans are the axes themselves — fold per-axis eltypes.
+@inline _integrate_nd_out_grids(::Type{Tacc}, ::Tuple{}) where {Tacc} = Tacc
+@inline function _integrate_nd_out_grids(::Type{Tacc}, grids::Tuple) where {Tacc}
+    Ts = eltype(first(grids))
+    Tnext = _promote_eltype(_integrate_op, Ts, Tacc, Ts)
+    return _integrate_nd_out_grids(Tnext, Base.tail(grids))
 end

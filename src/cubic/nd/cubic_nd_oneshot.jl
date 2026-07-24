@@ -28,7 +28,7 @@ Zero-allocation after warmup: uses pool-based partials instead of constructing a
 function cubic_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
@@ -40,8 +40,11 @@ function cubic_interp(
     # (a per-call copy would miss every time + alloc). `Tg` is value-matched (Int/OneTo grid +
     # Float32 data → Float32), so the OnTheFly eval + witness `Tr` agree. Batch keeps eager-convert.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
+    Tv_p = _promote_eltype(_coeff_op2, Tg, Tv)
     _validate_nd_grids(grids, data)
+    # PreCompute/OnTheFly ND cubic solve does not support unit-carrying grids —
+    # match the persistent builder's actionable error instead of a deep MethodError.
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     Tq = promote_type(typeof.(query)...)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
 
@@ -87,6 +90,7 @@ function _cubic_interp_nd_oneshot_alloc(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
@@ -119,7 +123,7 @@ Zero-allocation after warmup (pool reuse).
 @with_pool pool function _cubic_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -152,7 +156,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
@@ -207,7 +211,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # per axis when all its queries are in-bounds, so the per-query `_try_fill_oob` /
     # `_handle_all_extraps` branches compile away.
     extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
@@ -246,8 +250,10 @@ Writes results into pre-allocated `output` vector.
 """
 # Public ND in-place batch one-shot (N≥2; N=1 is intercepted by the collapse method
 # below and only reaches here via the OnTheFly branch, which has no 1D equivalent).
-@inline cubic_interp!(output::AbstractArray, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N} =
-    _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
+@inline function cubic_interp!(output::AbstractArray, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N}
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
+    return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
+end
 
 function _cubic_interp_nd_oneshot_batch!(
         output::AbstractArray,

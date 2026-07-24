@@ -19,9 +19,9 @@ Evaluate cubic spline value using moment (z) formulation.
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 # Formula
     S(x) = zL*(dR³)/(6h) + zR*(dL³)/(6h)
@@ -37,10 +37,10 @@ for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations
 @inline function _cubic_kernel(
         ::EvalValue,
         zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Tv, Td <: Real}
+        h::Tg, inv_h::Ti, dL::Td, dR::Td
+    ) where {Tg, Ti, Tz, Tv, Td}
     # Native (ARM64) instruction breakdown:
-    div6 = inv(Tg(6))                                   # (const-folded)
+    div6 = _inv_const(Tg, 6)                                   # (const-folded)
     # inv_h passed as parameter (fdiv eliminated)
 
     dL_cu = dL^3                                        # fmul, fmul
@@ -62,9 +62,9 @@ Evaluate first derivative of cubic spline.
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 Formula:
     S'(x) = (-zL*dR² + zR*dL²)/(2h)
@@ -74,12 +74,12 @@ Formula:
 @inline function _cubic_kernel(
         ::EvalDeriv1,
         zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Tv, Td <: Real}
+        h::Tg, inv_h::Ti, dL::Td, dR::Td
+    ) where {Tg, Ti, Tz, Tv, Td}
     # inv_h passed as parameter (fdiv eliminated)
 
-    inv_2h = inv_h * inv(Tg(2))
-    h_div6 = h * inv(Tg(6))
+    inv_2h = inv_h * _inv_const(Tg, 2)
+    h_div6 = h * _inv_const(Tg, 6)
 
     dL_sq = dL * dL
     dR_sq = dR * dR
@@ -90,8 +90,10 @@ Formula:
     # z_term = (z_mix)/(2h) + (zL - zR)*(h/6)
     z_term = muladd(inv_2h, z_mix, (zL - zR) * h_div6)
 
-    # (yR-yL)/h + z_term
-    return muladd(inv_h, _fielddiff(Tz, yR, yL), z_term)
+    # (yR-yL)/h + z_term — diff widens in VALUE space (Tz is z-space; converting
+    # unit-carrying y into it would be dimensionally wrong)
+    Tw = _value_space_eltype(Tg, Tv)
+    return muladd(inv_h, _fielddiff(Tw, yR, yL), z_term)
 end
 
 """
@@ -102,9 +104,9 @@ This is simply a linear interpolation of the z (moment) values.
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 Formula:
     S''(x) = (zL*dR + zR*dL) / h
@@ -112,8 +114,8 @@ Formula:
 @inline function _cubic_kernel(
         ::EvalDeriv2,
         zL::Tz, zR::Tz, _, _,
-        ::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Td <: Real}
+        ::Tg, inv_h::Ti, dL::Td, dR::Td
+    ) where {Tg, Ti, Tz, Td}
     return muladd(zL, dR, zR * dL) * inv_h
 end
 
@@ -124,9 +126,9 @@ Third derivative of cubic spline (constant within each interval).
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
-- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
+- `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 # Formula
     S'''(x) = (zR - zL) / h
@@ -144,8 +146,8 @@ Third derivative (constant, independent of x within interval):
 @inline function _cubic_kernel(
         ::EvalDeriv3,
         zL::Tz, zR::Tz, _, _,
-        ::Tg, inv_h::Tg, dL::Td, ::Td
-    ) where {Tg, Tz, Td <: Real}
+        ::Tg, inv_h::Ti, dL::Td, ::Td
+    ) where {Tg, Ti, Tz, Td}
     return (zR - zL) * inv_h * one(dL)
 end
 
@@ -158,7 +160,8 @@ Julia dispatch ensures `DerivOp{0..3}` methods (more specific) are selected firs
 @inline function _cubic_kernel(
         ::DerivOp{N},
         zL::Tz, _, _, _,
-        ::Tg, ::Tg, dL::Td, ::Td
-    ) where {N, Tg, Tz, Td <: Real}
-    return 0 * zL * one(dL)
+        ::Tg, ::Ti, dL::Td, ::Td
+    ) where {N, Tg, Ti, Tz, Td}
+    # `zL` is order-2 (value/grid²); an N-th derivative adds `inv(grid)^(N-2)`.
+    return 0 * zL * Base.literal_pow(^, inv(oneunit(dL)), Val(N - 2))
 end

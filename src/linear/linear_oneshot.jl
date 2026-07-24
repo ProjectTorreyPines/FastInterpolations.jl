@@ -67,6 +67,7 @@ function linear_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
+    _check_grid_orderable(eltype(x))
     @assert length(y) == length(x) "x and y must have same length"
     _check_query_output_size(output, x_targets)
 
@@ -134,14 +135,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
+    linear_interp(x, y, xq::Number; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
 - For general `AbstractVector` x: Search algorithm determined by `search` parameter
 
 # Arguments
-- `xq::Real`: Single interpolation query point
+- `xq::Number`: Single interpolation query point
 - `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
   `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
   for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
@@ -317,7 +318,8 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Same surface-level resolution as the in-place vector form. Zero-alloc:
@@ -354,7 +356,10 @@ function linear_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets))
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space, so scale the
+    # value eltype through the same `_deriv_eltype` fold as the persistent path
+    # (identity for `EvalValue`, so the value case is unchanged).
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets)), Tg, deriv)
     output = _alloc_query_output(T_out, x_targets)
     linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output

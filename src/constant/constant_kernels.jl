@@ -31,9 +31,9 @@
 
 Constant interpolation with left-continuous (floor) convention.
 Always returns the left boundary value `y_left`.
-dL can be any Real (including ForwardDiff.Dual for AD).
+dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates via `one(dL)`.
 """
-@inline function _constant_kernel(::EvalValue, y_left::Tv, ::Tv, ::Tg, dL::Td, ::LeftSide) where {Tv, Tg, Td <: Real}
+@inline function _constant_kernel(::EvalValue, y_left::Tv, ::Tv, ::Tg, dL::Td, ::LeftSide) where {Tv, Tg, Td}
     return y_left * one(dL)
 end
 
@@ -42,9 +42,9 @@ end
 
 Constant interpolation with right-continuous (ceiling) convention.
 Returns `y_left` at grid point (dL == 0), `y_right` otherwise.
-dL can be any Real (including ForwardDiff.Dual for AD).
+dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates via `one(dL)`.
 """
-@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, ::Tg, dL::Td, ::RightSide) where {Tv, Tg, Td <: Real}
+@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, ::Tg, dL::Td, ::RightSide) where {Tv, Tg, Td}
     # Use primal value for comparison (supports ForwardDiff.Dual)
     dL_primal = _extract_primal(dL)
     selected = iszero(dL_primal) ? y_left : y_right
@@ -56,48 +56,55 @@ end
 
 Constant interpolation with nearest-neighbor convention and left tie-breaking.
 Returns `y_left` if dL <= h/2 (including midpoint), `y_right` otherwise.
-dL can be any Real (including ForwardDiff.Dual for AD).
+dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates via `one(dL)`.
 """
-@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, h::Tg, dL::Td, ::NearestSide) where {Tv, Tg, Td <: Real}
+@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, h::Tg, dL::Td, ::NearestSide) where {Tv, Tg, Td}
     # Use primal value for comparison (supports ForwardDiff.Dual)
     dL_primal = _extract_primal(dL)
     selected = dL_primal <= h / 2 ? y_left : y_right
     return selected * one(dL)
 end
 
+# N-th derivative of a degree-0 (constant) interpolant is zero for N ≥ 1, but lives in
+# `[value]/[grid]ᴺ` space: the `inv(oneunit(dL))ᴺ` factor carries the grid⁻ᴺ units so a
+# unit-grid deriv batch's buffer (`_deriv_eltype`) accepts the value (else DimensionError),
+# while `0 * y_left` keeps the zero, duck-typing, and NaN propagation. The zero VALUE is
+# unchanged; its eltype is `typeof(y / gridᴺ)` — for an all-Int Real grid that floats to
+# Float64 (Int/Int → Float), which is the dimensionally correct derivative type, NOT a
+# Real-path regression (`Constant` keeps the primal Int; only the derivative floats). A
+# literal exponent stays type-stable for Unitful.
 """
     _constant_kernel(::EvalDeriv1, y_left, y_right, h, dL, side)
 
-First derivative of constant interpolation.
-Always returns zero (constant function has no slope).
-Uses `0 * y_left` for duck-typing support and NaN propagation.
+First derivative of constant interpolation — zero, in `value/grid` units.
 """
-@inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
-    return 0 * y_left * one(dL)
+@inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
+    return 0 * y_left * inv(oneunit(dL))
 end
 
 """
     _constant_kernel(::EvalDeriv2, y_left, y_right, h, dL, side)
 
-Second derivative of constant interpolation.
-Always returns zero (constant function has no curvature).
+Second derivative of constant interpolation — zero, in `value/grid²` units.
 """
-@inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
-    return 0 * y_left * one(dL)
+@inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
+    return 0 * y_left * inv(oneunit(dL))^2
 end
 
 """
     _constant_kernel(::EvalDeriv3, y_left, y_right, h, dL, side)
 
-Third derivative of constant interpolation is always zero.
+Third derivative of constant interpolation — zero, in `value/grid³` units.
 """
-@inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
-    return 0 * y_left * one(dL)
+@inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
+    return 0 * y_left * inv(oneunit(dL))^3
 end
 
+# Generic fallback (N ≥ 4): `Base.literal_pow` keeps `inv(oneunit(dL))ᴺ` type-stable for
+# unit grids even when N is a type parameter (a plain `^N` there infers an abstract unit).
 """Generic fallback: N-th derivative of degree-0 (constant) is zero for N ≥ 1."""
-@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {N, Tv, Tg, Td <: Real}
-    return 0 * y_left * one(dL)
+@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {N, Tv, Tg, Td}
+    return 0 * y_left * Base.literal_pow(^, inv(oneunit(dL)), Val(N))
 end
 
 # ========================================

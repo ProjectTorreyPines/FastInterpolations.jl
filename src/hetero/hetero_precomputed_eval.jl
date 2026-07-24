@@ -27,7 +27,7 @@ Non-derivative axes (Linear/Constant) produce fewer intermediates (no derivative
         indices::NTuple{N, Int},
         hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},
-        dLs::Tuple{Vararg{Real, N}},
+        dLs::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp},
         ::M,
     ) where {Tv, Tg, N, NP1, M <: Tuple{Vararg{AbstractInterpMethod, N}}}
@@ -137,7 +137,7 @@ end
         grids::NTuple{N, AbstractVector{Tg}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps,
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},

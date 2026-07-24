@@ -96,9 +96,11 @@ The trailing `* one(α)` carries the query's carrier (Dual partials,
 Measurement uncertainty, …) — for plain `Real` `α`, LLVM const-folds the
 `1.0` factor away.
 """
-@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    return _fielddiff(Tc, yR, yL) * inv_h * one(α)
+@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Ti, α) where {Ti, Tv}
+    # Value-space widen: the diff stays in Tv units; the 1/X dimension enters
+    # via `* inv_h` (coeff-space Tc would convert y into slope units).
+    Tw = _promote_eltype(_interp_op, Ti, Tv, Ti)
+    return _fielddiff(Tw, yR, yL) * inv_h * one(α)
 end
 
 """
@@ -115,7 +117,8 @@ but we return zero everywhere as a practical approximation.
     # ×0 (no curvature), but touch BOTH endpoints so a NaN/Inf in either cell corner
     # survives the multiply (cell-local propagation). `0*yL + 0*yR` avoids the overflow
     # of `yL+yR`/`yL*yR` that would manufacture a spurious NaN from large finite data.
-    return (0 * yL + 0 * yR) * one(α)
+    # `oneunit(inv_h)²` carries the value/grid² units (unit grids); `1.0` on Real grids.
+    return (0 * yL + 0 * yR) * oneunit(inv_h)^2 * one(α)
 end
 
 """
@@ -125,12 +128,14 @@ Third derivative of linear interpolation is always zero.
 Linear functions have constant first derivative (slope), zero second and third derivatives.
 """
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return (0 * yL + 0 * yR) * one(α)  # touch both endpoints for cell-local NaN — see EvalDeriv2
+    # value/grid³ units via `oneunit(inv_h)³`; NaN-propagating `0*yL + 0*yR` — see EvalDeriv2.
+    return (0 * yL + 0 * yR) * oneunit(inv_h)^3 * one(α)
 end
 
 """Generic fallback: N-th derivative of degree-1 polynomial is zero for N ≥ 2."""
-@inline function _linear_kernel(::DerivOp{N}, yL::Tv, yR::Tv, ::Tg, α) where {N, Tg, Tv}
-    return (0 * yL + 0 * yR) * one(α)  # touch both endpoints for cell-local NaN — see EvalDeriv2
+@inline function _linear_kernel(::DerivOp{N}, yL::Tv, yR::Tv, inv_h::Tg, α) where {N, Tg, Tv}
+    # value/gridᴺ units; `literal_pow` keeps `oneunit(inv_h)ᴺ` type-stable for a type-param N.
+    return (0 * yL + 0 * yR) * Base.literal_pow(^, oneunit(inv_h), Val(N)) * one(α)
 end
 
 # ========================================
@@ -142,6 +147,6 @@ end
 #     `one`, so LLVM folds the `×inv_h` away (α = q - L). No `_UnitStep` method needed.
 #   - plain `AbstractVector`: divide by the on-the-fly `R - L` (EvalValue can then DCE
 #     the separately-extracted `inv_h`, which only EvalDeriv1 kernels use).
-@inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
-@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * _get_inv_h(x)
-@inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)
+@inline _alpha_of(q, L, inv_h) = (q - L) * inv_h
+@inline _alpha_of(q, L, R, x::_CachedRange) = (q - L) * _get_inv_h(x)
+@inline _alpha_of(q, L, R, ::AbstractVector) = (q - L) / float(R - L)

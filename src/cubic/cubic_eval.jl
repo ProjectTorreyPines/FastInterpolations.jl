@@ -120,17 +120,17 @@ end
 # `(first, last)`); the extrap branch (Wrap vs Clamp/Fill vs No/Extend) is
 # the only differentiator and is handled inside `_eval_cubic_at_point`.
 
-"Vector loop for cubic spline. Accepts any Real query type (AD-compatible)."
+"Vector loop for cubic spline. Accepts any query type (duck: AD Dual, Unitful)."
 @inline function _cubic_vector_loop!(
         output::AbstractArray,
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
-        x_query::AbstractArray{<:Real},
+        x_query::AbstractArray{Tq},
         ev::E,
         op::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     # Resolve domain here so the inner kernel sees a concrete `ev` type.
     # `_check_domain` for Clamp/Fill/Wrap returns `Union{InBounds, E}` —
     # passing through a function-barrier call lets Julia's union-splitting
@@ -146,11 +146,11 @@ end
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
-        x_query::AbstractArray{<:Real},
+        x_query::AbstractArray{Tq},
         ev::E,
         op::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], ev, op, searcher)
     end
@@ -175,10 +175,10 @@ Uses task-local pool for workspace allocation.
         deriv::DerivOp = EvalValue(),
         search = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc)
 

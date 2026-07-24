@@ -136,7 +136,13 @@ struct StorePolicy{CopyGrid, CopyValues, CacheAxis} end
     return :(($(exprs...),))
 end
 @generated function _store_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}, store::StorePolicy) where {N, Tg}
-    exprs = [:(_store_axis(grids[$i], bcs[$i], Tg, store)) for i in 1:N]
+    if isconcretetype(Tg)
+        exprs = [:(_store_axis(grids[$i], bcs[$i], Tg, store)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is abstract (promotion tag only) —
+        # each axis wraps at its OWN eltype (`oneunit(abstract)` is undefined).
+        exprs = [:(_store_axis(grids[$i], bcs[$i], eltype(grids[$i]), store)) for i in 1:N]
+    end
     return :(($(exprs...),))
 end
 

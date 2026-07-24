@@ -16,7 +16,7 @@
 @with_pool pool function _interp_nd_hetero_oneshot(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -131,7 +131,7 @@ end
 @inline @with_pool pool function _interp_nd_oneshot_onthefly(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -267,6 +267,9 @@ function _interp_nd_oneshot_dispatch(
     # them directly, so it still gets the converted grids.
     Tg, Tv, _ = _nd_promote_types(grids, data)
     _validate_nd_grids(grids, data)
+    # Per-axis (hetero) ND one-shot does not support unit-carrying grids yet —
+    # match the persistent builder's actionable error, not a deep `_collapse_dims` MethodError.
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     Tr = _promote_eltype(eltype(data), Tg, typeof.(query)...)
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
@@ -343,6 +346,7 @@ end
     # and value-matches per axis; PreCompute gets the converted grids.
     Tg, Tv, _ = _nd_promote_types(grids, data)
     _validate_nd_grids(grids, data)
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     _query_check_ndims(queries, Val(N))
 
     # bc-aware extrap (matches scalar dispatch).
@@ -404,7 +408,7 @@ dfdx = interp((x, y), data, (0.5, 0.3);
 function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),

@@ -72,7 +72,8 @@ function _cubic_interp_nd(
         store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
     # Zero-allocation type promotion + grid conversion
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
+    _check_nd_solver_grid(Tg_p)
 
     # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
@@ -163,15 +164,16 @@ end
 end
 
 # Scalar one-shot: bare scalar → `(q,)` → ND scalar one-shot (handles coeffs natively).
-@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
-    cubic_interp(grids, data, (q,); kwargs...)
+@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
+    eltype(only(grids)) <: Real ? cubic_interp(grids, data, (q,); kwargs...) :
+    cubic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: gated 1D one-shot
 
 # Batch one-shot (bare vector; the SoA `(xv,)` form below unwraps into it).
-@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
     coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_alloc(grids, data, q; coeffs, kwargs...)
     return cubic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 end
-@inline function cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray{<:Real}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+@inline function cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
     coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_batch!(output, grids, data, q; coeffs, kwargs...)
     return cubic_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 end

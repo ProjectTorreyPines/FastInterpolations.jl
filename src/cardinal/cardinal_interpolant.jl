@@ -33,14 +33,15 @@ itp(0.5)
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {TX, TY}
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     # Periodic extension (no-op for NoBC). bc_eff flips :exclusive → :extended
     # post-extension; :inclusive passes through. Slope-side dispatches on bc_eff.
     x_eff, y_eff, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     Tg = _promote_grid_float(eltype(x_eff), eltype(y_eff))
     extrap_p = _promote_extrap(extrap_eff, _value_type(eltype(y_eff), Tg))
     resolved = _resolve_coeffs(coeffs)
-    tens_t = Tg(tension)
+    tens_t = _as_dimensionless(tension, Tg)   # dimensionless shape param at grid precision
     # Caching wrap (zero-copy of buffer): post-extension grid → `_CachedVector`
     # (Vector) / `_CachedRange` (Range). Ownership copy in inner ctor's
     # `_convert_copy(x, Tg)`. Mirrors Linear/Constant 1D outer flow.

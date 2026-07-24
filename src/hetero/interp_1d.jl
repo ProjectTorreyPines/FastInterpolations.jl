@@ -97,7 +97,7 @@ itp = interp(x, y; method = PchipInterp(), store = StorePolicy(copy = false))  #
 end
 
 """
-    interp(x::AbstractVector, y::AbstractVector, q::Real; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch(), hint=nothing)
+    interp(x::AbstractVector, y::AbstractVector, q::Tq; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch(), hint=nothing)
 
 One-shot 1D interpolation at a single point. Equivalent to the dedicated 1D
 one-shot call (e.g. `cubic_interp(x, y, q)`), with the method's options forwarded.
@@ -105,19 +105,19 @@ one-shot call (e.g. `cubic_interp(x, y, q)`), with the method's options forwarde
 @inline function interp(
         x::AbstractVector,
         y::AbstractVector,
-        q::Real;
+        q::Tq;
         method::AbstractInterpMethod,
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    )
+    ) where {Tq <: Number}
     fn, _, opts = _interp1d_route(method)
     return fn(x, y, q; opts..., deriv = deriv, extrap = extrap, search = search, hint = hint)
 end
 
 """
-    interp(x::AbstractVector, y::AbstractVector, queries::AbstractVector{<:Real}; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch())
+    interp(x::AbstractVector, y::AbstractVector, queries::AbstractVector{Tq}; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch())
 
 Allocating one-shot 1D interpolation at multiple points. Returns an `Array`
 matching the query's shape (a `Vector` for a vector query, a `Matrix` for a matrix query).
@@ -126,18 +126,18 @@ Equivalent to the dedicated 1D batch call (e.g. `cubic_interp(x, y, queries)`).
 @inline function interp(
         x::AbstractVector,
         y::AbstractVector,
-        queries::AbstractArray{<:Real};
+        queries::AbstractArray{Tq};
         method::AbstractInterpMethod,
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
-    )
+    ) where {Tq <: Number}
     fn, _, opts = _interp1d_route(method)
     return fn(x, y, queries; opts..., deriv = deriv, extrap = extrap, search = search)
 end
 
 """
-    interp!(output::AbstractVector, x::AbstractVector, y::AbstractVector, queries::AbstractVector{<:Real}; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch())
+    interp!(output::AbstractVector, x::AbstractVector, y::AbstractVector, queries::AbstractVector{Tq}; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch())
 
 In-place one-shot 1D interpolation at multiple points. Writes into `output`.
 Equivalent to the dedicated 1D in-place call (e.g. `cubic_interp!(output, x, y, queries)`).
@@ -146,12 +146,12 @@ Equivalent to the dedicated 1D in-place call (e.g. `cubic_interp!(output, x, y, 
         output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        queries::AbstractArray{<:Real};
+        queries::AbstractArray{Tq};
         method::AbstractInterpMethod,
         deriv::DerivOp = EvalValue(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
-    )
+    ) where {Tq <: Number}
     _, fn!, opts = _interp1d_route(method)
     return fn!(output, x, y, queries; opts..., deriv = deriv, extrap = extrap, search = search)
 end

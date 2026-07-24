@@ -8,7 +8,7 @@
 
 @inline function integrate(
         itp::AbstractHermiteInterpolant1D{Tg, Tv},
-        x0::Real, x1::Real;
+        x0, x1;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv}
@@ -19,7 +19,7 @@ end
 @inline function _integrate_hermite_1d(
         dy::AbstractVector,
         itp::AbstractHermiteInterpolant1D{Tg, Tv},
-        x0::Real, x1::Real,
+        x0, x1,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}},
     ) where {Tg, Tv}
@@ -62,7 +62,7 @@ end
 @inline function _integrate_hermite_1d(
         sm::AbstractSlopeMethod,
         itp::AbstractHermiteInterpolant1D{Tg, Tv},
-        x0::Real, x1::Real,
+        x0, x1,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}},
     ) where {Tg, Tv}
@@ -90,8 +90,8 @@ end
 @inline function _integrate_hermite_onthefly_inner(
         sm::AbstractSlopeMethod,
         x::AbstractVector, y::AbstractVector,
-        a::Real, b::Real, searcher::Searcher, ::Type{Tout},
-    ) where {Tout}
+        a::Tq0, b::Tq1, searcher::Searcher, ::Type{Tout},
+    ) where {Tq0, Tq1, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
     sign == 0 && return zero(Tout)
     n = length(x)

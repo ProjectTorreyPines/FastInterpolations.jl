@@ -1,0 +1,397 @@
+# ========================================
+# Unitful grid axis: ND (ducktype-grid phase 5)
+# ========================================
+# 5a: all axes share ONE concrete unit — common-Tg machinery, all families.
+# 5b: mixed-unit axes (x in s, y in m) — Linear/Constant only (per-axis
+#     eltypes; solver-family PreCompute ND is excluded → friendly error).
+# The 5b Linear case is the NumInt ND-Unitful regression this plan restores.
+
+@testitem "Unitful ND 5a: same-unit axes, all families" begin
+    using Unitful
+    using InteractiveUtils: @which
+
+    xs = [0.0, 1.0, 2.0, 3.0] .* u"s"
+    ys = [0.0, 0.5, 1.0, 1.5, 2.0] .* u"s"
+    xf = [0.0, 1.0, 2.0, 3.0]
+    yf = [0.0, 0.5, 1.0, 1.5, 2.0]
+    data = [Float64(i + j) for i in 1:4, j in 1:5] .* u"W"
+    dataf = [Float64(i + j) for i in 1:4, j in 1:5]
+
+    @testset "Linear ND: build/eval/integrate" begin
+        itp = interp((xs, ys), data; method = LinearInterp())
+        tw = interp((xf, yf), dataf; method = LinearInterp())
+        @test itp((1.5u"s", 0.75u"s")) ≈ tw((1.5, 0.75)) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s^2"
+        @test integrate(itp, (0.5u"s", 0.25u"s"), (2.5u"s", 1.75u"s")) ≈
+            integrate(tw, (0.5, 0.25), (2.5, 1.75)) * u"W*s^2"
+    end
+
+    @testset "one-shot ND integrate" begin
+        v = integrate((xs, ys), data; method = LinearInterp())
+        @test v ≈ integrate((xf, yf), dataf; method = LinearInterp()) * u"W*s^2"
+    end
+
+    @testset "@which pins: point-tuple vs SoA batch" begin
+        itp = interp((xs, ys), data; method = LinearInterp())
+        m_point = @which itp((1.5u"s", 0.75u"s"))
+        m_soa = @which itp(([1.5, 2.0] .* u"s", [0.75, 1.0] .* u"s"))
+        @test m_point !== m_soa
+        # SoA batch works end-to-end
+        out = itp(([1.5, 2.0] .* u"s", [0.75, 1.0] .* u"s"))
+        @test eltype(out) === typeof(1.0u"W")
+        @test out[1] ≈ itp((1.5u"s", 0.75u"s"))
+    end
+end
+
+@testitem "Unitful ND 5b: mixed-unit axes (Linear/Constant) — NumInt regression" begin
+    using Unitful
+
+    # The regressed NumInt case: different units per axis + unit values.
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    xf = [0.0, 1.0, 2.0]
+    yf = [0.0, 0.5, 1.0, 1.5]
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+    dataf = [Float64(i * j) for i in 1:3, j in 1:4]
+
+    @testset "Linear: full-domain integrate (trapezoid ≡ NumInt)" begin
+        itp = interp((xs, ym), data; method = LinearInterp())
+        tw = interp((xf, yf), dataf; method = LinearInterp())
+        @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
+        @test itp((1.5u"s", 0.75u"m")) ≈ tw((1.5, 0.75)) * u"W"
+    end
+
+    @testset "Constant: mixed-unit" begin
+        itp = interp((xs, ym), data; method = ConstantInterp())
+        tw = interp((xf, yf), dataf; method = ConstantInterp())
+        @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
+    end
+
+    @testset "solver families: friendly error (deferred)" begin
+        @test_throws ArgumentError interp((xs, ym), data; method = CubicInterp())
+    end
+end
+
+@testitem "Unitful ND: inference stability (@inferred, review pin F14)" begin
+    using Unitful
+    using Test: @inferred
+
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    xs2 = [0.0, 0.5, 1.0, 1.5] .* u"s"
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+    TW = typeof(1.0u"W")
+
+    @testset "same-unit ND: eval / SoA batch / integrate" begin
+        itp = interp((xs, xs2), data; method = LinearInterp())
+        @test (@inferred itp((1.5u"s", 0.75u"s"))) isa TW
+        @test (@inferred itp(([1.5, 2.0] .* u"s", [0.75, 1.0] .* u"s"))) isa Vector{TW}
+        @test (@inferred integrate(itp)) isa typeof(1.0u"W*s^2")
+    end
+
+    @testset "mixed-unit ND (abstract-Tg): eval / integrate / gradient" begin
+        itp = interp((xs, ym), data; method = LinearInterp())
+        @test (@inferred itp((1.5u"s", 0.75u"m"))) isa TW
+        @test (@inferred integrate(itp)) isa typeof(1.0u"W*s*m")
+        g = @inferred gradient(itp, (1.5u"s", 0.75u"m"))
+        @test g isa Tuple{typeof(1.0u"W/s"), typeof(1.0u"W/m")}
+    end
+end
+
+@testitem "Unitful ND: 1-tuple adapters, vector-point, unit-Range axes (review F13)" begin
+    using Unitful
+
+    xu = [0.0, 1.0, 2.5, 3.0, 4.0] .* u"s"
+    xf = [0.0, 1.0, 2.5, 3.0, 4.0]
+    yu = [1.0, 2.0, 4.0, 8.0, 5.0] .* u"W"
+    yf = [1.0, 2.0, 4.0, 8.0, 5.0]
+
+    @testset "1-tuple adapter: unit SCALAR query returns a scalar" begin
+        # `q::Real` forwarders didn't match Quantity — the call fell to a
+        # generic arm and SILENTLY returned a 1-element Vector. Pin the shape.
+        for f in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp, akima_interp, cardinal_interp)
+            v = f((xu,), yu, 1.5u"s")
+            @test v isa Unitful.Quantity
+            @test v ≈ f((xf,), yf, 1.5) * u"W"
+        end
+    end
+
+    @testset "1-tuple adapter: unit batch query" begin
+        qs = [0.5, 1.5] .* u"s"
+        @test linear_interp((xu,), yu, qs) ≈ linear_interp((xf,), yf, [0.5, 1.5]) .* u"W"
+        @test pchip_interp((xu,), yu, qs) ≈ pchip_interp((xf,), yf, [0.5, 1.5]) .* u"W"
+    end
+
+    @testset "ND vector-point query (ForwardDiff-style) ≡ tuple query" begin
+        gy = [0.0, 0.5, 1.0] .* u"m"
+        data = [Float64(i * j) for i in 1:5, j in 1:3] .* u"W"
+        itp = interp((xu, gy), data; method = LinearInterp())
+        @test itp([1.5u"s", 0.25u"m"]) === itp((1.5u"s", 0.25u"m"))
+    end
+
+    @testset "ND unit-Range axes (allowlisted `_CachedRange` arms: generic siblings serve)" begin
+        xr = 0.0u"s":1.0u"s":2.0u"s"
+        yr = 0.0u"m":0.5u"m":1.0u"m"
+        data = [Float64(i * j) for i in 1:3, j in 1:3] .* u"W"
+        itp = interp((xr, yr), data; method = LinearInterp())
+        tw = interp((0.0:1.0:2.0, 0.0:0.5:1.0), ustrip.(data); method = LinearInterp())
+        @test itp((1.5u"s", 0.25u"m")) ≈ tw((1.5, 0.25)) * u"W"
+        @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
+    end
+end
+
+@testitem "Unitful ND: vector-calculus vector query (review F12/C10)" begin
+    using Unitful
+
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0] .* u"m"
+    data = [Float64(i * j) for i in 1:3, j in 1:3] .* u"W"
+    itp = interp((xs, ym), data; method = LinearInterp())
+
+    # The documented Vector-query overloads rejected Vector{Quantity} while
+    # the tuple form worked — mixed-unit coords make the vector eltype
+    # abstract, which is fine for a point query.
+    g_tuple = gradient(itp, (1.5u"s", 0.5u"m"))
+    @test all(gradient(itp, [1.5u"s", 0.5u"m"]) .≈ g_tuple)
+    @test value_gradient(itp, [1.5u"s", 0.5u"m"])[1] ≈ itp((1.5u"s", 0.5u"m"))
+end
+
+@testitem "Unitful ND: hetero engine rejects unit grids friendly (review F11)" begin
+    using Unitful
+
+    # The per-axis (hetero) ND engine — which also backs PCHIP/Akima/Cardinal ND —
+    # missed the solver-grid guard: unit grids died in deep MethodErrors
+    # (`_collapse_dims`, `_build_nd_coeffs_hetero`, ctor). Pin the friendly error
+    # for both builders (OnTheFly + PreCompute) and both unit layouts.
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    xs2 = [0.0, 0.5, 1.0, 1.5] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+
+    for build in (
+            () -> interp((xs, ym), data; method = (LinearInterp(), ConstantInterp())),
+            () -> interp((xs, xs2), data; method = (LinearInterp(), CubicInterp())),
+            () -> pchip_interp((xs, xs2), data),
+            () -> cardinal_interp((xs, ym), data),
+        )
+        err = try
+            build()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("unit-carrying", sprint(showerror, err))
+    end
+end
+
+@testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
+    using Unitful
+
+    # Mixed-unit axes exercise the abstract-Tg per-axis machinery — the alloc
+    # contract must hold there too (devirtualized axis maps, no closure boxes).
+    xs = [0.0, 1.0, 2.0] .* u"s"
+    ym = [0.0, 0.5, 1.0, 1.5] .* u"m"
+    data = [Float64(i * j) for i in 1:3, j in 1:4] .* u"W"
+    itp = interp((xs, ym), data; method = LinearInterp())
+    q = (1.5u"s", 0.75u"m")
+
+    itp(q)
+    integrate(itp)   # warmup
+    @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
+    @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+end
+
+@testitem "Unitful ND: zero-alloc hot path, same-unit concrete-Tg (review pin F21)" setup = [AllocConstants] begin
+    using Unitful
+
+    # 5a same-unit axes route through the concrete-Tg "common-Tg machinery" — a distinct
+    # path from F6's abstract per-axis one, so its alloc contract needs its own pin. Both
+    # unit-supporting ND families (Linear/Constant) must stay 0-alloc.
+    xs = [0.0, 1.0, 2.0, 3.0] .* u"s"
+    ys = [0.0, 0.5, 1.0, 1.5, 2.0] .* u"s"   # same unit → concrete Tg
+    data = [Float64(i + j) for i in 1:4, j in 1:5] .* u"W"
+    q = (1.5u"s", 0.75u"s")
+
+    for (nm, method) in (("Linear", LinearInterp()), ("Constant", ConstantInterp()))
+        @testset "$nm: eval / integrate" begin
+            itp = interp((xs, ys), data; method = method)
+            itp(q)
+            integrate(itp)   # warmup
+            @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
+            @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+        end
+    end
+end
+
+@testitem "Unitful ND: Constant derivative carries grid⁻ᴺ units (Range-duck audit)" begin
+    using Unitful
+    Wps = typeof(1.0u"W/s")
+    Wps2 = typeof(1.0u"W/s^2")
+
+    # Same as 1D but for the ND `_constant_nd_evaluate` deriv path (`kernel * 0` dropped
+    # the per-axis grid⁻ᴺ scale). Same-unit axes give a CONCRETE `W/s` buffer, so the
+    # batch deriv CRASHED (DimensionError) — mixed-unit hid it behind an abstract eltype.
+    data = [Float64(i * j) for i in 1:4, j in 1:4] .* u"W"
+    for (gname, xg, yg) in (
+            ("Vector", [0.0, 1.0, 2.0, 3.0] .* u"s", [0.0, 1.0, 2.0, 3.0] .* u"s"),
+            ("LinRange", LinRange(0.0u"s", 3.0u"s", 4), LinRange(0.0u"s", 3.0u"s", 4)),
+        )
+        itp = interp((xg, yg), data; method = ConstantInterp())
+        @testset "$gname: scalar ∂/∂x units" begin
+            d1 = itp((1.5u"s", 1.5u"s"); deriv = (DerivOp(1), DerivOp(0)))
+            d2 = itp((1.5u"s", 1.5u"s"); deriv = (DerivOp(1), DerivOp(1)))
+            @test d1 isa Wps
+            @test iszero(d1)
+            @test d2 isa Wps2
+            @test iszero(d2)
+        end
+        @testset "$gname: batch deriv (was DimensionError)" begin
+            out = itp(([1.0, 2.0] .* u"s", [1.0, 2.0] .* u"s"); deriv = (DerivOp(1), DerivOp(0)))
+            @test eltype(out) === Wps
+            @test all(iszero, out)
+        end
+    end
+end
+
+@testitem "Unitful ND: unit LinRange axes on the _CachedRange path" setup = [AllocConstants] begin
+    using Unitful
+    FI = FastInterpolations
+
+    # F13 covers ND StepRange axes; a `LinRange` of Quantities must wrap the same way
+    # (`_CachedRange` per axis) and stay value-correct + zero-alloc on the hot path.
+    gu1 = LinRange(0.0u"s", 3.0u"s", 4)
+    gu2 = LinRange(0.0u"m", 2.0u"m", 5)
+    gf1 = LinRange(0.0, 3.0, 4)
+    gf2 = LinRange(0.0, 2.0, 5)
+    data = [Float64(i * j) for i in 1:4, j in 1:5] .* u"W"
+    dataf = [Float64(i * j) for i in 1:4, j in 1:5]
+
+    itp = interp((gu1, gu2), data; method = LinearInterp())
+    tw = interp((gf1, gf2), dataf; method = LinearInterp())
+
+    @test itp.grids[1] isa FI._CachedRange
+    @test itp.grids[2] isa FI._CachedRange
+    @test itp((1.5u"s", 0.75u"m")) ≈ tw((1.5, 0.75)) * u"W"
+    @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
+
+    q = (1.5u"s", 0.75u"m")
+    itp(q)
+    integrate(itp)   # warmup
+    @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
+    @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+end
+
+@testitem "Unitful ND: one-shot builders reject unit grids with a friendly error (review pin F17)" begin
+    using Unitful
+
+    # The persistent 2-arg builders gate unit-carrying solver/hetero ND grids with an
+    # actionable ArgumentError (`_check_nd_solver_grid` / `_check_nd_hetero_grid`). The
+    # one-shot 3-arg entries skipped the guard and fell into deep, non-actionable errors
+    # (`TypeError: Quantity … is not a valid key`, `MethodError: _collapse_dims(::Type{Quantity…})`).
+    # Both paths fail (unit ND solver/hetero builds are unsupported); this pins error *quality*.
+    xs = collect(1.0:5.0) .* u"s"
+    ys = collect(1.0:5.0) .* u"m"
+    data = [Float64(i + j) for i in 1:5, j in 1:5] .* u"W"
+    qsc = (2.5u"s", 2.5u"m")
+    qb = [(2.5u"s", 2.5u"m"), (3.5u"s", 3.5u"m")]
+
+    # (name, scalar one-shot, batch one-shot)
+    fams = [
+        ("cubic", () -> cubic_interp((xs, ys), data, qsc), () -> cubic_interp((xs, ys), data, qb)),
+        ("quadratic", () -> quadratic_interp((xs, ys), data, qsc), () -> quadratic_interp((xs, ys), data, qb)),
+        ("pchip", () -> pchip_interp((xs, ys), data, qsc), () -> pchip_interp((xs, ys), data, qb)),
+        ("akima", () -> akima_interp((xs, ys), data, qsc), () -> akima_interp((xs, ys), data, qb)),
+        ("cardinal", () -> cardinal_interp((xs, ys), data, qsc), () -> cardinal_interp((xs, ys), data, qb)),
+    ]
+    for (nm, fsc, fb) in fams
+        @testset "$nm one-shot: scalar + batch → ArgumentError" begin
+            @test_throws ArgumentError fsc()
+            @test_throws ArgumentError fb()
+        end
+    end
+end
+
+@testitem "Unitful ND: solver/hetero guards fire on same-unit (concrete-Tg) axes (review pin F20)" begin
+    using Unitful
+
+    # Existing guard-throw coverage uses *mixed-unit* axes (u"s", u"m") → an abstract
+    # promoted grid eltype. Same-unit axes promote to a *concrete* `Quantity{Float64,𝐓,…}`
+    # Tg — a distinct dispatch. Pin that this concrete-Tg still reaches the guard (a future
+    # `_promote_grid_eltype` narrowing must not leak it to the Real fast path), for both the
+    # persistent builders and the one-shot entries.
+    xs = collect(1.0:5.0) .* u"s"
+    xs2 = collect(0.5:0.5:2.5) .* u"s"     # same unit → concrete Tg
+    data = [Float64(i + j) for i in 1:5, j in 1:5] .* u"W"
+    q = (2.5u"s", 1.5u"s")
+
+    @testset "solver families (Cubic/Quadratic): persistent + one-shot" begin
+        @test_throws ArgumentError cubic_interp((xs, xs2), data)
+        @test_throws ArgumentError quadratic_interp((xs, xs2), data)
+        @test_throws ArgumentError cubic_interp((xs, xs2), data, q)
+        @test_throws ArgumentError quadratic_interp((xs, xs2), data, q)
+    end
+
+    @testset "hetero families (PCHIP): persistent + one-shot" begin
+        @test_throws ArgumentError pchip_interp((xs, xs2), data)
+        @test_throws ArgumentError pchip_interp((xs, xs2), data, q)
+    end
+end
+
+@testitem "Unitful ND: FillExtrap OOB derivative units (review pin P1-fill)" begin
+    using Unitful
+
+    # FillExtrap OOB short-circuits derive the result from the value-space fill (`W`) and a
+    # non-derivative-aware zero, ignoring the requested derivative orders. On unit grids the
+    # scalar returns the wrong (value) units and the allocating batch throws DimensionError
+    # (a `W/s` buffer can't store the `W` zero). Fold the axis units per derivative order.
+    xs = [0.0, 1.0, 2.0, 3.0] .* u"s"
+    ys = [0.0, 0.5, 1.0, 1.5, 2.0] .* u"s"   # same unit → well-defined gradient/Hessian/Laplacian
+    data = [Float64(i + j) for i in 1:4, j in 1:5] .* u"W"
+    itp = interp((xs, ys), data; method = LinearInterp(), extrap = FillExtrap(0.0u"W"))
+    q_oob = (5.0u"s", 0.75u"s")   # axis-1 OOB → fill
+
+    @testset "eval OOB deriv carries grid⁻ⁿ units" begin
+        @test unit(itp(q_oob; deriv = (DerivOp(1), DerivOp(0)))) === unit(1.0u"W" / 1.0u"s")
+        @test unit(itp(q_oob; deriv = (DerivOp(1), DerivOp(1)))) === unit(1.0u"W" / 1.0u"s"^2)
+        @test iszero(ustrip(itp(q_oob; deriv = (DerivOp(1), DerivOp(0)))))
+        @test eltype(itp([q_oob, q_oob]; deriv = (DerivOp(1), DerivOp(0)))) === typeof(1.0u"W/s")
+    end
+
+    @testset "vector-calculus OOB zeros are derivative-scaled" begin
+        g = gradient(itp, q_oob)
+        @test all(c -> unit(c) === unit(1.0u"W" / 1.0u"s"), g)
+        G = [1.0u"W/s", 1.0u"W/s"]
+        gradient!(G, itp, q_oob)
+        @test all(c -> unit(c) === unit(1.0u"W" / 1.0u"s"), G)
+        H = hessian(itp, q_oob)
+        @test all(c -> unit(c) === unit(1.0u"W" / 1.0u"s"^2), H)
+        @test unit(laplacian(itp, q_oob)) === unit(1.0u"W" / 1.0u"s"^2)
+    end
+end
+
+@testitem "Unitful ND: mixed-unit exclusive-periodic axes (review pin P1-periodic-nd)" begin
+    using Unitful
+    using Test: @inferred
+
+    # `_prepare_periodic_nd_impl` promoted all axes to one `float(_promote_grid_eltype)` type;
+    # mixed units (s, m) collapse to an abstract `Quantity{Float64}` → `zero(Quantity{Float64})`
+    # threw during the exclusive-periodic extension. Float each axis independently.
+    xs = (0.0:1.0:2.0) .* u"s"
+    ym = (0.0:1.0:2.0) .* u"m"
+    xs2 = (0.0:1.0:2.0) .* u"s"
+    data = [Float64(i + j) for i in 1:3, j in 1:3] .* u"W"
+    dataf = [Float64(i + j) for i in 1:3, j in 1:3]
+    bcx = (PeriodicBC(endpoint = :exclusive), PeriodicBC(endpoint = :exclusive))
+
+    @testset "mixed-unit builds + evals" begin
+        itp = linear_interp((xs, ym), data; bc = bcx)
+        @test itp((0.5u"s", 0.5u"m")) isa typeof(1.0u"W")
+    end
+    @testset "same-unit: value parity + inference (no per-axis boxing regression)" begin
+        iu = linear_interp((xs, xs2), data; bc = bcx)
+        ir = linear_interp((0.0:1.0:2.0, 0.0:1.0:2.0), dataf; bc = bcx)
+        @test iu((0.5u"s", 0.5u"s")) ≈ ir((0.5, 0.5)) * u"W"
+        @test (@inferred iu((0.5u"s", 0.5u"s"))) isa typeof(1.0u"W")   # concrete grid ⇒ no box
+    end
+end

@@ -15,7 +15,7 @@
 
 # Scalar tuple query
 @inline function (itp::LinearInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
@@ -41,7 +41,7 @@ end
 # 5-arg forwarder (interpolant_protocol.jl) which injects `itp.extraps`.
 @inline function _locate_cell(
         itp::LinearInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -121,8 +121,8 @@ seam-aware intervals from `_search_all_axis_intervals`.
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
         intervals::NTuple{N, _ExplicitIndices{2}},
-        inv_hs::Tuple{Vararg{Real, N}},   # heterogeneous-tolerant (raw mixed-precision grids); each axis used independently
-        αs::Tuple{Vararg{Real, N}},
+        inv_hs::Tuple{Vararg{Number, N}},   # heterogeneous-tolerant (raw mixed-precision grids); each axis used independently
+        αs::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}

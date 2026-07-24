@@ -28,7 +28,7 @@ function hermite_interp(
         grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{<:Any, N},
         partials::HermitePartials{N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
@@ -146,7 +146,7 @@ end
         grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         partials::HermitePartials{N, Tv, K},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         bcs::Tuple{Vararg{AbstractBC, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},

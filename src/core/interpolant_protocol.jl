@@ -95,11 +95,12 @@ end
 # ========================================
 # 1D Scalar Call — Hot Path
 # ========================================
-# @inline for broadcast fusion. Accepts any xq (Real, Dual for AD).
-# @boundscheck normalized: always checked here, not in per-type eval.
+# @inline for broadcast fusion. `xq::Number` is the numeric-coordinate admission
+# boundary (Real, Unitful, Dual for AD); GriddedQuery/anchored queries carry their
+# own more-specific callables. @boundscheck normalized: always here, not per-type eval.
 
 @inline function (itp::AbstractInterpolant1D{Tg, Tv})(
-        xq;
+        xq::Number;
         deriv::DerivOp = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
@@ -124,16 +125,36 @@ end
 # `_select_op` for selection kernels (Constant). Duck
 # `SVector × Dual` resolves via the trait's `Base.promote_op` fallback.
 
+# ── Deriv-aware buffer eltype (3-arg sibling of the 2-arg trait) ──
+# Value eltype from the per-method 2-arg trait (Constant/Hermite overrides honored),
+# then scaled into value/coordᴺ space — else a unit-grid deriv batch sizes in value
+# units and the store throws. A lone DerivOp broadcasts to all axes; a Tuple is per-axis.
+@inline _promote_eltype(itp::AbstractInterpolant1D{Tg}, ::Type{Tq}, op::DerivOp) where {Tg, Tq} =
+    _deriv_eltype(_promote_eltype(itp, Tq), Tg, op)
+@inline _promote_eltype(itp::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}, op::DerivOp) where {Tg, Tv, N, Tq} =
+    _promote_eltype(itp, Tq, ntuple(_ -> op, Val(N)))
+@inline _promote_eltype(itp::AbstractInterpolantND, ::Type{Tq}, ops::Tuple) where {Tq} =
+    _deriv_eltype_nd(_promote_eltype(itp, Tq), itp.grids, ops)
+
+# Fold the `_deriv1_op` witness one order at a time (never `h^-N` — type-unstable for
+# units); `DerivOp{0}` is the identity. ND folds the single-axis helper across axes.
+@inline _deriv_eltype(::Type{Tr}, ::Type{Tg}, ::DerivOp{0}) where {Tr, Tg} = Tr
+@inline _deriv_eltype(::Type{Tr}, ::Type{Tg}, ::DerivOp{N}) where {Tr, Tg, N} =
+    _deriv_eltype(_promote_eltype(_deriv1_op, Tr, Tg), Tg, DerivOp{N - 1}())
+@inline _deriv_eltype_nd(::Type{Tr}, ::Tuple{}, ::Tuple{}) where {Tr} = Tr
+@inline _deriv_eltype_nd(::Type{Tr}, grids::Tuple, ops::Tuple) where {Tr} =
+    _deriv_eltype_nd(_deriv_eltype(Tr, eltype(first(grids)), first(ops)), Base.tail(grids), Base.tail(ops))
+
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
         deriv::DerivOp = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
-    output = Vector{_promote_eltype(itp, Tq)}(undef, length(xq))
+    output = Vector{_promote_eltype(itp, Tq, deriv)}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
     _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
@@ -150,7 +171,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     @assert length(output) == length(xq) "output length must match xq length"
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
@@ -173,10 +194,10 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
-    output = _alloc_query_output(_promote_eltype(itp, Tq), q)
+    output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), q)
     searcher = _resolve_search(grid, q, search, hint)
     _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
     return output
@@ -189,7 +210,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     _check_query_output_size(output, q)
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
@@ -204,7 +225,7 @@ end
 # (scalar), `itp(out, (xv,))` / `itp((xv,))` (SoA batch). Per-axis kwargs given as
 # 1-tuples (`extrap=(WrapExtrap(),)`, `deriv=(DerivOp(1),)`) unwrap to scalar. Each
 # just strips the 1-tuple and forwards to the positional 1D form above.
-@inline (itp::AbstractInterpolant1D)(q::Tuple{Real}; kwargs...) =
+@inline (itp::AbstractInterpolant1D)(q::Tuple{Number}; kwargs...) =
     itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 @inline (itp::AbstractInterpolant1D)(output::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
     itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)
@@ -286,7 +307,7 @@ end
 # `_collapse_dims` / `_eval_hetero_precomputed`).
 @inline function _eval_nd_at_point(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -328,10 +349,12 @@ end
 # ========================================
 # ND Scalar: Vector query → tuple conversion
 # ========================================
-# ForwardDiff/Optim compatibility — AbstractVector{<:Real} queries.
-
+# ForwardDiff/Optim — AbstractVector point query. `{<:Number}` is the scalar-vs-container
+# gate: an AoS batch (`Vector{<:Tuple}`) stays on the batch method below, not misread as
+# one point. Every ND point path is Number-gated; tuple-izing recovers per-element
+# concrete types from an abstract mixed-unit eltype (`Quantity <: Number`).
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        query::AbstractVector{<:Real};
+        query::AbstractVector{<:Number};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
@@ -346,10 +369,10 @@ end
 # ND Scalar: Vararg convenience
 # ========================================
 # Converts vararg calls to tuple form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
-# Per-type callables (Cubic, Linear, etc.) accept Tuple{Vararg{Real, N}} directly,
-# resolving GridIdx via _resolve_grididx internally. GridIdx <: Real, so Vararg{Real,N} matches.
+# Per-type callables (Cubic, Linear, etc.) accept Tuple{Vararg{Number, N}} directly,
+# resolving GridIdx via _resolve_grididx internally. GridIdx <: Real, so Vararg{Number,N} matches.
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return itp(q; kw...)
@@ -438,6 +461,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = _alloc_query_output(_promote_eltype(itp, Tq), queries)
+    output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), queries)
     return itp(output, queries; deriv = deriv, extrap = extrap, search = search, hint = hint)
 end

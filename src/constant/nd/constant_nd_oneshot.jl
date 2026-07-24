@@ -21,7 +21,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
 function _constant_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
@@ -133,7 +133,7 @@ Zero-allocation after warmup.
 function constant_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),

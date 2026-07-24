@@ -32,7 +32,7 @@ end
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray,
         extrap::E,
         deriv::O,
         searcher::P
@@ -45,7 +45,7 @@ end
         output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractArray{<:Real},
+        xq::AbstractArray,
         extrap::E,
         deriv::O,
         searcher::P
@@ -151,7 +151,8 @@ function linear_interp end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         store::StorePolicy = StorePolicy()
-    ) where {TX, TY}
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic).
     # OneShot path continues to use the lazy wrapper (linear_oneshot.jl).

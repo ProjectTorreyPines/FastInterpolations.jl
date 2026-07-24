@@ -27,13 +27,13 @@
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         e::InBounds,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
     xq = _resolve_grididx(xq, x)
     idx, _, xL, _ = search_interval(searcher, x, xq, e)
     dt = xq - xL  # Can be Dual for AD
@@ -47,13 +47,13 @@ end
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         extrap::AbstractExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
     xq = _resolve_grididx(xq, x)
     # NoExtrap → InBounds for the search once the domain check passes (lean search);
     # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
@@ -67,13 +67,13 @@ end
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
     # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
     # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
     xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
@@ -88,13 +88,13 @@ end
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         ::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
     xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
     return _quadratic_eval_at_point(x, y, a, d, xq_wrapped, InBounds(), op, searcher)
 end
@@ -165,9 +165,15 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
+
+    # Unit-carrying grids route through the persistent strip→solve→reattach
+    # build — the pooled coefficient solve below runs in unit space and throws.
+    Tg <: Real || return quadratic_interp(
+        x, y; bc = bc, extrap = extrap, search = search
+    )(xq; deriv = deriv, hint = hint)
 
     # Value-matched pooled wrap: Int/OneTo grid + Float32 data → Float32 axis
     # (vector conversion lands in a pool buffer — warm one-shots stay zero-alloc).
@@ -224,7 +230,10 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    Tg <: Real || return quadratic_interp(
+        x, y; bc = bc, extrap = extrap, search = search
+    )(output, x_targets; deriv = deriv, hint = hint)
     @assert length(y) == length(x) "x and y must have same length"
     _check_query_output_size(output, x_targets)
     @assert length(x) >= 2 "x must have at least 2 elements"
@@ -276,8 +285,10 @@ function quadratic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
-    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
+    ) where {Tg <: Number, Tq <: Number}
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tgq = _promote_grid_float(Tg, eltype(y))
+    Tr = _deriv_eltype(_promote_eltype(_interp_op, Tgq, eltype(y), Tq), Tgq, deriv)
     output = _alloc_query_output(Tr, x_targets)
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output

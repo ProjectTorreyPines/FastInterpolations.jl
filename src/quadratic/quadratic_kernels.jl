@@ -64,10 +64,12 @@ Third derivative of quadratic spline is always zero.
 Uses `0 * a` for duck-typing support and NaN propagation.
 """
 @inline function _quadratic_kernel(::EvalDeriv3, a, _, _, dL::Td) where {Td}
-    return 0 * a * one(dL)
+    # `a` is order-2 (value/grid²); the 3rd derivative adds one more `inv(grid)`.
+    return 0 * a * inv(oneunit(dL))
 end
 
 """Generic fallback: N-th derivative of degree-2 polynomial is zero for N ≥ 3."""
 @inline function _quadratic_kernel(::DerivOp{N}, a, _, _, dL::Td) where {N, Td}
-    return 0 * a * one(dL)
+    # `a` is order-2 (value/grid²); an N-th derivative adds `inv(grid)^(N-2)`.
+    return 0 * a * Base.literal_pow(^, inv(oneunit(dL)), Val(N - 2))
 end

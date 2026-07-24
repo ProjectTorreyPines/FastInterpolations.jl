@@ -22,7 +22,7 @@
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     # Grid pre-normalized by the public `pchip_interp` API via `_resolve_axis(x)`
     # before dispatching here; `_periodic_extend_1d` preserves the normalization.
@@ -79,7 +79,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("PCHIP interpolation requires at least 2 points, got $(length(x))"))
     x_eff = _resolve_axis(x, bc)
@@ -136,7 +136,8 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     # Unified entry — bc flows through the BC-aware extrap/search resolvers and
     # into the slope routines. No `_is_periodic_bc` branch, no extension copy:
     # `_resolve_search`'s seam dispatch + bc-aware slope formulas handle the
@@ -167,7 +168,8 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
@@ -193,8 +195,10 @@ function pchip_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
-    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tw = _promote_grid_float(Tg, Tv)
+    Tr = _deriv_eltype(_promote_eltype(_interp_op, Tw, Tv, Tq), Tw, deriv)
     output = _alloc_query_output(Tr, x_query)
     pchip_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

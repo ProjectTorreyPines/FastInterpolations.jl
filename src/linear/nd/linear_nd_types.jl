@@ -85,13 +85,16 @@ struct LinearInterpolantND{
     # Inner ctor: type params inferred from arg signature; outer factories
     # call this without spelling out `{Tg, Tv, N, G, E, P}`.
     function LinearInterpolantND(
-            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            grids::Tuple{Vararg{AbstractVector, N}},
             data::AbstractArray{Tv, N},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
             bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
             store::StorePolicy = StorePolicy()
-        ) where {Tg, Tv, N}
+        ) where {Tv, N}
+        # `Tg` = promoted axis eltype — ABSTRACT for mixed-unit axes (promotion
+        # tag only; witnesses read per-axis eltypes, `Vector{Tg}` never built).
+        Tg = _promote_grid_eltype(grids)
         grids_c = _store_axes(grids, bcs, Tg, store)
         data_c = _own_or_ref_data(data, store)
         return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches), typeof(data_c)}(

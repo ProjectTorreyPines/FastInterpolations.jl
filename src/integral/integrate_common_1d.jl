@@ -1,4 +1,4 @@
-@inline function _normalize_bounds_1d(a::Real, b::Real)
+@inline function _normalize_bounds_1d(a, b)
     if a < b
         return (1, a, b)
     elseif a > b
@@ -13,7 +13,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::NoExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::NoExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     _check_domain(x, min(x0, x1), NoExtrap())
     _check_domain(x, max(x0, x1), NoExtrap())
@@ -21,7 +21,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -42,7 +42,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0::Real, x1::Real, ::Type{Tout}
+        e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -64,7 +64,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -92,7 +92,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     return in_domain_fn(x0, x1)
 end
@@ -107,7 +107,7 @@ end
 # Vector grids) it falls back to `step(x)` / `float(x[i+1] - x[i])` — single
 # subtraction per cell, no allocation.
 @inline function _integrate_1d_cellwise(
-        x::AbstractVector, a::Real, b::Real,
+        x::AbstractVector, a, b,
         searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
     ) where {S <: Searcher, PF, FF, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)

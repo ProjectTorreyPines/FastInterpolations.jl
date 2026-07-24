@@ -1,4 +1,4 @@
-@inline function _normalize_bounds_nd(lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}}) where {N}
+@inline function _normalize_bounds_nd(lo::Tuple{Vararg{Number, N}}, hi::Tuple{Vararg{Number, N}}) where {N}
     nflips = 0
     @inbounds for d in 1:N
         nflips += (lo[d] > hi[d])
@@ -21,8 +21,8 @@ end
 # concrete. Pinned by the mixed-grid 0-alloc testitem in test_integral_nd_separable.jl.
 @generated function _nd_cell_ranges(
         grids::NTuple{N, AbstractVector},
-        lo::Tuple{Vararg{Real, N}},
-        hi::Tuple{Vararg{Real, N}},
+        lo::Tuple{Vararg{Number, N}},
+        hi::Tuple{Vararg{Number, N}},
         search_tuple,
         hint
     ) where {N}
@@ -42,10 +42,10 @@ end
 end
 
 # ND domain check for integration bounds.
-@inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::NoExtrap) =
+@inline _check_nd_integrate_domain(x::AbstractVector, xi, ::NoExtrap) =
     _check_domain(x, xi, NoExtrap())
 
-@inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrap)
+@inline function _check_nd_integrate_domain(x::AbstractVector, xi, ::AbstractExtrap)
     x_min, x_max = first(x), last(x)
     (xi < x_min || xi > x_max) && throw(
         ArgumentError(
@@ -76,7 +76,7 @@ end
 
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
-        grids, extraps, lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}},
+        grids, extraps, lo::Tuple{Vararg{Number, N}}, hi::Tuple{Vararg{Number, N}},
         search, hint
     ) where {N}
     sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)

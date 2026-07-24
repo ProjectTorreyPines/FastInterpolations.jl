@@ -63,7 +63,8 @@ end
 @inline _query_extract(q, k) = @inbounds q[k]
 
 # ── Internal: NTuple-guaranteed extraction for kernel consumption ──
-# Wraps _query_extract with _as_ntuple — ensures NTuple{N, <:Real} for @generated kernels.
+# Wraps _query_extract with _as_ntuple — normalizes to an NTuple{N} for @generated
+# kernels (a Real tuple short-circuits; duck/unit queries take the generic arm).
 # NOT part of the user protocol — users never override this.
 
 @inline _extract_query_point(q, k, ::Val{N}) where {N} =
@@ -194,7 +195,7 @@ end
 # Scalar point (oneshot single-point paths). `map` dispatches per-axis on concrete types.
 @inline function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     # thread the axis index so a NoExtrap OOB names the offending axis (`_check_domain_axis`

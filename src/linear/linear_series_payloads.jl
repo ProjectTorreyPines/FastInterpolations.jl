@@ -35,7 +35,10 @@
     # series stores `inv_h::Tg` and does the slope in grid precision, then widens
     # via `one(Tα)`). Only Tα (the carrier) takes the query type.
     Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tg))
-    Tα = promote_type(Tg, Tq, Tinv)
+    # α = `(q - L)·inv_h` is dimensionless on unit grids; a raw `promote_type`
+    # collapses to abstract `Quantity{Float64}`. Mirror gridded `_axis_anchor_type`:
+    # the op-witness keeps α the concrete dimensionless carrier.
+    Tα = _promote_eltype(_alpha_of, Tq, Tg, Tinv)
     P = _linear_payload_type(op, Tα, Tinv)
     return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P)}
 end

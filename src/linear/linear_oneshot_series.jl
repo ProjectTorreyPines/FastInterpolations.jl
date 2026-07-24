@@ -99,7 +99,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     x = _to_float(x, Tg_p)
@@ -141,7 +141,7 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
@@ -224,7 +224,7 @@ end
         op::AbstractEvalOp,
         extrap::AbstractExtrap,
         search::AbstractSearchPolicy
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = length(vecs)
     NQ = length(xqs)
 
@@ -271,7 +271,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     x = _to_float(x, Tg_p)
@@ -307,7 +307,7 @@ function linear_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = n_series(s)
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     Tv_out = _promote_eltype(_interp_op, Tg_p, _series_eltype(s), Tq)

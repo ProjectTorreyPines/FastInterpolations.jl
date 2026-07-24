@@ -52,7 +52,12 @@ struct _LinearZeroPayload{Talpha} <: _AbstractAnchorPayload end
     _linear_value_blend(a.alpha, yL, yR)
 
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, _LinearDeriv1Payload{Tα, Tinv}}) where {Tv, Tα, Tinv}
-    Tc = _promote_eltype(_coeff_op, Tinv, Tv)
+    # `_fielddiff` types the VALUE difference `yR - yL` (dimension Y, e.g. m), NOT
+    # the slope output (Y/X) — the `* inv_h` supplies the 1/X. Feeding `Tinv` to
+    # `_coeff_op` mistook the reciprocal spacing for the spacing (→ Y·X = m·s) and
+    # threw on unit grids; recover the value-diff witness so Real stays Float-widened.
+    Tg = _promote_eltype(_inv_op, Tinv)
+    Tc = _promote_eltype(_interp_op, Tg, Tv, Tg)
     return _fielddiff(Tc, yR, yL) * a.inv_h * one(Tα)
 end
 
@@ -71,7 +76,11 @@ end
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
     Tinv = _promote_eltype(_inv_op, Tw)
-    Tα = promote_type(eltype(grid), eltype(targets), Tinv)
+    # α is the in-cell fraction `(q - L)·inv_h` — dimensionless for unit grids
+    # (s·s⁻¹). A raw `promote_type` of the coordinate/inverse types collapses to
+    # an abstract `Quantity{Float64}` (Real: still Float64); the op-witness keeps
+    # it the concrete dimensionless carrier the payload converts α into.
+    Tα = _promote_eltype(_alpha_of, eltype(targets), eltype(grid), Tinv)
     return _AxisAnchor{_interval_type(grid), _linear_payload_type(op, Tα, Tinv)}
 end
 
@@ -443,8 +452,11 @@ end
 # Output eltype: matches point-wise scalar eval's promotion (pinned by test).
 # `Tg`/`Tv` are the value-matched grid float and value type; both the persistent
 # functor and the one-shot front resolve them the same way before this call.
-@inline _gridded_out_eltype(::Type{Tg}, ::Type{Tv}, targets::Tuple) where {Tg, Tv} =
-    _promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, targets)...))
+# Value eltype, then folded per-axis into derivative space (Y/Xᴺ) so a unit-grid
+# gridded derivative sizes in ∂-units (e.g. W/s), not value units. Value ops
+# (DerivOp{0}) leave it unchanged → the value fast path stays bit-identical.
+@inline _gridded_out_eltype(::Type{Tg}, ::Type{Tv}, targets::Tuple, grids::Tuple, ops::Tuple) where {Tg, Tv} =
+    _deriv_eltype_nd(_promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, targets)...)), grids, ops)
 
 # `grids` here are already resolved to the value-matched `Tg` (persistent: the
 # interpolant's cached axes; one-shot: `_cache_axis_pooled`) — the eval reads
@@ -499,7 +511,7 @@ end
         extraps
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
-    _gridded_eval!(out, grids, data, targets, ops, extraps, _gridded_out_eltype(Tg, Tv, targets))
+    _gridded_eval!(out, grids, data, targets, ops, extraps, _gridded_out_eltype(Tg, Tv, targets, grids, ops))
     return true
 end
 
@@ -514,7 +526,7 @@ end
         _search,
         _hint
     ) where {Tg, Tv, N}
-    return _gridded_eval(itp.grids, itp.data, gq.axes, ops, extraps, _gridded_out_eltype(Tg, Tv, gq.axes))
+    return _gridded_eval(itp.grids, itp.data, gq.axes, ops, extraps, _gridded_out_eltype(Tg, Tv, gq.axes, itp.grids, ops))
 end
 
 # ---- one-shot API ------------------------------------------------------------
@@ -633,7 +645,7 @@ end
     bcs = map(m -> m.bc, methods)
     extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    Tout = _gridded_out_eltype(Tg, Tv, targets)
+    Tout = _gridded_out_eltype(Tg, Tv, targets, grids, ops)
     _linear_gridded_oneshot!(out_nd, grids, data, targets, bcs, ops, extraps, Tg, Tout)
     return true
 end

@@ -70,7 +70,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     K = n_series(s)
@@ -107,7 +107,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, Tg)
@@ -187,7 +187,7 @@ end
         side::AbstractSide,
         extrap::AbstractExtrap,
         search::AbstractSearchPolicy
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = length(vecs)
     NQ = length(xqs)
 
@@ -240,7 +240,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     K = n_series(s)
@@ -268,7 +268,7 @@ function constant_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = n_series(s)
     Tv = _series_eltype(s)
     Tv_out = _promote_eltype(_select_op, Tg, Tv, Tq)

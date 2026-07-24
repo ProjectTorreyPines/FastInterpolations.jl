@@ -235,7 +235,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_coord(xq, Tg)
     T_out = _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted))
@@ -268,7 +268,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
@@ -300,7 +300,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     n_query = length(xq)
     n_ser = n_series(sitp)
     T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
@@ -331,7 +331,7 @@ Pool handles both same-type and mixed-type cases efficiently.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     n_query = length(xq)
     _validate_series_outputs(outputs, n_series(sitp), n_query)
 

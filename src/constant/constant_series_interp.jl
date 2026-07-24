@@ -234,7 +234,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     T_out = _promote_eltype(_select_op, Tg, Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
@@ -251,7 +251,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     _validate_scalar_output(output, n_series(sitp))
 
     # One lean op/side/extrap-aware gather anchor (shared build; NoExtrap throws
@@ -283,7 +283,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
     xq_typed = _promote_query_typed(xq, Tg)
     n_query = length(xq_typed)

@@ -62,7 +62,7 @@ end
         m::M,
         ::Type{A},
         x::AbstractVector{Tg},
-        xq::Real,
+        xq::Number,
         extrap::AbstractExtrap,
         wrap::Bool,
         searcher::SR
@@ -85,7 +85,7 @@ end
         extrap::AbstractExtrap,
         wrap::Bool,
         searcher::SR
-    ) where {M <: AbstractInterpMethod, A <: _AxisAnchor, S <: Real, SR <: Searcher}
+    ) where {M <: AbstractInterpMethod, A <: _AxisAnchor, S <: Number, SR <: Searcher}
     @inbounds for j in eachindex(xqs)
         buffer[j] = _build_series_anchor(m, A, x, xqs[j], extrap, wrap, searcher)
     end

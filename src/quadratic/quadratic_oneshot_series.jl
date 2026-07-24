@@ -21,7 +21,7 @@
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     # Pool-backed cache: K-series loop reuses h/inv_h across all K calls.
     x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, _series_eltype(s)))
@@ -60,7 +60,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     # Pool-backed cache: K-series loop reuses h/inv_h.
@@ -101,7 +101,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     # Pool-backed cache: K-series × Q-query loop reuses h/inv_h.
     x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, _series_eltype(s)))
@@ -142,7 +142,7 @@ function quadratic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     Tv_out = _promote_eltype(_interp_op, Tg_float, _series_eltype(s), Tq)

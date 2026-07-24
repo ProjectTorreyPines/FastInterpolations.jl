@@ -33,15 +33,15 @@
         occursin("adjoint", rel) ||
             # 2. Index-space demotion-gate arms: reachable only for T<:Real grids
             #    by construction (`_to_float` gates); value≡index space holds there.
-            (rel == joinpath("core", "search.jl") && occursin("xq::Real", line)) ||
+            (rel == "core/search.jl" && occursin("xq::Real", line)) ||
             # 2b. `_CachedRange` axis-search fast arms: generic siblings serve
             #     duck queries (ND unit-range eval/integrate verified GREEN);
             #     relaxing would reroute units onto index-leaning fast paths.
-            (rel == joinpath("core", "nd_utils.jl") && occursin("q::Real", line)) ||
+            (rel == "core/nd_utils.jl" && occursin("q::Real", line)) ||
             # 2c. Extrap carrier Real arms: deliberate split — historic
             #     `zero(xq)*zero(val)` carrier keeps Int results Int; the duck
             #     arms add the dimensionless `inv(oneunit(xq))` factor.
-            (rel == joinpath("core", "utils.jl") && occursin("_promote_extrap", line)) ||
+            (rel == "core/utils.jl" && occursin("_promote_extrap", line)) ||
             # 3. `_inv_const` Real arm — dispatch pair with the dimensionless arm.
             occursin("_inv_const", line) ||
             # 3b. Type-level units-branch idiom (`Tg <: Real || return _*_units(...)`).
@@ -57,7 +57,10 @@
     allowed_hits = Dict{String, Int}()
     for (root, _, files) in walkdir(src_dir), f in files
         endswith(f, ".jl") || continue
-        rel = relpath(joinpath(root, f), src_dir)
+        # Normalize to forward slashes: `relpath` yields `\` on Windows, but the
+        # `allowed` predicate and `expected_hits` ratchet key on `/` (Unix-native),
+        # so without this the Dict keys never match on Windows and the test fails.
+        rel = replace(relpath(joinpath(root, f), src_dir), '\\' => '/')
         in_doc = false
         for (i, line) in enumerate(eachline(joinpath(root, f)))
             # A one-line docstring (`"""…"""`) has an EVEN delimiter count → no net toggle;

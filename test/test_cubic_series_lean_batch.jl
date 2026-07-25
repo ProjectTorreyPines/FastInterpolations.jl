@@ -34,7 +34,7 @@
         extrap isa FI._ClampOrFill &&
             return FI._constant_extrap_boundary_value(
             y, aq.state, n_pts, k, op, extrap, typeof(aq.xq),
-            FI._constant_axis_deriv_scale(oneunit(x_min), op)
+            FI._deriv_unit_scale(oneunit(x_min), op)
         )
         return FI._throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

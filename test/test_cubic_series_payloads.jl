@@ -8,7 +8,7 @@
     using FastInterpolations: _cubic_series_anchor_type, _AxisAnchor, _StatefulPayload,
         _ContiguousIndices, _CubicValuePayload1D, _CubicDeriv1Payload1D,
         _CubicDeriv2Payload1D, _CubicDeriv3Payload1D, _CubicZeroPayload1D,
-        _payload_op, _constant_axis_deriv_scale,
+        _payload_op, _deriv_unit_scale,
         EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3, InBounds
 
     x = collect(range(0.0, 1.0, 11))
@@ -27,7 +27,7 @@
     for (op, P) in op_payload_pairs
         # Stateful anchors carry the deriv-unit scale type S (Bool for value, the
         # grid's reciprocal-spacing type for derivatives) — mirror the src formula.
-        S = typeof(_constant_axis_deriv_scale(oneunit(eltype(x)), op))
+        S = typeof(_deriv_unit_scale(oneunit(eltype(x)), op))
         for e in bare_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
             @test A === _AxisAnchor{_ContiguousIndices{2}, P}

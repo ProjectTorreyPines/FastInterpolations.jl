@@ -40,7 +40,7 @@
     # the op-witness keeps α the concrete dimensionless carrier.
     Tα = _promote_eltype(_alpha_of, Tq, Tg, Tinv)
     P = _linear_payload_type(op, Tα, Tinv)
-    S = typeof(_constant_axis_deriv_scale(oneunit(Tg), op))
+    S = typeof(_deriv_unit_scale(oneunit(Tg), op))
     return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, S)}
 end
 
@@ -80,9 +80,9 @@ end
 # delegates to the bare kernel. Every other extrap uses the bare kernel directly.
 @inline function _linear_series_eval!(
         out::AbstractVector, y_point::Matrix,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(a.payload))
         return _fill_constant_extrap_simd!(
@@ -116,9 +116,9 @@ end
 
 @inline function _linear_series_eval(
         y::Matrix, k::Int,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(a.payload))
         return _constant_extrap_boundary_value(
@@ -150,9 +150,9 @@ end
 
 @inline function _linear_series_eval(
         y::AbstractVector,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
         scale = _stateful_deriv_scale(typeof(a.payload))

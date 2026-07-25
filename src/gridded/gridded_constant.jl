@@ -76,7 +76,7 @@ end
     if !(ops <: NTuple{N, EvalValue})
         scale = Expr(
             :call, :*,
-            [:(_constant_axis_deriv_scale(oneunit(eltype(grids[$d])), ops[$d])) for d in 1:N]...
+            [:(_deriv_unit_scale(oneunit(eltype(grids[$d])), ops[$d])) for d in 1:N]...
         )
         value = :($value * 0 * $scale)
     end

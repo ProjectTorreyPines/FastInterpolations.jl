@@ -36,7 +36,7 @@
         # inference becomes `Union{Tv, Dual}` when grid is Dual and query is Float.
         return op isa EvalValue ?
             last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
+            0 * last(y) * _deriv_unit_scale(oneunit(Tg), op) * one(Tq)
     end
     # Reached only in-domain (genuine InBounds; NoExtrap post-throw; Clamp/Fill/Extend after
     # their IN_DOMAIN check — ExtendExtrap is routed to Clamp above), so the lean InBounds
@@ -63,7 +63,7 @@ end
     if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ?
             last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
+            0 * last(y) * _deriv_unit_scale(oneunit(Tg), op) * one(Tq)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi, extrap_eff)
     dL = xi - xL
@@ -100,7 +100,7 @@ end
     xi = _promote_coord(xi, eltype(x))
     xi_primal = _extract_primal(xi)
     st = _oob_state(x, xi_primal)
-    scale = _constant_axis_deriv_scale(oneunit(eltype(x)), op)
+    scale = _deriv_unit_scale(oneunit(eltype(x)), op)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xi, scale)
     st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xi, scale)
     return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
@@ -129,7 +129,7 @@ end
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
         return op isa EvalValue ?
         last(y) * one(Tq) * one(Tg) :
-        0 * last(y) * _constant_axis_deriv_scale(oneunit(Tg), op) * one(Tq)
+        0 * last(y) * _deriv_unit_scale(oneunit(Tg), op) * one(Tq)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1

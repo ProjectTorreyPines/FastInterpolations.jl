@@ -39,7 +39,7 @@ end
 # strictly more specific than the `DerivOp` deriv fallback.
 @inline _constant_series_payload_type(::EvalValue, ::Type{Tq}, ::Type) where {Tq} = _ConstantValuePayload{Tq}
 @inline function _constant_series_payload_type(op::DerivOp, ::Type{Tq}, ::Type{Tg}) where {Tq, Tg}
-    S = typeof(_constant_axis_deriv_scale(oneunit(Tg), op))
+    S = typeof(_deriv_unit_scale(oneunit(Tg), op))
     return _ConstantZeroPayload{Tq, S}
 end
 
@@ -65,7 +65,7 @@ end
     ) where {Tq}
     Tone = _coord_eltype(Tq, eltype(x))
     P = _constant_series_payload_type(op, Tone, eltype(x))
-    S = typeof(_constant_axis_deriv_scale(oneunit(eltype(x)), op))
+    S = typeof(_deriv_unit_scale(oneunit(eltype(x)), op))
     return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(_norm_constant_extrap(extrap), P, S)}
 end
 
@@ -155,9 +155,9 @@ end
 # other extrap uses the bare gather directly.
 @inline function _constant_series_eval!(
         out::AbstractVector, y_point::Matrix,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(a.payload))
         return _fill_constant_extrap_simd!(
@@ -188,9 +188,9 @@ end
 
 @inline function _constant_series_eval(
         y::Matrix, k::Int,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(a.payload))
         return _constant_extrap_boundary_value(
@@ -223,9 +223,9 @@ end
 
 @inline function _constant_series_eval(
         y::AbstractVector,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
         scale = _stateful_deriv_scale(typeof(a.payload))

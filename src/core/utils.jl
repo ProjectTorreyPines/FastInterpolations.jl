@@ -897,6 +897,17 @@ end
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
+# Derivative UNIT scale for one axis: an order-N derivative carries `value/coordᴺ`,
+# so a zero (or any value built in value units) must be multiplied by `grid⁻ᴺ`.
+# `h` supplies the axis's coordinate unit — the GRID's, never the query's: with a
+# `u"hr"` grid and a `u"s"` query the two disagree. `true` is the dimensionless
+# identity, so order-0 and Real grids fold away at compile time (verified: the
+# factor leaves no instruction in the emitted IR). Not constant-specific — every
+# family's OOB/zero path uses it; `Real` grids kept it invisible until the grid
+# axis was relaxed to `<:Number`.
+@inline _deriv_unit_scale(h, ::DerivOp{0}) = true
+@inline _deriv_unit_scale(h, ::DerivOp{N}) where {N} = Base.literal_pow(^, inv(oneunit(h)), Val(N))
+
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".
 #   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
 #   FillExtrap  → `e.fill_value`  (fill_value is the OOB cell's data).

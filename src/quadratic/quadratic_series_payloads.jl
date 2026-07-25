@@ -34,7 +34,7 @@ end
         op::DerivOp, extrap::AbstractExtrap, x::AbstractVector, ::Type{Tq}
     ) where {Tq}
     Tdl = _coord_eltype(Tq, eltype(x))
-    Ts = typeof(_constant_axis_deriv_scale(oneunit(eltype(x)), op))
+    Ts = typeof(_deriv_unit_scale(oneunit(eltype(x)), op))
     return _AxisAnchor{
         _interval_type(x), _maybe_stateful_payload(extrap, _QuadraticPayload{Tdl}, Ts),
     }
@@ -80,8 +80,8 @@ end
 # kernel. NoExtrap already threw at build.
 @inline function _quadratic_series_eval!(
         out::AbstractVector, y_point::Matrix, a_point::Matrix, d_point::Matrix,
-        anchor::_AxisAnchor{I, _StatefulPayload{P, S}}, op::AbstractEvalOp, extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+        anchor::_AxisAnchor{I, <:_StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
     if anchor.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(anchor.payload))
         return _fill_constant_extrap_simd!(
@@ -107,8 +107,8 @@ end
 
 @inline function _quadratic_series_eval(
         y::AbstractMatrix, a::AbstractMatrix, d::AbstractMatrix, k::Int,
-        anchor::_AxisAnchor{I, _StatefulPayload{P, S}}, op::AbstractEvalOp, extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+        anchor::_AxisAnchor{I, <:_StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
     if anchor.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(anchor.payload))
         return _constant_extrap_boundary_value(
@@ -135,8 +135,8 @@ end
 
 @inline function _quadratic_series_eval(
         y::AbstractVector, a::AbstractVector, d::AbstractVector,
-        anchor::_AxisAnchor{I, _StatefulPayload{P, S}}, op::AbstractEvalOp, extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+        anchor::_AxisAnchor{I, <:_StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
     if anchor.state != IN_DOMAIN
         y_bnd = anchor.state == OOB_LEFT ? first(y) : last(y)
         scale = _stateful_deriv_scale(typeof(anchor.payload))

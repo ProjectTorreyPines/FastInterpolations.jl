@@ -319,7 +319,7 @@ end
     itp::QuadraticInterpolant, aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ext::_ClampOrFill
 ) = _quadratic_eval_at_anchor(
     itp.y, itp.a, itp.d, aq, op, ext,
-    _constant_axis_deriv_scale(oneunit(eltype(itp.x)), op)
+    _deriv_unit_scale(oneunit(eltype(itp.x)), op)
 )
 
 # ========================================

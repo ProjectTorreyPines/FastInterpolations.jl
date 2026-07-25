@@ -80,7 +80,7 @@ end
     # …plus the grid-unit deriv scale (`inv(oneunit(h))^N`), which the callers in
     # src compute from their grid. These kernels are unit-tested on a Float64 grid,
     # where the scale is the identity — wrap it so each call below stays readable.
-    _sc(op) = FI._constant_axis_deriv_scale(1.0, op)
+    _sc(op) = FI._deriv_unit_scale(1.0, op)
     boundary_value(y, side, n, k, op, ext, T) =
         FI._constant_extrap_boundary_value(y, side, n, k, op, ext, T, _sc(op))
     fill_simd!(out, y_point, side, n, op, ext, T) =

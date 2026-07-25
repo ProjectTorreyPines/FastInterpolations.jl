@@ -81,7 +81,7 @@ const _CubicWeightedPayload1D = Union{
     # they must stay independent types (mirrors `_linear_series_anchor_type`).
     Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tg))
     P = _cubic_series_payload_type(op, Tq, Tg, Tinv)
-    S = typeof(_constant_axis_deriv_scale(oneunit(Tg), op))
+    S = typeof(_deriv_unit_scale(oneunit(Tg), op))
     return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, S)}
 end
 
@@ -235,9 +235,9 @@ end
 
 @inline function _cubic_series_eval(
         y::Matrix, z::Matrix, k::Int,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(a.payload))
         return _constant_extrap_boundary_value(
@@ -252,9 +252,9 @@ end
 
 @inline function _cubic_series_eval(
         y::AbstractVector, z::AbstractVector,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
         scale = _stateful_deriv_scale(typeof(a.payload))
@@ -318,9 +318,9 @@ end
 
 @inline function _cubic_series_eval!(
         out::AbstractVector, y_point::Matrix, z_point::Matrix,
-        a::_AxisAnchor{I, _StatefulPayload{P, S}},
+        a::_AxisAnchor{I, <:_StatefulPayload{P}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, S}
+    ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         scale = _stateful_deriv_scale(typeof(a.payload))
         return _fill_constant_extrap_simd!(

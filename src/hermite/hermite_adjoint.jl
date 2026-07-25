@@ -449,7 +449,7 @@ end
 # Scalar query convenience
 function hermite_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         extrap::AbstractExtrap = NoExtrap(),
     )
     return hermite_adjoint(x, [x_query]; extrap = extrap)

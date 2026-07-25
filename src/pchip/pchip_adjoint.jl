@@ -452,7 +452,7 @@ end
 function pchip_adjoint(
         x::AbstractVector,
         y::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
     )

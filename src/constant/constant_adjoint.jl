@@ -238,7 +238,9 @@ function constant_adjoint(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
     ) where {Tg}
-    # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening).
+    # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening), so the
+    # shared grid check has to be called explicitly here.
+    _check_adjoint_grid_real(Tg, eltype(x_query))
     # Adjoint buffer eltype comes from the protocol's `_promote_eltype`.
     x_p = x
     xq_p = _promote_query_typed(x_query, Tg)
@@ -282,7 +284,7 @@ end
 # Scalar query convenience
 function constant_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),

@@ -485,7 +485,7 @@ end
 # Scalar query convenience: cubic_adjoint(x, 0.5; ...) → wraps to vector
 function cubic_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,

@@ -538,10 +538,33 @@ constant, pchip, cardinal, akima.
         x::AbstractVector,
         xq::AbstractVector
     )
+    _check_adjoint_grid_real(eltype(x), eltype(xq))
     Tg = _promote_grid_float(eltype(x), eltype(xq))
     x_p = _to_float(x, Tg)
     xq_p = _promote_query_typed(xq, Tg)
     return x_p, xq_p, Tg
+end
+
+# Adjoint builders bake grid geometry into anchor structs whose weight kernels
+# are homogeneous in `Tg`, so a unit-carrying grid breaks them from the inside
+# (a private `MethodError`, or a `DimensionError` once `h` and `inv(h)` meet).
+# Refuse at the public boundary instead. `<: Real` is the right test, not "is it
+# a plain float": `ForwardDiff.Dual <: Real` and Dual grids do work.
+# `constant_adjoint` keeps its grid raw and calls this directly.
+@noinline function _throw_adjoint_grid_not_real(::Type{Tg}) where {Tg}
+    throw(
+        ArgumentError(
+            "adjoint operators on a unit-carrying grid are not supported (grid eltype " *
+                "`$Tg`): the anchor weights are built homogeneously in the grid type. " *
+                "Strip units first (`ustrip`) and reattach them to the result, or " *
+                "differentiate the forward evaluation, which does preserve units."
+        )
+    )
+end
+
+@inline function _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
+    (Tg <: Real && Tq <: Real) || _throw_adjoint_grid_not_real(Tg <: Real ? Tq : Tg)
+    return nothing
 end
 
 

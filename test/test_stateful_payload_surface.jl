@@ -2,24 +2,24 @@
 # `_StatefulPayload` surface contract: source lint
 # ========================================
 # The stateful wrapper exists to keep the OOB state branch at eval time. Its
-# `Toneunit` type param (the derivative space's `oneunit` — see `_deriv_oneunit`)
+# `TinvN` type param (the derivative space's `oneunit` — see `_deriv_oneunit`)
 # is an implementation detail of the anchor BUILD: eval arms recover the value
-# from `typeof(a.payload)`, so they must not name `Toneunit` in their signatures.
-# Spelling `_StatefulPayload{P, Toneunit}` in a dispatch-only arm leaks a
+# from `typeof(a.payload)`, so they must not name `TinvN` in their signatures.
+# Spelling `_StatefulPayload{P, TinvN}` in a dispatch-only arm leaks a
 # shared-wrapper param into every family's eval code — that is exactly what made
-# a `{P}` → `{P, Toneunit}` change churn four families plus their test replicas.
-# Dispatch arms use `<:_StatefulPayload{P}`, which matches any `Toneunit`; only
+# a `{P}` → `{P, TinvN}` change churn four families plus their test replicas.
+# Dispatch arms use `<:_StatefulPayload{P}`, which matches any `TinvN`; only
 # the arms that CONSTRUCT the wrapper may name it.
 
 @testitem "Stateful payload: only construction sites may name the oneunit param" begin
     src_dir = dirname(pathof(FastInterpolations))
 
-    naming_U = Regex("_StatefulPayload\\{\\s*P\\s*,\\s*Toneunit\\s*\\}")
-    calls_wrapper = Regex("_StatefulPayload\\{\\s*P\\s*,\\s*Toneunit\\s*\\}\\(")
-    # A construction site either CALLS the wrapper (`…{P, Toneunit}(inner, state)`)
+    naming_U = Regex("_StatefulPayload\\{\\s*P\\s*,\\s*TinvN\\s*\\}")
+    calls_wrapper = Regex("_StatefulPayload\\{\\s*P\\s*,\\s*TinvN\\s*\\}\\(")
+    # A construction site either CALLS the wrapper (`…{P, TinvN}(inner, state)`)
     # or RETURNS the wrapper type itself (the `_maybe_stateful_payload` type
     # factory, whose whole body is the bare type).
-    returns_type(line) = strip(line) == "_StatefulPayload{P, Toneunit}"
+    returns_type(line) = strip(line) == "_StatefulPayload{P, TinvN}"
 
     offenders = String[]
     construct_sites = String[]
@@ -46,15 +46,15 @@
     end
     @test isempty(offenders)
 
-    # The construction sites are enumerated: `Toneunit` genuinely belongs there
+    # The construction sites are enumerated: `TinvN` genuinely belongs there
     # (the anchor type is being built), and a change to this set must be conscious.
     @test sort(construct_sites) == [
         "constant/constant_series_payloads.jl:116",   # ConstantInterp stateful resolve
         "constant/constant_series_payloads.jl:122",
         "constant/constant_series_payloads.jl:123",
         "core/series_lean_anchors.jl:21",             # `_maybe_stateful_payload` type factory
-        "core/series_lean_anchors.jl:37",             # generic stateful resolve
-        "core/series_lean_anchors.jl:43",
-        "core/series_lean_anchors.jl:44",
+        "core/series_lean_anchors.jl:40",             # generic stateful resolve
+        "core/series_lean_anchors.jl:46",
+        "core/series_lean_anchors.jl:47",
     ]
 end

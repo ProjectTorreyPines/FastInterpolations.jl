@@ -109,7 +109,12 @@
         "core/search.jl" => 4,
         # series_lean_anchors.jl (`_build_series_anchor`): relaxed to Number for
         # unit-grid Series eval — was 1, now 0 → key dropped.
-        "core/series_utils.jl" => 6,
+        # series_utils.jl (the 6 `_constant_extrap_boundary_value` /
+        # `_fill_constant_extrap_simd!` OOB arms): the `Tq <: Real` bound was a
+        # `<:Real`-era leftover that made EVERY Series batch OOB query throw a
+        # MethodError on a unit grid (constant/quadratic/cubic — linear escaped
+        # only because its carrier is the dimensionless α). Bodies already went
+        # through `one(Tq)`, so relaxing needed no other change — was 6, now 0.
         "core/utils.jl" => 6,
         "cubic/cubic_adjoint.jl" => 1,
         "cubic/cubic_anchor.jl" => 4,

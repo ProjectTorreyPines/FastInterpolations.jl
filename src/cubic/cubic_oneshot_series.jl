@@ -77,9 +77,10 @@ end
     # Seam-aware LEAN anchor (bare payload — periodic eval always wraps in-domain).
     Tg_c = eltype(cache.x)
     Tinv_c = _promote_eltype(_inv_op, _promote_grid_float(Tg_c, Tg_c))
+    TinvN_c = typeof(_deriv_oneunit(oneunit(Tg_c), op))
     A = _AxisAnchor{
         _interval_type(cache.x),
-        _cubic_series_payload_type(op, _coord_eltype(typeof(xq), Tg_c), Tg_c, Tinv_c),
+        _cubic_series_payload_type(op, _coord_eltype(typeof(xq), Tg_c), Tg_c, Tinv_c, TinvN_c),
     }
     a = _build_periodic_series_anchor(A, cache, xq, searcher)
 
@@ -127,8 +128,9 @@ end
     Tg_c = eltype(cache.x)
     Tq_w = _coord_eltype(Tq, Tg_c)
     Tinv_c = _promote_eltype(_inv_op, _promote_grid_float(Tg_c, Tg_c))
+    TinvN_c = typeof(_deriv_oneunit(oneunit(Tg_c), op))
     A = _AxisAnchor{
-        _interval_type(cache.x), _cubic_series_payload_type(op, Tq_w, Tg_c, Tinv_c),
+        _interval_type(cache.x), _cubic_series_payload_type(op, Tq_w, Tg_c, Tinv_c, TinvN_c),
     }
     anchors = acquire!(pool, A, length(xqs))
     # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for

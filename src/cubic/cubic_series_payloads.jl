@@ -29,7 +29,11 @@ end
 struct _CubicDeriv3Payload1D{Tq, W <: Tuple} <: _AbstractAnchorPayload
     w::W
 end
-struct _CubicZeroPayload1D{Tq} <: _AbstractAnchorPayload end   # DerivOp{N≥4}: result is a carrier zero, no weights
+# DerivOp{N≥4}: the result is a fabricated carrier zero — no weights, and so no
+# arithmetic to produce the `coordᴺ` units. `TinvN` carries them (the grid is
+# not in scope at Series eval time); it also keeps N=4,5,… distinct types, which
+# `_payload_op`'s collapse to `DerivOp(4)` alone would lose on a unit grid.
+struct _CubicZeroPayload1D{Tq, TinvN} <: _AbstractAnchorPayload end
 
 # Weighted payloads share one resolve arm; the zero payload has its own.
 const _CubicWeightedPayload1D = Union{
@@ -56,15 +60,19 @@ const _CubicWeightedPayload1D = Union{
 @inline _cubic_weight_type(op, ::Type{Th}, ::Type{Ti}, ::Type{Tq}) where {Th, Ti, Tq} =
     Base.promote_op(_compute_anchor_weights, typeof(op), Th, Ti, Tq, Tq)
 
-@inline _cubic_series_payload_type(op::EvalValue, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+# The weighted arms get their units from the stored weights; only the zero arm,
+# which stores nothing, needs `TinvN`. All arms take it so the caller stays
+# op-agnostic.
+@inline _cubic_series_payload_type(op::EvalValue, ::Type{Tq}, ::Type{Th}, ::Type{Ti}, ::Type) where {Tq, Th, Ti} =
     _CubicValuePayload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
-@inline _cubic_series_payload_type(op::EvalDeriv1, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+@inline _cubic_series_payload_type(op::EvalDeriv1, ::Type{Tq}, ::Type{Th}, ::Type{Ti}, ::Type) where {Tq, Th, Ti} =
     _CubicDeriv1Payload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
-@inline _cubic_series_payload_type(op::EvalDeriv2, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+@inline _cubic_series_payload_type(op::EvalDeriv2, ::Type{Tq}, ::Type{Th}, ::Type{Ti}, ::Type) where {Tq, Th, Ti} =
     _CubicDeriv2Payload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
-@inline _cubic_series_payload_type(op::EvalDeriv3, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+@inline _cubic_series_payload_type(op::EvalDeriv3, ::Type{Tq}, ::Type{Th}, ::Type{Ti}, ::Type) where {Tq, Th, Ti} =
     _CubicDeriv3Payload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
-@inline _cubic_series_payload_type(::DerivOp, ::Type{Tq}, ::Type, ::Type) where {Tq} = _CubicZeroPayload1D{Tq}
+@inline _cubic_series_payload_type(::DerivOp, ::Type{Tq}, ::Type, ::Type, ::Type{TinvN}) where {Tq, TinvN} =
+    _CubicZeroPayload1D{Tq, TinvN}
 
 # `_maybe_stateful_payload` + the `_resolve_series_anchor`/`_build_series_anchor`/
 # `_fill_series_anchors!` build loop are family-agnostic — they live in
@@ -80,9 +88,9 @@ const _CubicWeightedPayload1D = Union{
     # `h`/`inv_h` are grid-only geometry with RECIPROCAL units on a unit axis —
     # they must stay independent types (mirrors `_linear_series_anchor_type`).
     Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tg))
-    P = _cubic_series_payload_type(op, Tq, Tg, Tinv)
-    Toneunit = typeof(_deriv_oneunit(oneunit(Tg), op))
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, Toneunit)}
+    TinvN = typeof(_deriv_oneunit(oneunit(Tg), op))
+    P = _cubic_series_payload_type(op, Tq, Tg, Tinv, TinvN)
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, TinvN)}
 end
 
 # ─── Resolution ──────────────────────────────────────────────────────────────
@@ -110,7 +118,7 @@ end
 
 @inline function _resolve_anchor(
         ::CubicInterp,
-        ::Type{_AxisAnchor{I, _CubicZeroPayload1D{Tq}}},
+        ::Type{_AxisAnchor{I, _CubicZeroPayload1D{Tq, TinvN}}},
         grid::AbstractVector,
         idxL::Int,
         idxR::Int,
@@ -118,9 +126,9 @@ end
         xL,
         xR,
         ::AbstractExtrap
-    ) where {I, Tq}
-    return _AxisAnchor{I, _CubicZeroPayload1D{Tq}}(
-        _interval_indices(grid, idxL, idxR), _CubicZeroPayload1D{Tq}()
+    ) where {I, Tq, TinvN}
+    return _AxisAnchor{I, _CubicZeroPayload1D{Tq, TinvN}}(
+        _interval_indices(grid, idxL, idxR), _CubicZeroPayload1D{Tq, TinvN}()
     )
 end
 
@@ -147,8 +155,8 @@ end
 
 @inline _make_series_payload(::Type{P}, h, inv_h, dL, dR) where {P <: _CubicWeightedPayload1D} =
     P(_compute_anchor_weights(_payload_op(P), h, inv_h, dL, dR))
-@inline _make_series_payload(::Type{_CubicZeroPayload1D{Tq}}, h, inv_h, dL, dR) where {Tq} =
-    _CubicZeroPayload1D{Tq}()
+@inline _make_series_payload(::Type{_CubicZeroPayload1D{Tq, TinvN}}, h, inv_h, dL, dR) where {Tq, TinvN} =
+    _CubicZeroPayload1D{Tq, TinvN}()
 
 # ─── Bare payload kernels ────────────────────────────────────────────────────
 # Bodies are the cubic Hermite dot product (`muladd(wyR, yR, muladd(wyL, yL, …))`)
@@ -183,9 +191,9 @@ end
 
 @inline function _cubic_payload_kernel(
         y::Matrix, ::Matrix, k::Int,
-        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D}
-    )
-    @inbounds return 0 * y[a.idxL, k]
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D{Tq, TinvN}}
+    ) where {Tq, TinvN}
+    @inbounds return 0 * y[a.idxL, k] * oneunit(TinvN)
 end
 
 # raw-vector layout (one-shot Series)
@@ -214,9 +222,9 @@ end
 
 @inline function _cubic_payload_kernel(
         y::AbstractVector, ::AbstractVector,
-        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D}
-    )
-    return 0 * (@inbounds y[a.idxL])
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D{Tq, TinvN}}
+    ) where {Tq, TinvN}
+    return 0 * (@inbounds y[a.idxL]) * oneunit(TinvN)
 end
 
 # ─── Surface extrap adapters ─────────────────────────────────────────────────
@@ -231,7 +239,7 @@ end
 @inline _payload_eltype(::Type{<:_CubicDeriv1Payload1D{Tq}}) where {Tq} = Tq
 @inline _payload_eltype(::Type{<:_CubicDeriv2Payload1D{Tq}}) where {Tq} = Tq
 @inline _payload_eltype(::Type{<:_CubicDeriv3Payload1D{Tq}}) where {Tq} = Tq
-@inline _payload_eltype(::Type{_CubicZeroPayload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{<:_CubicZeroPayload1D{Tq}}) where {Tq} = Tq
 
 @inline function _cubic_series_eval(
         y::Matrix, z::Matrix, k::Int,
@@ -307,11 +315,12 @@ end
 
 @inline function _cubic_payload_kernel!(
         out::AbstractVector, y_point::Matrix, ::Matrix,
-        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D}
-    )
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D{Tq, TinvN}}
+    ) where {Tq, TinvN}
     idxL = a.idxL
+    invN = oneunit(TinvN)   # loop-invariant → hoisted; `true` on Real grids
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * y_point[k, idxL]
+        out[k] = 0 * y_point[k, idxL] * invN
     end
     return out
 end

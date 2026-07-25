@@ -21,13 +21,15 @@
         (EvalDeriv1(), _CubicDeriv1Payload1D{Float64, NTuple{4, Float64}}),
         (EvalDeriv2(), _CubicDeriv2Payload1D{Float64, NTuple{2, Float64}}),
         (EvalDeriv3(), _CubicDeriv3Payload1D{Float64, NTuple{2, Float64}}),
-        (DerivOp(5), _CubicZeroPayload1D{Float64}),
+        # The zero payload stores nothing, so it carries `TinvN` (`Float64` on
+        # a Real grid — the dimensionless identity) to supply the `coordᴺ` units.
+        (DerivOp(5), _CubicZeroPayload1D{Float64, Float64}),
     )
 
     for (op, P) in op_payload_pairs
-        # Stateful anchors carry `Toneunit` — the derivative space's `oneunit` type (Bool
+        # Stateful anchors carry `TinvN` — the derivative space's `oneunit` type (Bool
         # for value, the grid's reciprocal-spacing type otherwise) — mirror the src formula.
-        Toneunit = typeof(_deriv_oneunit(oneunit(eltype(x)), op))
+        TinvN = typeof(_deriv_oneunit(oneunit(eltype(x)), op))
         for e in bare_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
             @test A === _AxisAnchor{_ContiguousIndices{2}, P}
@@ -35,11 +37,11 @@
         end
         for e in stateful_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
-            @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P, Toneunit}}
+            @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P, TinvN}}
             @test isbitstype(A)
         end
         # the stateful wrapper forwards its OOB op to the inner payload's op
-        @test _payload_op(_StatefulPayload{P, Toneunit}) === _payload_op(P)
+        @test _payload_op(_StatefulPayload{P, TinvN}) === _payload_op(P)
     end
 
     # Float32 all the way stays Float32
@@ -73,14 +75,16 @@ end
     D1 = _CubicDeriv1Payload1D{Float64, NTuple{4, Float64}}
     D2 = _CubicDeriv2Payload1D{Float64, NTuple{2, Float64}}
     D3 = _CubicDeriv3Payload1D{Float64, NTuple{2, Float64}}
-    Z = _CubicZeroPayload1D{Float64}
+    # Both params must be spelled: `_CubicZeroPayload1D{Float64}` alone is a
+    # UnionAll, and an abstract payload boxes — `sizeof` would silently grow.
+    Z = _CubicZeroPayload1D{Float64, Float64}
     # bare: value/deriv1 40 B, deriv2/3 24 B, zero 8 B
     @test sizeof(_AxisAnchor{I2, V}) == 40
     @test sizeof(_AxisAnchor{I2, D1}) == 40
     @test sizeof(_AxisAnchor{I2, D2}) == 24
     @test sizeof(_AxisAnchor{I2, D3}) == 24
     @test sizeof(_AxisAnchor{I2, Z}) == 8
-    # stateful: +state byte + padding → 48/32/16 B. The `Toneunit` param
+    # stateful: +state byte + padding → 48/32/16 B. The `TinvN` param
     # is phantom (no field), so it must not move these sizes.
     @test sizeof(_AxisAnchor{I2, _StatefulPayload{V, Bool}}) == 48
     @test sizeof(_AxisAnchor{I2, _StatefulPayload{D1, Float64}}) == 48

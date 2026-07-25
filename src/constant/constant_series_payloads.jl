@@ -24,7 +24,7 @@
 
 # Deriv gather payload: the node is `idxL` normally, `idxR` (== n) at domain-max
 # (matches the value payload there for NaN cell-locality). The kernel scales by 0.
-struct _ConstantZeroPayload{Tq, Toneunit} <: _AbstractAnchorPayload
+struct _ConstantZeroPayload{Tq, TinvN} <: _AbstractAnchorPayload
     select_right::Bool
 end
 
@@ -39,8 +39,8 @@ end
 # strictly more specific than the `DerivOp` deriv fallback.
 @inline _constant_series_payload_type(::EvalValue, ::Type{Tq}, ::Type) where {Tq} = _ConstantValuePayload{Tq}
 @inline function _constant_series_payload_type(op::DerivOp, ::Type{Tq}, ::Type{Tg}) where {Tq, Tg}
-    Toneunit = typeof(_deriv_oneunit(oneunit(Tg), op))
-    return _ConstantZeroPayload{Tq, Toneunit}
+    TinvN = typeof(_deriv_oneunit(oneunit(Tg), op))
+    return _ConstantZeroPayload{Tq, TinvN}
 end
 
 # ExtendExtrap ≡ ClampExtrap for a step function (constant slope is zero, so
@@ -65,8 +65,8 @@ end
     ) where {Tq}
     Tone = _coord_eltype(Tq, eltype(x))
     P = _constant_series_payload_type(op, Tone, eltype(x))
-    Toneunit = typeof(_deriv_oneunit(oneunit(eltype(x)), op))
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(_norm_constant_extrap(extrap), P, Toneunit)}
+    TinvN = typeof(_deriv_oneunit(oneunit(eltype(x)), op))
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(_norm_constant_extrap(extrap), P, TinvN)}
 end
 
 # ─── Resolution (Constant-specific: side-selected node + Series domain-max
@@ -96,14 +96,14 @@ end
 # side-independent otherwise; no `h`/`dL`/offset needed.
 @inline function _resolve_constant_series(
         ::ConstantInterp,
-        ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}},
+        ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}},
         grid::AbstractVector,
         loc,
         ::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, Tone, Toneunit}
+    ) where {I <: _AbstractIndices{2}, Tone, TinvN}
     domain_max = _extract_primal(loc.xq) == _extract_primal(loc.xR)
-    return _AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}(
-        _interval_indices(grid, loc.idxL, loc.idxR), _ConstantZeroPayload{Tone, Toneunit}(domain_max)
+    return _AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}(
+        _interval_indices(grid, loc.idxL, loc.idxR), _ConstantZeroPayload{Tone, TinvN}(domain_max)
     )
 end
 
@@ -113,14 +113,14 @@ end
 
 @inline function _resolve_series_anchor(
         m::ConstantInterp,
-        ::Type{_AxisAnchor{I, _StatefulPayload{P, Toneunit}}},
+        ::Type{_AxisAnchor{I, _StatefulPayload{P, TinvN}}},
         grid::AbstractVector,
         loc,
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P, Toneunit}
+    ) where {I <: _AbstractIndices{2}, P, TinvN}
     bare = _resolve_constant_series(m, _AxisAnchor{I, P}, grid, loc, extrap)
-    return _AxisAnchor{I, _StatefulPayload{P, Toneunit}}(
-        getfield(bare, :interval), _StatefulPayload{P, Toneunit}(getfield(bare, :payload), loc.state)
+    return _AxisAnchor{I, _StatefulPayload{P, TinvN}}(
+        getfield(bare, :interval), _StatefulPayload{P, TinvN}(getfield(bare, :payload), loc.state)
     )
 end
 
@@ -140,12 +140,12 @@ end
 end
 
 @inline function _constant_payload_kernel!(
-        out::AbstractVector, y_point::Matrix, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}
-    ) where {I <: _AbstractIndices{2}, Tone, Toneunit}
+        out::AbstractVector, y_point::Matrix, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}
+    ) where {I <: _AbstractIndices{2}, Tone, TinvN}
     sel = ifelse(a.select_right, a.idxR, a.idxL)
     c = one(Tone)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * y_point[k, sel] * c * oneunit(Toneunit)
+        out[k] = 0 * y_point[k, sel] * c * oneunit(TinvN)
     end
     return out
 end
@@ -181,9 +181,9 @@ end
 end
 
 @inline function _constant_payload_kernel(
-        y::Matrix, k::Int, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}
-    ) where {I <: _AbstractIndices{2}, Tone, Toneunit}
-    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL), k] * one(Tone) * oneunit(Toneunit)
+        y::Matrix, k::Int, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}
+    ) where {I <: _AbstractIndices{2}, Tone, TinvN}
+    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL), k] * one(Tone) * oneunit(TinvN)
 end
 
 @inline function _constant_series_eval(
@@ -216,9 +216,9 @@ end
 end
 
 @inline function _constant_payload_kernel(
-        y::AbstractVector, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}
-    ) where {I <: _AbstractIndices{2}, Tone, Toneunit}
-    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL)] * one(Tone) * oneunit(Toneunit)
+        y::AbstractVector, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}
+    ) where {I <: _AbstractIndices{2}, Tone, TinvN}
+    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL)] * one(Tone) * oneunit(TinvN)
 end
 
 @inline function _constant_series_eval(
@@ -253,9 +253,9 @@ end
     interval, _ConstantValuePayload{Tone}(domain_max || (_compute_single_offset(side, h, dL) == 1))
 )
 @inline _resolve_constant_periodic(
-    ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}}, interval, ::Any, ::Any, domain_max::Bool, ::Any
-) where {I, Tone, Toneunit} =
-    _AxisAnchor{I, _ConstantZeroPayload{Tone, Toneunit}}(interval, _ConstantZeroPayload{Tone, Toneunit}(domain_max))
+    ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}}, interval, ::Any, ::Any, domain_max::Bool, ::Any
+) where {I, Tone, TinvN} =
+    _AxisAnchor{I, _ConstantZeroPayload{Tone, TinvN}}(interval, _ConstantZeroPayload{Tone, TinvN}(domain_max))
 
 @inline function _build_constant_periodic_series_anchor(
         ::Type{A}, x_eff, xq_wrapped, idxL::Int, idxR::Int, xL, m::ConstantInterp

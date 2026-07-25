@@ -17,14 +17,17 @@
 # (extrap is known at the Series entry), so the anchor type is fully concrete.
 @inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P <: _AbstractAnchorPayload} = _StatefulPayload{P, Bool}
 @inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P <: _AbstractAnchorPayload} = P
-@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}, ::Type{Toneunit}) where {P <: _AbstractAnchorPayload, Toneunit} =
-    _StatefulPayload{P, Toneunit}
+@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}, ::Type{TinvN}) where {P <: _AbstractAnchorPayload, TinvN} =
+    _StatefulPayload{P, TinvN}
 @inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}, ::Type) where {P <: _AbstractAnchorPayload} = P
 
-# `Toneunit` is the type of `coord⁻ᴺ`'s `oneunit` — magnitude exactly 1, carrying
-# only the derivative space's units (see `_deriv_oneunit`). Recovered as a value
+# `TinvN` is `Tinv` (the `inv(h)` geometry type, i.e. `grid⁻¹`) at derivative
+# order N: the type of `oneunit(grid⁻ᴺ)` — magnitude exactly 1, carrying only the
+# derivative space's coordinate units (see `_deriv_oneunit`). It comes from the
+# GRID, never the query: `_coord_eltype` promotes toward the query, so an `hr`
+# grid read with an `s` query would otherwise yield `s⁻ᴺ`. Recovered as a value
 # here so the OOB arms can transport a value-space zero into `value/coordᴺ`.
-@inline _payload_deriv_oneunit(::Type{<:_StatefulPayload{<:Any, Toneunit}}) where {Toneunit} = oneunit(Toneunit)
+@inline _payload_deriv_oneunit(::Type{<:_StatefulPayload{<:Any, TinvN}}) where {TinvN} = oneunit(TinvN)
 
 # ─── Resolution (method-generic; family provides `_resolve_anchor(m, …)`) ─────
 # `m::M` (type parameter) forces specialization on the concrete interp singleton so
@@ -34,14 +37,14 @@
 # thread — the Series build loop below passes the whole `loc`.
 @inline function _resolve_series_anchor(
         m::M,
-        ::Type{_AxisAnchor{I, _StatefulPayload{P, Toneunit}}},
+        ::Type{_AxisAnchor{I, _StatefulPayload{P, TinvN}}},
         grid::AbstractVector,
         loc,
         extrap::AbstractExtrap
-    ) where {M <: AbstractInterpMethod, I <: _AbstractIndices{2}, P, Toneunit}
+    ) where {M <: AbstractInterpMethod, I <: _AbstractIndices{2}, P, TinvN}
     bare = _resolve_anchor(m, _AxisAnchor{I, P}, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
-    return _AxisAnchor{I, _StatefulPayload{P, Toneunit}}(
-        getfield(bare, :interval), _StatefulPayload{P, Toneunit}(getfield(bare, :payload), loc.state)
+    return _AxisAnchor{I, _StatefulPayload{P, TinvN}}(
+        getfield(bare, :interval), _StatefulPayload{P, TinvN}(getfield(bare, :payload), loc.state)
     )
 end
 

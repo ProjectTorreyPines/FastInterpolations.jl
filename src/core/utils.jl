@@ -897,12 +897,6 @@ end
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
-# Deriv-order aware form (1D OOB path): a flat extrap's derivative is zero in
-# value/coordᴺ units. Real queries: value ≡ deriv carrier space — no scale.
-@inline _promote_extrap_zero(val, xq::Real, ::DerivOp) = _promote_extrap_zero(val, xq)
-@inline _promote_extrap_zero(val, xq, ::DerivOp{N}) where {N} =
-    _promote_extrap_zero(val, xq) * inv(oneunit(xq))^N
-
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".
 #   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
 #   FillExtrap  → `e.fill_value`  (fill_value is the OOB cell's data).
@@ -921,5 +915,7 @@ end
 # the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
 @inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(op::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
-    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq, op)
+@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, _scale) =
+    _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, scale) =
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq) * scale

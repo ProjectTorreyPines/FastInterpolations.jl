@@ -282,11 +282,11 @@ end
 # Clamp/Fill extrapolation: boundary value if OOB
 @inline function _quadratic_eval_at_anchor(
         y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
-        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
+        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill, scale
     ) where {Tv, Tc}
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, scale)
     end
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
@@ -317,7 +317,10 @@ end
 # Clamp/Fill: delegate to shared
 @inline _quadratic_anchor_dispatch(
     itp::QuadraticInterpolant, aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ext::_ClampOrFill
-) = _quadratic_eval_at_anchor(itp.y, itp.a, itp.d, aq, op, ext)
+) = _quadratic_eval_at_anchor(
+    itp.y, itp.a, itp.d, aq, op, ext,
+    _constant_axis_deriv_scale(oneunit(eltype(itp.x)), op)
+)
 
 # ========================================
 # Vector Evaluation with Anchors

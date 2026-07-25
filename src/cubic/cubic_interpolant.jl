@@ -211,7 +211,7 @@ function _cubic_interp_units(x, y, bc, extrap, autocache, search, store)
         )
     )
     ux = oneunit(eltype(x))
-    uy = oneunit(eltype(y))
+    uy = _carrier_oneunit(eltype(y))
     xs = x ./ ux
     ys = y ./ uy
     tw = _cubic_interp_impl(

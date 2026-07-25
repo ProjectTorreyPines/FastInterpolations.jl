@@ -526,22 +526,26 @@ end
         ::Tuple{Vararg{AbstractInterpMethod}},
         grids::NTuple{N, AbstractVector},
         ::Type{Tv},
-        ::Type{Tq};
+        ::Type{Tq},
+        ops::Tuple;
         shape_op = _interp_op
     ) where {N, Tv, Tq}
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    return _promote_eltype(shape_op, Tg, Tv, Tq)
+    Tr = _promote_eltype(shape_op, Tg, Tv, Tq)
+    return _deriv_eltype_nd(Tr, grids, ops)
 end
 
 @inline function _interp_nd_output_eltype(
         ::Tuple{ConstantInterp, Vararg{ConstantInterp}},
         grids::NTuple{N, AbstractVector},
         ::Type{Tv},
-        ::Type{Tq};
+        ::Type{Tq},
+        ops::Tuple;
         shape_op = _select_op
     ) where {N, Tv, Tq}
     Tg = _promote_grid_eltype(grids)
-    return _promote_eltype(shape_op, Tg, Tv, Tq)
+    Tr = _promote_eltype(shape_op, Tg, Tv, Tq)
+    return _deriv_eltype_nd(Tr, grids, ops)
 end
 
 """
@@ -565,7 +569,8 @@ function interp(
     ) where {Tv, N}
     method_tuple = _method_tuple(method, Val(N))
     Tq = _query_eltype(queries)
-    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq, ops)
     # Output takes the query's shape: a flat vector for ordinary batches, the
     # N-D `size(gq)` array for a shaped container like GriddedQuery.
     output = Array{Tr}(undef, _query_size(queries))

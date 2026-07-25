@@ -24,7 +24,7 @@
 
 # Deriv gather payload: the node is `idxL` normally, `idxR` (== n) at domain-max
 # (matches the value payload there for NaN cell-locality). The kernel scales by 0.
-struct _ConstantZeroPayload{Tq} <: _AbstractAnchorPayload
+struct _ConstantZeroPayload{Tq, S} <: _AbstractAnchorPayload
     select_right::Bool
 end
 
@@ -37,8 +37,11 @@ end
 
 # op → payload identity (value gather vs zero gather). `EvalValue == DerivOp{0}` is
 # strictly more specific than the `DerivOp` deriv fallback.
-@inline _constant_series_payload_type(::EvalValue, ::Type{Tq}) where {Tq} = _ConstantValuePayload{Tq}
-@inline _constant_series_payload_type(::DerivOp, ::Type{Tq}) where {Tq} = _ConstantZeroPayload{Tq}
+@inline _constant_series_payload_type(::EvalValue, ::Type{Tq}, ::Type) where {Tq} = _ConstantValuePayload{Tq}
+@inline function _constant_series_payload_type(op::DerivOp, ::Type{Tq}, ::Type{Tg}) where {Tq, Tg}
+    S = typeof(_constant_axis_deriv_scale(oneunit(Tg), op))
+    return _ConstantZeroPayload{Tq, S}
+end
 
 # ExtendExtrap ≡ ClampExtrap for a step function (constant slope is zero, so
 # "extend the boundary" == "hold the boundary value"). This is the documented
@@ -61,8 +64,9 @@ end
         ::Type{Tq}
     ) where {Tq}
     Tone = _coord_eltype(Tq, eltype(x))
-    P = _constant_series_payload_type(op, Tone)
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(_norm_constant_extrap(extrap), P)}
+    P = _constant_series_payload_type(op, Tone, eltype(x))
+    S = typeof(_constant_axis_deriv_scale(oneunit(eltype(x)), op))
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(_norm_constant_extrap(extrap), P, S)}
 end
 
 # ─── Resolution (Constant-specific: side-selected node + Series domain-max
@@ -92,14 +96,14 @@ end
 # side-independent otherwise; no `h`/`dL`/offset needed.
 @inline function _resolve_constant_series(
         ::ConstantInterp,
-        ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone}}},
+        ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone, S}}},
         grid::AbstractVector,
         loc,
         ::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, Tone}
+    ) where {I <: _AbstractIndices{2}, Tone, S}
     domain_max = _extract_primal(loc.xq) == _extract_primal(loc.xR)
-    return _AxisAnchor{I, _ConstantZeroPayload{Tone}}(
-        _interval_indices(grid, loc.idxL, loc.idxR), _ConstantZeroPayload{Tone}(domain_max)
+    return _AxisAnchor{I, _ConstantZeroPayload{Tone, S}}(
+        _interval_indices(grid, loc.idxL, loc.idxR), _ConstantZeroPayload{Tone, S}(domain_max)
     )
 end
 
@@ -109,14 +113,14 @@ end
 
 @inline function _resolve_series_anchor(
         m::ConstantInterp,
-        ::Type{_AxisAnchor{I, _StatefulPayload{P}}},
+        ::Type{_AxisAnchor{I, _StatefulPayload{P, S}}},
         grid::AbstractVector,
         loc,
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     bare = _resolve_constant_series(m, _AxisAnchor{I, P}, grid, loc, extrap)
-    return _AxisAnchor{I, _StatefulPayload{P}}(
-        getfield(bare, :interval), _StatefulPayload(getfield(bare, :payload), loc.state)
+    return _AxisAnchor{I, _StatefulPayload{P, S}}(
+        getfield(bare, :interval), _StatefulPayload{P, S}(getfield(bare, :payload), loc.state)
     )
 end
 
@@ -136,12 +140,12 @@ end
 end
 
 @inline function _constant_payload_kernel!(
-        out::AbstractVector, y_point::Matrix, a::_AxisAnchor{I, _ConstantZeroPayload{Tone}}
-    ) where {I <: _AbstractIndices{2}, Tone}
+        out::AbstractVector, y_point::Matrix, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, S}}
+    ) where {I <: _AbstractIndices{2}, Tone, S}
     sel = ifelse(a.select_right, a.idxR, a.idxL)
     c = one(Tone)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * y_point[k, sel] * c
+        out[k] = 0 * y_point[k, sel] * c * oneunit(S)
     end
     return out
 end
@@ -151,12 +155,13 @@ end
 # other extrap uses the bare gather directly.
 @inline function _constant_series_eval!(
         out::AbstractVector, y_point::Matrix,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
+        scale = _stateful_deriv_scale(typeof(a.payload))
         return _fill_constant_extrap_simd!(
-            out, y_point, a.state, size(y_point, 2), _payload_op(P), _norm_constant_extrap(extrap), _payload_eltype(P)
+            out, y_point, a.state, size(y_point, 2), _payload_op(P), _norm_constant_extrap(extrap), _payload_eltype(P), scale
         )
     end
     return _constant_payload_kernel!(out, y_point, _AxisAnchor(getfield(a, :interval), a.inner))
@@ -176,19 +181,20 @@ end
 end
 
 @inline function _constant_payload_kernel(
-        y::Matrix, k::Int, a::_AxisAnchor{I, _ConstantZeroPayload{Tone}}
-    ) where {I <: _AbstractIndices{2}, Tone}
-    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL), k] * one(Tone)
+        y::Matrix, k::Int, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, S}}
+    ) where {I <: _AbstractIndices{2}, Tone, S}
+    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL), k] * one(Tone) * oneunit(S)
 end
 
 @inline function _constant_series_eval(
         y::Matrix, k::Int,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
+        scale = _stateful_deriv_scale(typeof(a.payload))
         return _constant_extrap_boundary_value(
-            y, a.state, size(y, 1), k, _payload_op(P), _norm_constant_extrap(extrap), _payload_eltype(P)
+            y, a.state, size(y, 1), k, _payload_op(P), _norm_constant_extrap(extrap), _payload_eltype(P), scale
         )
     end
     return _constant_payload_kernel(y, k, _AxisAnchor(getfield(a, :interval), a.inner))
@@ -210,19 +216,22 @@ end
 end
 
 @inline function _constant_payload_kernel(
-        y::AbstractVector, a::_AxisAnchor{I, _ConstantZeroPayload{Tone}}
-    ) where {I <: _AbstractIndices{2}, Tone}
-    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL)] * one(Tone)
+        y::AbstractVector, a::_AxisAnchor{I, _ConstantZeroPayload{Tone, S}}
+    ) where {I <: _AbstractIndices{2}, Tone, S}
+    @inbounds return 0 * y[ifelse(a.select_right, a.idxR, a.idxL)] * one(Tone) * oneunit(S)
 end
 
 @inline function _constant_series_eval(
         y::AbstractVector,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(_payload_op(P), y_bnd, _norm_constant_extrap(extrap), zero(_payload_eltype(P)))
+        scale = _stateful_deriv_scale(typeof(a.payload))
+        return _eval_extrapolation(
+            _payload_op(P), y_bnd, _norm_constant_extrap(extrap), zero(_payload_eltype(P)), scale
+        )
     end
     return _constant_payload_kernel(y, _AxisAnchor(getfield(a, :interval), a.inner))
 end
@@ -244,9 +253,9 @@ end
     interval, _ConstantValuePayload{Tone}(domain_max || (_compute_single_offset(side, h, dL) == 1))
 )
 @inline _resolve_constant_periodic(
-    ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone}}}, interval, ::Any, ::Any, domain_max::Bool, ::Any
-) where {I, Tone} =
-    _AxisAnchor{I, _ConstantZeroPayload{Tone}}(interval, _ConstantZeroPayload{Tone}(domain_max))
+    ::Type{_AxisAnchor{I, _ConstantZeroPayload{Tone, S}}}, interval, ::Any, ::Any, domain_max::Bool, ::Any
+) where {I, Tone, S} =
+    _AxisAnchor{I, _ConstantZeroPayload{Tone, S}}(interval, _ConstantZeroPayload{Tone, S}(domain_max))
 
 @inline function _build_constant_periodic_series_anchor(
         ::Type{A}, x_eff, xq_wrapped, idxL::Int, idxR::Int, xL, m::ConstantInterp

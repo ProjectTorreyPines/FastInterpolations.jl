@@ -75,12 +75,12 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, Tc} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, Ta, Td} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                 # Wrapped grid (`_CachedRange`/`_CachedVector` carrying cached `h`/`inv_h`)
     const y::Matrix{Tv}                        # Series-contiguous y (n_points × n_series)
-    const a::Matrix{Tc}                        # Series-contiguous a: Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    const d::Matrix{Tc}                        # Series-contiguous d: Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    const _transpose::LazyTransposeTriple{Tv, Tc} # Lazy point-contiguous layout
+    const a::Matrix{Ta}                        # Series-contiguous a
+    const d::Matrix{Td}                        # Series-contiguous d
+    const _transpose::LazyTransposeTriple{Tv, Ta, Td} # Lazy point-contiguous layout
     const extrap::E                            # Extrapolation mode (compile-time specialized)
     const search_policy::P                     # Default search policy
 
@@ -95,9 +95,12 @@ mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: Abst
             search::P = AutoSearch();
             bc::AbstractBC = NoBC()
         ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        Tc = eltype(a)
+        Ta = eltype(a)
+        Td = eltype(d)
         xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        return new{Tg, Tv, E, P, typeof(xc), Tc}(xc, y, a, d, LazyTransposeTriple{Tv, Tc}(), extrap, search)
+        return new{Tg, Tv, E, P, typeof(xc), Ta, Td}(
+            xc, y, a, d, LazyTransposeTriple{Tv, Ta, Td}(), extrap, search
+        )
     end
 end
 
@@ -174,18 +177,29 @@ function quadratic_interp(
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
-    if Tg_new !== Tg
-        return quadratic_interp(_to_float(x, Tg_new), s; bc = _normalize_bc(bc), extrap, search)
-    end
+    x = _to_float(x, Tg_new)
 
     # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,
     # Vector → `_CachedVector{Tg, Tinv}`. Inner ctor's `_convert_copy` takes
     # ownership.
-    x = _cache_axis(x, NoBC(), Tg)
+    x = _cache_axis(x, NoBC(), Tg_new)
 
     n_pts = length(x)
-    Tv_out = _value_type(Tv, Tg)
+    Tv_out = _value_type(Tv, Tg_new)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
+
+    if !(Tg_new <: Real)
+        ux = oneunit(Tg_new)
+        uy = _carrier_oneunit(Tv_out)
+        tw = quadratic_interp(
+            x ./ ux, Series(y_mat ./ uy);
+            bc = _strip_bc_units(bc, uy, ux), extrap = NoExtrap(), search = search
+        )
+        a_mat = tw.a .* (uy / (ux * ux))
+        d_mat = tw.d .* (uy / ux)
+        extrap_p = _promote_extrap(extrap, eltype(y_mat))
+        return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, extrap_p, search)
+    end
 
     # Allocate coefficient matrices (Dual when grid is Dual)
     Tc = _promote_eltype(_coeff_op, eltype(x), Tv_out)
@@ -238,12 +252,16 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Number}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_coord(xq, Tg)
-    T_out = _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted))
+    T_out = _deriv_eltype(
+        _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted)), Tg, deriv
+    )
     output = Vector{T_out}(undef, n_series(sitp))
 
     # One lean dL-baking anchor (shared build; NoExtrap throws OOB inside), then
     # the point-contiguous op-threaded kernel over the stored y/a/d coefficients.
-    A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
+    A = _quadratic_series_anchor_type(
+        deriv, sitp.extrap, sitp.x, _coord_eltype(Tq, Tg)
+    )
     searcher = _resolve_search(sitp.x, xq, search, hint)
     a = _build_series_anchor(
         QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), searcher
@@ -274,7 +292,9 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
     xq_promoted = _promote_coord(xq, Tg)
 
-    A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
+    A = _quadratic_series_anchor_type(
+        deriv, sitp.extrap, sitp.x, _coord_eltype(Tq, Tg)
+    )
     searcher = _resolve_search(sitp.x, xq, search, hint)
     a = _build_series_anchor(
         QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), searcher
@@ -303,7 +323,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Number}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, Tv, Tq), Tg, deriv)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -337,7 +357,9 @@ Pool handles both same-type and mixed-type cases efficiently.
 
     # One lean anchor buffer (op-independent; `_build_series_anchor` promotes the
     # query internally), then the series-contiguous kernel per (k, j).
-    A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
+    A = _quadratic_series_anchor_type(
+        deriv, sitp.extrap, sitp.x, _coord_eltype(Tq, Tg)
+    )
     anchors = acquire!(pool, A, n_query)
     _fill_series_anchors_resolved!(
         QuadraticInterp(), anchors, sitp.x, xq, sitp.extrap, _should_wrap(sitp), search, hint

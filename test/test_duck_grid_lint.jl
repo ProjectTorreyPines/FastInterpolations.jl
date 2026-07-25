@@ -110,12 +110,15 @@
         # series_lean_anchors.jl (`_build_series_anchor`): relaxed to Number for
         # unit-grid Series eval — was 1, now 0 → key dropped.
         "core/series_utils.jl" => 6,
-        "core/utils.jl" => 7,
+        "core/utils.jl" => 6,
         "cubic/cubic_adjoint.jl" => 1,
         "cubic/cubic_anchor.jl" => 4,
         "cubic/cubic_oneshot.jl" => 3,
-        "cubic/cubic_oneshot_series.jl" => 5,
-        "cubic/cubic_series_interp.jl" => 4,
+        # cubic series + one-shot: eval sigs relaxed to Number for unit-grid cubic
+        # Series (build nondimensionalizes like the scalar path) — one-shot was 5,
+        # now 0 → key dropped; interp was 4, now 1 = the `Tg <: Real ||` units-branch
+        # idiom itself (allowlist class 3b).
+        "cubic/cubic_series_interp.jl" => 1,
         "cubic/nd/cubic_nd_adjoint.jl" => 1,
         # derivative_view.jl: in-place view query bounds relaxed to Number (Codex
         # #4) — was 2, now 0 → key dropped.

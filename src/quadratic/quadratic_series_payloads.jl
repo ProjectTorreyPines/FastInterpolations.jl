@@ -31,11 +31,18 @@ end
 
 # ─── extrap → anchor type (op-independent). Clamp/Fill wrap in `_StatefulPayload`.
 @inline function _quadratic_series_anchor_type(
-        extrap::AbstractExtrap, x::AbstractVector, ::Type{Tq}
+        op::DerivOp, extrap::AbstractExtrap, x::AbstractVector, ::Type{Tq}
     ) where {Tq}
     Tdl = _coord_eltype(Tq, eltype(x))
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, _QuadraticPayload{Tdl})}
+    Ts = typeof(_constant_axis_deriv_scale(oneunit(eltype(x)), op))
+    return _AxisAnchor{
+        _interval_type(x), _maybe_stateful_payload(extrap, _QuadraticPayload{Tdl}, Ts),
+    }
 end
+
+@inline _quadratic_series_anchor_type(
+    extrap::AbstractExtrap, x::AbstractVector, ::Type{Tq}
+) where {Tq} = _quadratic_series_anchor_type(EvalValue(), extrap, x, Tq)
 
 # ─── Resolution: bake `dL = xq - xL` (mirrors `_quadratic_anchor_query_impl`).
 # Reuses the shared `_resolve_series_anchor` (bare + stateful) machinery.
@@ -73,10 +80,13 @@ end
 # kernel. NoExtrap already threw at build.
 @inline function _quadratic_series_eval!(
         out::AbstractVector, y_point::Matrix, a_point::Matrix, d_point::Matrix,
-        anchor::_AxisAnchor{I, _StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+        anchor::_AxisAnchor{I, _StatefulPayload{P, S}}, op::AbstractEvalOp, extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P, S}
     if anchor.state != IN_DOMAIN
-        return _fill_constant_extrap_simd!(out, y_point, anchor.state, size(y_point, 2), op, extrap, _payload_eltype(P))
+        scale = _stateful_deriv_scale(typeof(anchor.payload))
+        return _fill_constant_extrap_simd!(
+            out, y_point, anchor.state, size(y_point, 2), op, extrap, _payload_eltype(P), scale
+        )
     end
     return _quadratic_payload_kernel!(out, y_point, a_point, d_point, _AxisAnchor(getfield(anchor, :interval), anchor.inner), op)
 end
@@ -97,10 +107,13 @@ end
 
 @inline function _quadratic_series_eval(
         y::AbstractMatrix, a::AbstractMatrix, d::AbstractMatrix, k::Int,
-        anchor::_AxisAnchor{I, _StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+        anchor::_AxisAnchor{I, _StatefulPayload{P, S}}, op::AbstractEvalOp, extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P, S}
     if anchor.state != IN_DOMAIN
-        return _constant_extrap_boundary_value(y, anchor.state, size(y, 1), k, op, extrap, _payload_eltype(P))
+        scale = _stateful_deriv_scale(typeof(anchor.payload))
+        return _constant_extrap_boundary_value(
+            y, anchor.state, size(y, 1), k, op, extrap, _payload_eltype(P), scale
+        )
     end
     return _quadratic_payload_kernel(y, a, d, k, _AxisAnchor(getfield(anchor, :interval), anchor.inner), op)
 end
@@ -122,11 +135,12 @@ end
 
 @inline function _quadratic_series_eval(
         y::AbstractVector, a::AbstractVector, d::AbstractVector,
-        anchor::_AxisAnchor{I, _StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+        anchor::_AxisAnchor{I, _StatefulPayload{P, S}}, op::AbstractEvalOp, extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P, S}
     if anchor.state != IN_DOMAIN
         y_bnd = anchor.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, zero(_payload_eltype(P)))
+        scale = _stateful_deriv_scale(typeof(anchor.payload))
+        return _eval_extrapolation(op, y_bnd, extrap, zero(_payload_eltype(P)), scale)
     end
     return _quadratic_payload_kernel(y, a, d, _AxisAnchor(getfield(anchor, :interval), anchor.inner), op)
 end

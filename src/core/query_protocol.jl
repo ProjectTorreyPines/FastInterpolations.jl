@@ -86,6 +86,7 @@ end
 @inline _scalar_eltype(::Type{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
 @inline _scalar_eltype(::Type{Any}) = _throw_query_eltype_any()
 @inline _scalar_eltype(::Type{T}) where {T} = eltype(T)
+@inline _carrier_oneunit(::Type{T}) where {T} = oneunit(_scalar_eltype(T))
 
 @noinline _throw_query_eltype_any() = throw(
     ArgumentError(

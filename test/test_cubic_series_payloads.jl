@@ -8,20 +8,26 @@
     using FastInterpolations: _cubic_series_anchor_type, _AxisAnchor, _StatefulPayload,
         _ContiguousIndices, _CubicValuePayload1D, _CubicDeriv1Payload1D,
         _CubicDeriv2Payload1D, _CubicDeriv3Payload1D, _CubicZeroPayload1D,
-        _payload_op, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3, InBounds
+        _payload_op, _constant_axis_deriv_scale,
+        EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3, InBounds
 
     x = collect(range(0.0, 1.0, 11))
     bare_extraps = (ExtendExtrap(), WrapExtrap(), NoExtrap(), InBounds())
     stateful_extraps = (ClampExtrap(), FillExtrap(0.0))
+    # On a Real grid the weight tuple stays the historical NTuple{n,Tq}; only a
+    # unit-carrying grid makes the y/z weights dimensionally heterogeneous.
     op_payload_pairs = (
-        (EvalValue(), _CubicValuePayload1D{Float64}),
-        (EvalDeriv1(), _CubicDeriv1Payload1D{Float64}),
-        (EvalDeriv2(), _CubicDeriv2Payload1D{Float64}),
-        (EvalDeriv3(), _CubicDeriv3Payload1D{Float64}),
+        (EvalValue(), _CubicValuePayload1D{Float64, NTuple{4, Float64}}),
+        (EvalDeriv1(), _CubicDeriv1Payload1D{Float64, NTuple{4, Float64}}),
+        (EvalDeriv2(), _CubicDeriv2Payload1D{Float64, NTuple{2, Float64}}),
+        (EvalDeriv3(), _CubicDeriv3Payload1D{Float64, NTuple{2, Float64}}),
         (DerivOp(5), _CubicZeroPayload1D{Float64}),
     )
 
     for (op, P) in op_payload_pairs
+        # Stateful anchors carry the deriv-unit scale type S (Bool for value, the
+        # grid's reciprocal-spacing type for derivatives) — mirror the src formula.
+        S = typeof(_constant_axis_deriv_scale(oneunit(eltype(x)), op))
         for e in bare_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
             @test A === _AxisAnchor{_ContiguousIndices{2}, P}
@@ -29,17 +35,17 @@
         end
         for e in stateful_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
-            @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P}}
+            @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P, S}}
             @test isbitstype(A)
         end
         # the stateful wrapper forwards its OOB op to the inner payload's op
-        @test _payload_op(_StatefulPayload{P}) === _payload_op(P)
+        @test _payload_op(_StatefulPayload{P, S}) === _payload_op(P)
     end
 
     # Float32 all the way stays Float32
     x32 = collect(Float32, range(0.0f0, 1.0f0, 11))
     @test _cubic_series_anchor_type(EvalValue(), ExtendExtrap(), x32, Float32) ===
-        _AxisAnchor{_ContiguousIndices{2}, _CubicValuePayload1D{Float32}}
+        _AxisAnchor{_ContiguousIndices{2}, _CubicValuePayload1D{Float32, NTuple{4, Float32}}}
 end
 
 @testitem "adjoint anchor property ergonomics (idx/idxL/idxR + propertynames)" begin
@@ -61,18 +67,26 @@ end
         _CubicDeriv3Payload1D, _CubicZeroPayload1D
 
     I2 = _ContiguousIndices{2}
+    # On a Real grid the weight tuple `W` stays the historical NTuple{n,Tq}, so the
+    # design-table sizes must be untouched by the (unit-grid) heterogeneous split.
+    V = _CubicValuePayload1D{Float64, NTuple{4, Float64}}
+    D1 = _CubicDeriv1Payload1D{Float64, NTuple{4, Float64}}
+    D2 = _CubicDeriv2Payload1D{Float64, NTuple{2, Float64}}
+    D3 = _CubicDeriv3Payload1D{Float64, NTuple{2, Float64}}
+    Z = _CubicZeroPayload1D{Float64}
     # bare: value/deriv1 40 B, deriv2/3 24 B, zero 8 B
-    @test sizeof(_AxisAnchor{I2, _CubicValuePayload1D{Float64}}) == 40
-    @test sizeof(_AxisAnchor{I2, _CubicDeriv1Payload1D{Float64}}) == 40
-    @test sizeof(_AxisAnchor{I2, _CubicDeriv2Payload1D{Float64}}) == 24
-    @test sizeof(_AxisAnchor{I2, _CubicDeriv3Payload1D{Float64}}) == 24
-    @test sizeof(_AxisAnchor{I2, _CubicZeroPayload1D{Float64}}) == 8
-    # stateful: +state byte + padding → 48/32/16 B
-    @test sizeof(_AxisAnchor{I2, _StatefulPayload{_CubicValuePayload1D{Float64}}}) == 48
-    @test sizeof(_AxisAnchor{I2, _StatefulPayload{_CubicDeriv1Payload1D{Float64}}}) == 48
-    @test sizeof(_AxisAnchor{I2, _StatefulPayload{_CubicDeriv2Payload1D{Float64}}}) == 32
-    @test sizeof(_AxisAnchor{I2, _StatefulPayload{_CubicDeriv3Payload1D{Float64}}}) == 32
-    @test sizeof(_AxisAnchor{I2, _StatefulPayload{_CubicZeroPayload1D{Float64}}}) == 16
+    @test sizeof(_AxisAnchor{I2, V}) == 40
+    @test sizeof(_AxisAnchor{I2, D1}) == 40
+    @test sizeof(_AxisAnchor{I2, D2}) == 24
+    @test sizeof(_AxisAnchor{I2, D3}) == 24
+    @test sizeof(_AxisAnchor{I2, Z}) == 8
+    # stateful: +state byte + padding → 48/32/16 B. The deriv-unit scale type `S`
+    # is a phantom param (no field), so it must not move these sizes.
+    @test sizeof(_AxisAnchor{I2, _StatefulPayload{V, Bool}}) == 48
+    @test sizeof(_AxisAnchor{I2, _StatefulPayload{D1, Float64}}) == 48
+    @test sizeof(_AxisAnchor{I2, _StatefulPayload{D2, Float64}}) == 32
+    @test sizeof(_AxisAnchor{I2, _StatefulPayload{D3, Float64}}) == 32
+    @test sizeof(_AxisAnchor{I2, _StatefulPayload{Z, Float64}}) == 16
 end
 
 @testitem "build loop: weights bit-identical to the full anchor oracle" begin

@@ -15,8 +15,12 @@
 # Clamp/Fill wrap the bare payload so the OOB state branch stays eval-time; every
 # other extrap uses the bare payload with a branch-free kernel. Compile-time
 # (extrap is known at the Series entry), so the anchor type is fully concrete.
-@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P <: _AbstractAnchorPayload} = _StatefulPayload{P}
+@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P <: _AbstractAnchorPayload} = _StatefulPayload{P, Bool}
 @inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P <: _AbstractAnchorPayload} = P
+@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}, ::Type{S}) where {P <: _AbstractAnchorPayload, S} =
+    _StatefulPayload{P, S}
+@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}, ::Type) where {P <: _AbstractAnchorPayload} = P
+@inline _stateful_deriv_scale(::Type{<:_StatefulPayload{<:Any, S}}) where {S} = oneunit(S)
 
 # ─── Resolution (method-generic; family provides `_resolve_anchor(m, …)`) ─────
 # `m::M` (type parameter) forces specialization on the concrete interp singleton so
@@ -26,14 +30,14 @@
 # thread — the Series build loop below passes the whole `loc`.
 @inline function _resolve_series_anchor(
         m::M,
-        ::Type{_AxisAnchor{I, _StatefulPayload{P}}},
+        ::Type{_AxisAnchor{I, _StatefulPayload{P, S}}},
         grid::AbstractVector,
         loc,
         extrap::AbstractExtrap
-    ) where {M <: AbstractInterpMethod, I <: _AbstractIndices{2}, P}
+    ) where {M <: AbstractInterpMethod, I <: _AbstractIndices{2}, P, S}
     bare = _resolve_anchor(m, _AxisAnchor{I, P}, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
-    return _AxisAnchor{I, _StatefulPayload{P}}(
-        getfield(bare, :interval), _StatefulPayload(getfield(bare, :payload), loc.state)
+    return _AxisAnchor{I, _StatefulPayload{P, S}}(
+        getfield(bare, :interval), _StatefulPayload{P, S}(getfield(bare, :payload), loc.state)
     )
 end
 

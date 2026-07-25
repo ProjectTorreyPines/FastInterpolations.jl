@@ -49,7 +49,9 @@ end
 # classification. Selected at anchor-build time for the flat extraps
 # (Clamp/Fill) whose OOB handling needs an eval-time state branch; all other
 # extraps use the bare payload and a branch-free kernel.
-struct _StatefulPayload{P <: _AbstractAnchorPayload} <: _AbstractAnchorPayload
+struct _StatefulPayload{P <: _AbstractAnchorPayload, S} <: _AbstractAnchorPayload
     inner::P
     state::UInt8      # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
 end
+@inline _StatefulPayload(inner::P, state::UInt8) where {P <: _AbstractAnchorPayload} =
+    _StatefulPayload{P, Bool}(inner, state)

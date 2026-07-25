@@ -113,12 +113,12 @@ Weights satisfy: S(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 When dL/dR are ForwardDiff.Dual (from xq - xL), the output tuple
 preserves Dual type through arithmetic operations.
 """
-@inline function _compute_anchor_weights(::EvalValue, h::Tg, inv_h::Tg, dL::Tq, dR::Tq) where {Tg, Tq}
+@inline function _compute_anchor_weights(::EvalValue, h::Th, inv_h::Ti, dL::Tq, dR::Tq) where {Th, Ti, Tq}
     wyL = dR * inv_h
     wyR = dL * inv_h
     # wzL = (inv_h * dR^3 - h * dR) / 6
     # wzR = (inv_h * dL^3 - h * dL) / 6
-    div6 = inv(Tg(6))
+    div6 = _inv_const(Th, 6)
     wzL = (inv_h * dR^3 - h * dR) * div6
     wzR = (inv_h * dL^3 - h * dL) * div6
     return (wyL, wyR, wzL, wzR)
@@ -131,12 +131,14 @@ Compute weights for cubic spline first derivative evaluation.
 
 Weights satisfy: S'(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 """
-@inline function _compute_anchor_weights(::EvalDeriv1, h::Tg, inv_h::Tg, dL::Tq, dR::Tq) where {Tg, Tq}
-    # Promote to Tq for AD support (zero-overhead when Tg === Tq)
-    wyL = oftype(dL, -inv_h)
-    wyR = oftype(dL, inv_h)
-    inv_2h = inv_h * inv(Tg(2))
-    h_div6 = h * inv(Tg(6))
+@inline function _compute_anchor_weights(::EvalDeriv1, h::Th, inv_h::Ti, dL::Tq, dR::Tq) where {Th, Ti, Tq}
+    # Carry the query's AD tag WITHOUT forcing its unit: `oftype` would demand
+    # `dL`'s dimension (X) for a reciprocal-spacing weight (X⁻¹). Multiplying by
+    # `one(dL)` is the dimension-safe promotion — Dual stays Dual, units cancel.
+    wyL = -inv_h * one(dL)
+    wyR = inv_h * one(dL)
+    inv_2h = inv_h * _inv_const(Th, 2)
+    h_div6 = h * _inv_const(Th, 6)
     wzL = -dR^2 * inv_2h + h_div6
     wzR = dL^2 * inv_2h - h_div6
     return (wyL, wyR, wzL, wzR)
@@ -151,7 +153,7 @@ Weights satisfy: S''(xq) = wzL*zL + wzR*zR (no y contribution)
 
 Returns (wzL, wzR) - optimized to exclude zero y-weights.
 """
-@inline function _compute_anchor_weights(::EvalDeriv2, ::Tg, inv_h::Tg, dL::Tq, dR::Tq) where {Tg, Tq}
+@inline function _compute_anchor_weights(::EvalDeriv2, ::Th, inv_h::Ti, dL::Tq, dR::Tq) where {Th, Ti, Tq}
     wzL = dR * inv_h
     wzR = dL * inv_h
     return (wzL, wzR)
@@ -175,10 +177,11 @@ Third derivative is constant within each interval (independent of dL, dR).
 The weights are converted to Tq type for struct consistency, though they
 don't carry AD derivative information.
 """
-@inline function _compute_anchor_weights(::EvalDeriv3, ::Tg, inv_h::Tg, dL::Tq, ::Tq) where {Tg, Tq}
-    # Promote to Tq for AD support (zero-overhead when Tg === Tq)
-    wzL = oftype(dL, -inv_h)
-    wzR = oftype(dL, inv_h)
+@inline function _compute_anchor_weights(::EvalDeriv3, ::Th, inv_h::Ti, dL::Tq, ::Tq) where {Th, Ti, Tq}
+    # Dimension-safe AD promotion (see the EvalDeriv1 note): `one(dL)` carries the
+    # Dual tag while leaving the reciprocal-spacing unit (X⁻¹) intact.
+    wzL = -inv_h * one(dL)
+    wzR = inv_h * one(dL)
     return (wzL, wzR)
 end
 

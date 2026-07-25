@@ -11,17 +11,23 @@
 # Weight formulas reuse `_compute_anchor_weights` verbatim → bit-identical to
 # the corresponding `_CubicAdjointAnchor` field (w0/w1/w2/w3) by construction.
 
-struct _CubicValuePayload1D{Tq} <: _AbstractAnchorPayload
-    w::NTuple{4, Tq}
+# `W` is the stored weight tuple type. On Real grids it is the historical
+# `NTuple{4,Tq}`/`NTuple{2,Tq}` (identical layout and size); on unit-carrying
+# grids the weights are dimensionally HETEROGENEOUS — value weights pair a
+# dimensionless y-weight with an `X²` z-weight, deriv1 pairs `X⁻¹` with `X` — so
+# one shared element type cannot hold them. `Tq` stays the query carrier that the
+# OOB arms thread (`_payload_eltype`).
+struct _CubicValuePayload1D{Tq, W <: Tuple} <: _AbstractAnchorPayload
+    w::W
 end
-struct _CubicDeriv1Payload1D{Tq} <: _AbstractAnchorPayload
-    w::NTuple{4, Tq}
+struct _CubicDeriv1Payload1D{Tq, W <: Tuple} <: _AbstractAnchorPayload
+    w::W
 end
-struct _CubicDeriv2Payload1D{Tq} <: _AbstractAnchorPayload
-    w::NTuple{2, Tq}
+struct _CubicDeriv2Payload1D{Tq, W <: Tuple} <: _AbstractAnchorPayload
+    w::W
 end
-struct _CubicDeriv3Payload1D{Tq} <: _AbstractAnchorPayload
-    w::NTuple{2, Tq}
+struct _CubicDeriv3Payload1D{Tq, W <: Tuple} <: _AbstractAnchorPayload
+    w::W
 end
 struct _CubicZeroPayload1D{Tq} <: _AbstractAnchorPayload end   # DerivOp{N≥4}: result is a carrier zero, no weights
 
@@ -37,17 +43,28 @@ const _CubicWeightedPayload1D = Union{
 @inline _payload_op(::Type{<:_CubicDeriv2Payload1D}) = EvalDeriv2()
 @inline _payload_op(::Type{<:_CubicDeriv3Payload1D}) = EvalDeriv3()
 @inline _payload_op(::Type{<:_CubicZeroPayload1D}) = DerivOp(4)   # any N≥4 is equivalent downstream
-@inline _payload_op(::Type{_StatefulPayload{P}}) where {P} = _payload_op(P)
+@inline _payload_op(::Type{<:_StatefulPayload{P}}) where {P} = _payload_op(P)
 
 # ─── Payload/anchor type selection ───────────────────────────────────────────
 # op → payload; Clamp/Fill → stateful wrap. Both compile-time (op and extrap
 # are known at the batch entry), so the anchor type is fully concrete.
 
-@inline _cubic_series_payload_type(::EvalValue, ::Type{Tq}) where {Tq} = _CubicValuePayload1D{Tq}
-@inline _cubic_series_payload_type(::EvalDeriv1, ::Type{Tq}) where {Tq} = _CubicDeriv1Payload1D{Tq}
-@inline _cubic_series_payload_type(::EvalDeriv2, ::Type{Tq}) where {Tq} = _CubicDeriv2Payload1D{Tq}
-@inline _cubic_series_payload_type(::EvalDeriv3, ::Type{Tq}) where {Tq} = _CubicDeriv3Payload1D{Tq}
-@inline _cubic_series_payload_type(::DerivOp, ::Type{Tq}) where {Tq} = _CubicZeroPayload1D{Tq}
+# Weight-tuple type via the op-witness: `_compute_anchor_weights` IS the formula
+# the resolve arm runs, so `promote_op` on it yields exactly the stored types —
+# no hand-derived per-op unit algebra to drift out of sync. (`isbitstype(A)` in
+# test_cubic_series_payloads.jl pins that this stays concrete.)
+@inline _cubic_weight_type(op, ::Type{Th}, ::Type{Ti}, ::Type{Tq}) where {Th, Ti, Tq} =
+    Base.promote_op(_compute_anchor_weights, typeof(op), Th, Ti, Tq, Tq)
+
+@inline _cubic_series_payload_type(op::EvalValue, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+    _CubicValuePayload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
+@inline _cubic_series_payload_type(op::EvalDeriv1, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+    _CubicDeriv1Payload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
+@inline _cubic_series_payload_type(op::EvalDeriv2, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+    _CubicDeriv2Payload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
+@inline _cubic_series_payload_type(op::EvalDeriv3, ::Type{Tq}, ::Type{Th}, ::Type{Ti}) where {Tq, Th, Ti} =
+    _CubicDeriv3Payload1D{Tq, _cubic_weight_type(op, Th, Ti, Tq)}
+@inline _cubic_series_payload_type(::DerivOp, ::Type{Tq}, ::Type, ::Type) where {Tq} = _CubicZeroPayload1D{Tq}
 
 # `_maybe_stateful_payload` + the `_resolve_series_anchor`/`_build_series_anchor`/
 # `_fill_series_anchors!` build loop are family-agnostic — they live in
@@ -59,7 +76,13 @@ const _CubicWeightedPayload1D = Union{
         x::AbstractVector,
         ::Type{Tq}
     ) where {Tq}
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, _cubic_series_payload_type(op, Tq))}
+    Tg = eltype(x)
+    # `h`/`inv_h` are grid-only geometry with RECIPROCAL units on a unit axis —
+    # they must stay independent types (mirrors `_linear_series_anchor_type`).
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tg))
+    P = _cubic_series_payload_type(op, Tq, Tg, Tinv)
+    S = typeof(_constant_axis_deriv_scale(oneunit(Tg), op))
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, S)}
 end
 
 # ─── Resolution ──────────────────────────────────────────────────────────────
@@ -204,20 +227,21 @@ end
 # `one(Tq)`/`zero(Tq)` are value-independent, so no `xq` is stored. In-domain
 # delegates to the bare kernel through a rebuilt bare anchor (isbits, zero-cost).
 
-@inline _payload_eltype(::Type{_CubicValuePayload1D{Tq}}) where {Tq} = Tq
-@inline _payload_eltype(::Type{_CubicDeriv1Payload1D{Tq}}) where {Tq} = Tq
-@inline _payload_eltype(::Type{_CubicDeriv2Payload1D{Tq}}) where {Tq} = Tq
-@inline _payload_eltype(::Type{_CubicDeriv3Payload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{<:_CubicValuePayload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{<:_CubicDeriv1Payload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{<:_CubicDeriv2Payload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{<:_CubicDeriv3Payload1D{Tq}}) where {Tq} = Tq
 @inline _payload_eltype(::Type{_CubicZeroPayload1D{Tq}}) where {Tq} = Tq
 
 @inline function _cubic_series_eval(
         y::Matrix, z::Matrix, k::Int,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
+        scale = _stateful_deriv_scale(typeof(a.payload))
         return _constant_extrap_boundary_value(
-            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P)
+            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P), scale
         )
     end
     return _cubic_payload_kernel(y, z, k, _AxisAnchor(getfield(a, :interval), a.inner))
@@ -228,12 +252,13 @@ end
 
 @inline function _cubic_series_eval(
         y::AbstractVector, z::AbstractVector,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)))
+        scale = _stateful_deriv_scale(typeof(a.payload))
+        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)), scale)
     end
     return _cubic_payload_kernel(y, z, _AxisAnchor(getfield(a, :interval), a.inner))
 end
@@ -293,12 +318,13 @@ end
 
 @inline function _cubic_series_eval!(
         out::AbstractVector, y_point::Matrix, z_point::Matrix,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
+        scale = _stateful_deriv_scale(typeof(a.payload))
         return _fill_constant_extrap_simd!(
-            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P)
+            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P), scale
         )
     end
     return _cubic_payload_kernel!(out, y_point, z_point, _AxisAnchor(getfield(a, :interval), a.inner))

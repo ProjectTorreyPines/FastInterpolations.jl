@@ -75,7 +75,7 @@ end
     x = _to_float(x, Tg)
     K = n_series(s)
     Tv = _series_eltype(s)
-    Tv_out = _promote_eltype(_select_op, Tg, Tv, Tq)
+    Tv_out = _deriv_eltype(_promote_eltype(_select_op, Tg, Tv, Tq), eltype(x), deriv)
     output = Vector{Tv_out}(undef, K)
     if _is_periodic_bc(bc)
         # Helper wraps `x` via `_resolve_axis(x, bc)` and searches against the
@@ -271,7 +271,7 @@ function constant_interp(
     ) where {Tg, Tq <: Number}
     K = n_series(s)
     Tv = _series_eltype(s)
-    Tv_out = _promote_eltype(_select_op, Tg, Tv, Tq)
+    Tv_out = _deriv_eltype(_promote_eltype(_select_op, Tg, Tv, Tq), Tg, deriv)
     outputs = _alloc_series_batch_outputs(Tv_out, K, length(xqs))
     constant_interp!(outputs, x, s, xqs; bc, side, extrap, deriv, search)
     return outputs

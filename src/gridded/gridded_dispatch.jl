@@ -53,7 +53,7 @@ end
         search,
         hint
     ) where {Tg, Tv, N}
-    out = Array{_promote_eltype(itp, _query_eltype(gq)), N}(undef, size(gq))
+    out = Array{_promote_eltype(itp, _query_eltype(gq), ops), N}(undef, size(gq))
     _gridded_eval_itp!(out, itp, gq, ops, extraps, search, hint)
     return out
 end

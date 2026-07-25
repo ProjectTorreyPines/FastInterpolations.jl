@@ -145,15 +145,79 @@ end
         @test out[1] == constant_interp(xr, y1)(q)
         @test out[2] == constant_interp(xr, y2)(q)
         @test out == constant_interp(xr, Series(Y), q)        # one-shot parity
+
+        qs = [q, 3.5u"s"]
+        outv = sitp(qs)
+        @test outv[1] == [constant_interp(xr, y1)(qi) for qi in qs]
+        @test outv[2] == [constant_interp(xr, y2)(qi) for qi in qs]
     end
-    # Quadratic series under units is a KNOWN LIMITATION (documented, not fixed):
-    # its per-column coeff solve (`_compute_quadratic_coeffs`) allocates slope `d`
-    # (Y/X) and curvature `a` (Y/X²) through one shared buffer — the same solver-
-    # storage class as cubic-series build. The persistent SCALAR build escapes via
-    # `_quadratic_interp_units` (nondimensionalized), but that is not wired to the
-    # series/one-shot path. Pinned so a future fix flips this RED.
-    @testset "quadratic series — documented solver-storage limitation" begin
-        @test_throws Unitful.DimensionError quadratic_interp(xr, Series(Y))(q)
+    @testset "quadratic series" begin
+        sitp = quadratic_interp(xr, Series(Y))
+        out = sitp(q)
+        @test out[1] == quadratic_interp(xr, y1)(q)
+        @test out[2] == quadratic_interp(xr, y2)(q)
+        out_inplace = similar(out)
+        @test sitp(out_inplace, q) == out
+
+        qs = [q, 3.5u"s"]
+        outv = sitp(qs)
+        @test outv[1] == [quadratic_interp(xr, y1)(qi) for qi in qs]
+        @test outv[2] == [quadratic_interp(xr, y2)(qi) for qi in qs]
+        outv_inplace = [similar(v) for v in outv]
+        @test sitp(outv_inplace, qs) == outv
+
+        d = sitp(q; deriv = DerivOp(1))
+        @test d[1] == quadratic_interp(xr, y1)(q; deriv = DerivOp(1))
+        @test unit(eltype(d)) == u"m" / u"s"
+
+        @test quadratic_interp(xr, Series(Y), q) == out
+        @test quadratic_interp(xr, Series(Y), qs) == outv
+        one_inplace = similar(out)
+        @test quadratic_interp!(one_inplace, xr, Series(Y), q) == out
+        onev_inplace = [similar(v) for v in outv]
+        @test quadratic_interp!(onev_inplace, xr, Series(Y), qs) == outv
+
+        for bc in (Left(QuadraticFit()), Right(QuadraticFit()))
+            sitp_bc = quadratic_interp(xr, Series(Y); bc = bc)
+            @test sitp_bc(q) == [quadratic_interp(xr, y; bc = bc)(q) for y in (y1, y2)]
+            @test sitp_bc(q; deriv = DerivOp(1)) ==
+                [quadratic_interp(xr, y; bc = bc)(q; deriv = DerivOp(1)) for y in (y1, y2)]
+        end
+    end
+    # Cubic series build mirrors the scalar `_cubic_interp_units` strip→solve→
+    # reattach (`z` is order 2 → `Y/X²`): the Thomas solve is unit-hostile by
+    # STORAGE, so it runs on the nondimensionalized twin. Parity with quadratic.
+    @testset "cubic series" begin
+        sitp = cubic_interp(xr, Series(Y))
+        out = sitp(q)
+        @test out[1] == cubic_interp(xr, y1)(q)
+        @test out[2] == cubic_interp(xr, y2)(q)
+
+        qs = [q, 3.5u"s"]
+        outv = sitp(qs)
+        # batch vs scalar differ in the last ULP (kernel associativity) — the
+        # codebase's standing convention for batch-vs-scalar asserts.
+        @test outv[1] ≈ [cubic_interp(xr, y1)(qi) for qi in qs] rtol = 1.0e-15
+        @test outv[2] ≈ [cubic_interp(xr, y2)(qi) for qi in qs] rtol = 1.0e-15
+
+        d = sitp(q; deriv = DerivOp(1))
+        @test d[1] == cubic_interp(xr, y1)(q; deriv = DerivOp(1))
+        @test unit(eltype(d)) == u"m" / u"s"
+        d2 = sitp(q; deriv = DerivOp(2))
+        @test d2[1] == cubic_interp(xr, y1)(q; deriv = DerivOp(2))
+        @test unit(eltype(d2)) == u"m" / u"s"^2
+
+        @test cubic_interp(xr, Series(Y), q) == out          # one-shot parity
+        @test cubic_interp(xr, Series(Y), qs) == outv
+
+        # BC payloads carry derivative units — `_strip_bc_units` must rescale them.
+        for bc in (CubicFit(), ZeroCurvBC(), Deriv1(2.0u"m" / u"s"))
+            sitp_bc = cubic_interp(xr, Series(Y); bc = bc)
+            @test sitp_bc(q) == [cubic_interp(xr, y; bc = bc)(q) for y in (y1, y2)]
+        end
+
+        # PeriodicBC stays unsupported under units (same friendly error as scalar).
+        @test_throws ArgumentError cubic_interp(xr, Series(Y); bc = PeriodicBC())
     end
 end
 
@@ -193,11 +257,34 @@ end
         # deriv1 view over the series (delegates to the deriv kwarg above)
         @test deriv1(sitp)(q) == d
     end
-    # KNOWN LIMITATION (documented, not fixed): the OOB/stateful derivative path
-    # emits a *value*-unit zero (m) rather than the derivative-scaled zero (m/s) —
-    # the OOB helper doesn't carry grid-unit × order. In-domain deriv is correct.
+
+    sitp_ref = linear_interp(xr, Series(Y))
+    d1 = linear_interp(xr, Series(Y), q; deriv = DerivOp(1))
+    @test d1 == sitp_ref(q; deriv = DerivOp(1))
+    @test unit(eltype(d1)) == u"m" / u"s"
+
+    qs = [q, 3.5u"s"]
+    d1v = linear_interp(xr, Series(Y), qs; deriv = DerivOp(1))
+    @test d1v == sitp_ref(qs; deriv = DerivOp(1))
+    @test unit(eltype(d1v[1])) == u"m" / u"s"
+
     sc = linear_interp(xr, Series(Y); extrap = ClampExtrap())
-    @test_broken unit(sc(20.0u"s"; deriv = DerivOp(1))[1]) == u"m" / u"s"
+    dc = sc(20.0u"s"; deriv = DerivOp(1))
+    @test unit(eltype(dc)) == u"m" / u"s"
+    @test all(iszero, dc)
+
+    cs = constant_interp(xr, Series(Y))
+    cd = cs(q; deriv = DerivOp(1))
+    @test unit(eltype(cd)) == u"m" / u"s"
+    @test all(iszero, cd)
+
+    cd1 = constant_interp(xr, Series(Y), q; deriv = DerivOp(1))
+    @test unit(eltype(cd1)) == u"m" / u"s"
+    @test all(iszero, cd1)
+
+    cdv = constant_interp(xr, Series(Y), [q, 3.5u"s"]; deriv = DerivOp(1))
+    @test unit(eltype(cdv[1])) == u"m" / u"s"
+    @test all(iszero, Iterators.flatten(cdv))
 end
 
 @testitem "Unitful #3: ND GriddedQuery derivative is op-aware and unit-typed" begin
@@ -215,10 +302,30 @@ end
     @test all(C .== ref)
     @test unit(eltype(C)) == u"W" / u"s"                 # ∂/∂x → W/s
 
-    # KNOWN LIMITATION (documented, not fixed): Constant's derivative is a zero,
-    # but the gridded zero kernel emits it in value units (W) not derivative units
-    # (W/s) — the zero payload lacks grid-unit × order. Linear (above) is correct.
+    C1 = linear_interp((gs, gs2), nd, gq; deriv = DerivOp(1, 0))
+    @test C1 == ref
+    @test unit(eltype(C1)) == u"W" / u"s"
+
     ci = interp((gs, gs2), nd; method = ConstantInterp())
     Cc = ci(gq; deriv = DerivOp(1, 0))
-    @test_broken unit(eltype(Cc)) == u"W" / u"s"
+    @test unit(eltype(Cc)) == u"W" / u"s"
+    @test all(iszero, Cc)
+
+    Cc1 = constant_interp((gs, gs2), nd, gq; deriv = DerivOp(1, 0))
+    @test unit(eltype(Cc1)) == u"W" / u"s"
+    @test all(iszero, Cc1)
+end
+
+@testitem "Unitful derivative zeros use grid units" begin
+    using Unitful
+
+    xh = 0.0u"hr":1.0u"hr":3.0u"hr"
+    y = [0.0, 1.0, 4.0, 9.0] .* u"W"
+    itp = linear_interp(xh, y; extrap = ClampExtrap())
+
+    din = itp(3600.0u"s"; deriv = DerivOp(1))
+    dout = itp(18000.0u"s"; deriv = DerivOp(1))
+    @test unit(din) == u"W" / u"hr"
+    @test unit(dout) == u"W" / u"hr"
+    @test iszero(dout)
 end

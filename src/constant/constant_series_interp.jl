@@ -235,7 +235,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Number}
-    T_out = _promote_eltype(_select_op, Tg, Tv, Tq)
+    T_out = _deriv_eltype(_promote_eltype(_select_op, Tg, Tv, Tq), Tg, deriv)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -289,7 +289,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
-    T_out = _promote_eltype(_select_op, Tg, Tv, Tq)
+    T_out = _deriv_eltype(_promote_eltype(_select_op, Tg, Tv, Tq), Tg, deriv)
     outputs = Vector{Vector{T_out}}(undef, n_ser)
     @inbounds for k in 1:n_ser
         outputs[k] = Vector{T_out}(undef, n_query)
@@ -315,7 +315,7 @@ the K evals. No pool, no `aq_vec` scratch.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         outputs::AbstractVector{<:AbstractVector},
-        xq::AbstractVector{<:Real};
+        xq::AbstractVector{<:Number};
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing

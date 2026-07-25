@@ -40,7 +40,8 @@
     # the op-witness keeps α the concrete dimensionless carrier.
     Tα = _promote_eltype(_alpha_of, Tq, Tg, Tinv)
     P = _linear_payload_type(op, Tα, Tinv)
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P)}
+    S = typeof(_constant_axis_deriv_scale(oneunit(Tg), op))
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, S)}
 end
 
 # ─── Point-contiguous SIMD kernel (n_series × n_points): stream across the K
@@ -79,12 +80,13 @@ end
 # delegates to the bare kernel. Every other extrap uses the bare kernel directly.
 @inline function _linear_series_eval!(
         out::AbstractVector, y_point::Matrix,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
+        scale = _stateful_deriv_scale(typeof(a.payload))
         return _fill_constant_extrap_simd!(
-            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P)
+            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P), scale
         )
     end
     return _linear_payload_kernel!(out, y_point, _AxisAnchor(getfield(a, :interval), a.inner))
@@ -114,12 +116,13 @@ end
 
 @inline function _linear_series_eval(
         y::Matrix, k::Int,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
+        scale = _stateful_deriv_scale(typeof(a.payload))
         return _constant_extrap_boundary_value(
-            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P)
+            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P), scale
         )
     end
     return _linear_payload_kernel(y, k, _AxisAnchor(getfield(a, :interval), a.inner))
@@ -147,12 +150,13 @@ end
 
 @inline function _linear_series_eval(
         y::AbstractVector,
-        a::_AxisAnchor{I, _StatefulPayload{P}},
+        a::_AxisAnchor{I, _StatefulPayload{P, S}},
         extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
+    ) where {I <: _AbstractIndices{2}, P, S}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)))
+        scale = _stateful_deriv_scale(typeof(a.payload))
+        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)), scale)
     end
     return _linear_payload_kernel(y, _AxisAnchor(getfield(a, :interval), a.inner))
 end

@@ -77,14 +77,14 @@ end
     # The lean OOB helpers thread the query TYPE (not a stored `xq`): pass `Tq`.
     Tq = Float64
 
-    # …plus the grid-unit deriv scale (`inv(oneunit(h))^N`), which the callers in
+    # …plus the derivative space's `oneunit` (`inv(oneunit(h))^N`), which the callers in
     # src compute from their grid. These kernels are unit-tested on a Float64 grid,
-    # where the scale is the identity — wrap it so each call below stays readable.
-    _sc(op) = FI._deriv_unit_scale(1.0, op)
+    # where it is dimensionless 1 — wrap it so each call below stays readable.
+    _du(op) = FI._deriv_oneunit(1.0, op)
     boundary_value(y, side, n, k, op, ext, T) =
-        FI._constant_extrap_boundary_value(y, side, n, k, op, ext, T, _sc(op))
+        FI._constant_extrap_boundary_value(y, side, n, k, op, ext, T, _du(op))
     fill_simd!(out, y_point, side, n, op, ext, T) =
-        FI._fill_constant_extrap_simd!(out, y_point, side, n, op, ext, T, _sc(op))
+        FI._fill_constant_extrap_simd!(out, y_point, side, n, op, ext, T, _du(op))
 
     @testset "_constant_extrap_boundary_value" begin
         # Test matrix: 5 points × 3 series

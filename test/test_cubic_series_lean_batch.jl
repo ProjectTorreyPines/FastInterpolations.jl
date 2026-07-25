@@ -30,11 +30,11 @@
         (aq.state == FI.IN_DOMAIN || extrap isa ExtendExtrap || extrap isa WrapExtrap) &&
             return _ref_anchored(y, z, k, aq, op)
         # Deriv OOB zeros carry the grid's reciprocal-spacing unit (identity for
-        # Real grids) — mirror the src scale witness off the grid-typed `x_min`.
+        # Real grids) — mirror the src oneunit witness off the grid-typed `x_min`.
         extrap isa FI._ClampOrFill &&
             return FI._constant_extrap_boundary_value(
             y, aq.state, n_pts, k, op, extrap, typeof(aq.xq),
-            FI._deriv_unit_scale(oneunit(x_min), op)
+            FI._deriv_oneunit(oneunit(x_min), op)
         )
         return FI._throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

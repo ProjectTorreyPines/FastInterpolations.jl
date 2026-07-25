@@ -146,22 +146,22 @@ cell-local NaN; FillExtrap → fill_value). The OOB pins in
 test/test_cubic_series_oob_pins.jl guard the shared contract.
 """
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}, _scale
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}, _
     ) where {Tv, Tq <: Real}
     @inbounds return y[_boundary_point_index(side, n_pts), k] * one(Tq)
 end
 
 @inline function _constant_extrap_boundary_value(
-        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap, ::Type{Tq}, _scale
+        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap, ::Type{Tq}, _
     ) where {Tv, Tq <: Real}
     return e.fill_value * one(Tq)
 end
 
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ext::_ClampOrFill, ::Type{Tq}, scale
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ext::_ClampOrFill, ::Type{Tq}, deriv_oneunit
     ) where {Tv, Tq <: Real}
     src = _extrap_oob_data(ext, @inbounds(y[_boundary_point_index(side, n_pts), k]))
-    return 0 * src * one(Tq) * scale
+    return 0 * src * one(Tq) * deriv_oneunit
 end
 
 """
@@ -177,7 +177,7 @@ NaN-preserving; FillExtrap → `e.fill_value`). The shared-`Tv` constraint on
 need `out` to carry a wider type than the stored `y_point`.
 """
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}, _scale
+        out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}, _
     ) where {Tq <: Real}
     idx = _boundary_point_index(side, n_pts)
     xq_carrier = one(Tq)
@@ -188,7 +188,7 @@ need `out` to carry a wider type than the stored `y_point`.
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector, ::Matrix, ::UInt8, ::Int, ::EvalValue, e::FillExtrap, ::Type{Tq}, _scale
+        out::AbstractVector, ::Matrix, ::UInt8, ::Int, ::EvalValue, e::FillExtrap, ::Type{Tq}, _
     ) where {Tq <: Real}
     z = e.fill_value * one(Tq)
     @inbounds @simd for k in axes(out, 1)
@@ -198,12 +198,12 @@ end
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::AbstractEvalOp, ext::_ClampOrFill, ::Type{Tq}, scale
+        out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::AbstractEvalOp, ext::_ClampOrFill, ::Type{Tq}, deriv_oneunit
     ) where {Tq <: Real}
     idx = _boundary_point_index(side, n_pts)
     xq_carrier = one(Tq)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * _extrap_oob_data(ext, y_point[k, idx]) * xq_carrier * scale
+        out[k] = 0 * _extrap_oob_data(ext, y_point[k, idx]) * xq_carrier * deriv_oneunit
     end
     return out
 end

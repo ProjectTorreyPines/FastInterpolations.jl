@@ -95,10 +95,10 @@ end
 ) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls) * 0 * _constant_nd_deriv_scale(hs, ops)
 
 # Per-axis grid⁻ᴺ unit scale, folded across the axes. The single-axis factor is
-# the shared `_deriv_unit_scale` (core/utils.jl); `hs[d]` carries axis d's grid unit.
+# the shared `_deriv_oneunit` (core/utils.jl); `hs[d]` carries axis d's grid unit.
 @inline _constant_nd_deriv_scale(::Tuple{}, ::Tuple{}) = true
 @inline _constant_nd_deriv_scale(hs::Tuple, ops::Tuple) =
-    _deriv_unit_scale(first(hs), first(ops)) * _constant_nd_deriv_scale(Base.tail(hs), Base.tail(ops))
+    _deriv_oneunit(first(hs), first(ops)) * _constant_nd_deriv_scale(Base.tail(hs), Base.tail(ops))
 
 # ========================================
 # Derivative Check

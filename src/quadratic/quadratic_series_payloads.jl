@@ -34,7 +34,7 @@ end
         op::DerivOp, extrap::AbstractExtrap, x::AbstractVector, ::Type{Tq}
     ) where {Tq}
     Tdl = _coord_eltype(Tq, eltype(x))
-    Ts = typeof(_deriv_unit_scale(oneunit(eltype(x)), op))
+    Ts = typeof(_deriv_oneunit(oneunit(eltype(x)), op))
     return _AxisAnchor{
         _interval_type(x), _maybe_stateful_payload(extrap, _QuadraticPayload{Tdl}, Ts),
     }
@@ -83,9 +83,9 @@ end
         anchor::_AxisAnchor{I, <:_StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
     ) where {I <: _AbstractIndices{2}, P}
     if anchor.state != IN_DOMAIN
-        scale = _stateful_deriv_scale(typeof(anchor.payload))
+        deriv_oneunit = _payload_deriv_oneunit(typeof(anchor.payload))
         return _fill_constant_extrap_simd!(
-            out, y_point, anchor.state, size(y_point, 2), op, extrap, _payload_eltype(P), scale
+            out, y_point, anchor.state, size(y_point, 2), op, extrap, _payload_eltype(P), deriv_oneunit
         )
     end
     return _quadratic_payload_kernel!(out, y_point, a_point, d_point, _AxisAnchor(getfield(anchor, :interval), anchor.inner), op)
@@ -110,9 +110,9 @@ end
         anchor::_AxisAnchor{I, <:_StatefulPayload{P}}, op::AbstractEvalOp, extrap::AbstractExtrap
     ) where {I <: _AbstractIndices{2}, P}
     if anchor.state != IN_DOMAIN
-        scale = _stateful_deriv_scale(typeof(anchor.payload))
+        deriv_oneunit = _payload_deriv_oneunit(typeof(anchor.payload))
         return _constant_extrap_boundary_value(
-            y, anchor.state, size(y, 1), k, op, extrap, _payload_eltype(P), scale
+            y, anchor.state, size(y, 1), k, op, extrap, _payload_eltype(P), deriv_oneunit
         )
     end
     return _quadratic_payload_kernel(y, a, d, k, _AxisAnchor(getfield(anchor, :interval), anchor.inner), op)
@@ -139,8 +139,8 @@ end
     ) where {I <: _AbstractIndices{2}, P}
     if anchor.state != IN_DOMAIN
         y_bnd = anchor.state == OOB_LEFT ? first(y) : last(y)
-        scale = _stateful_deriv_scale(typeof(anchor.payload))
-        return _eval_extrapolation(op, y_bnd, extrap, zero(_payload_eltype(P)), scale)
+        deriv_oneunit = _payload_deriv_oneunit(typeof(anchor.payload))
+        return _eval_extrapolation(op, y_bnd, extrap, zero(_payload_eltype(P)), deriv_oneunit)
     end
     return _quadratic_payload_kernel(y, a, d, _AxisAnchor(getfield(anchor, :interval), anchor.inner), op)
 end

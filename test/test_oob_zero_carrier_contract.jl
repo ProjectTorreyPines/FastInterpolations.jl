@@ -12,7 +12,7 @@
 #   3. Carrier width — value queries keep their Int carrier; derivative queries
 #      float (Int/Int is a rational, not an Int).
 # These pins exist so any rework of the zero path (e.g. threading the output
-# TYPE instead of a scale VALUE) is provably behaviour-preserving. The
+# TYPE instead of a `oneunit` VALUE) is provably behaviour-preserving. The
 # unit × NaN × derivative intersection had no coverage before.
 
 @testitem "OOB zero contract: NaN propagates through derivative OOB (Real)" begin

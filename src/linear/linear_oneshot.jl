@@ -278,9 +278,9 @@ end
     xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
-    scale = _deriv_unit_scale(oneunit(eltype(x)), op)
-    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, scale)
-    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, scale)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, deriv_oneunit)
     return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
 end
 

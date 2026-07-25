@@ -8,7 +8,7 @@
     using FastInterpolations: _cubic_series_anchor_type, _AxisAnchor, _StatefulPayload,
         _ContiguousIndices, _CubicValuePayload1D, _CubicDeriv1Payload1D,
         _CubicDeriv2Payload1D, _CubicDeriv3Payload1D, _CubicZeroPayload1D,
-        _payload_op, _deriv_unit_scale,
+        _payload_op, _deriv_oneunit,
         EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3, InBounds
 
     x = collect(range(0.0, 1.0, 11))
@@ -25,9 +25,9 @@
     )
 
     for (op, P) in op_payload_pairs
-        # Stateful anchors carry the deriv-unit scale type S (Bool for value, the
-        # grid's reciprocal-spacing type for derivatives) — mirror the src formula.
-        S = typeof(_deriv_unit_scale(oneunit(eltype(x)), op))
+        # Stateful anchors carry `Toneunit` — the derivative space's `oneunit` type (Bool
+        # for value, the grid's reciprocal-spacing type otherwise) — mirror the src formula.
+        Toneunit = typeof(_deriv_oneunit(oneunit(eltype(x)), op))
         for e in bare_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
             @test A === _AxisAnchor{_ContiguousIndices{2}, P}
@@ -35,11 +35,11 @@
         end
         for e in stateful_extraps
             A = @inferred _cubic_series_anchor_type(op, e, x, Float64)
-            @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P, S}}
+            @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P, Toneunit}}
             @test isbitstype(A)
         end
         # the stateful wrapper forwards its OOB op to the inner payload's op
-        @test _payload_op(_StatefulPayload{P, S}) === _payload_op(P)
+        @test _payload_op(_StatefulPayload{P, Toneunit}) === _payload_op(P)
     end
 
     # Float32 all the way stays Float32
@@ -80,8 +80,8 @@ end
     @test sizeof(_AxisAnchor{I2, D2}) == 24
     @test sizeof(_AxisAnchor{I2, D3}) == 24
     @test sizeof(_AxisAnchor{I2, Z}) == 8
-    # stateful: +state byte + padding → 48/32/16 B. The deriv-unit scale type `S`
-    # is a phantom param (no field), so it must not move these sizes.
+    # stateful: +state byte + padding → 48/32/16 B. The `Toneunit` param
+    # is phantom (no field), so it must not move these sizes.
     @test sizeof(_AxisAnchor{I2, _StatefulPayload{V, Bool}}) == 48
     @test sizeof(_AxisAnchor{I2, _StatefulPayload{D1, Float64}}) == 48
     @test sizeof(_AxisAnchor{I2, _StatefulPayload{D2, Float64}}) == 32

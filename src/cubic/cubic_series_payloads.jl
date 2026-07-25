@@ -81,8 +81,8 @@ const _CubicWeightedPayload1D = Union{
     # they must stay independent types (mirrors `_linear_series_anchor_type`).
     Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tg))
     P = _cubic_series_payload_type(op, Tq, Tg, Tinv)
-    S = typeof(_deriv_unit_scale(oneunit(Tg), op))
-    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, S)}
+    Toneunit = typeof(_deriv_oneunit(oneunit(Tg), op))
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, P, Toneunit)}
 end
 
 # ─── Resolution ──────────────────────────────────────────────────────────────
@@ -239,9 +239,9 @@ end
         extrap::AbstractExtrap
     ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
-        scale = _stateful_deriv_scale(typeof(a.payload))
+        deriv_oneunit = _payload_deriv_oneunit(typeof(a.payload))
         return _constant_extrap_boundary_value(
-            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P), scale
+            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P), deriv_oneunit
         )
     end
     return _cubic_payload_kernel(y, z, k, _AxisAnchor(getfield(a, :interval), a.inner))
@@ -257,8 +257,8 @@ end
     ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
         y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
-        scale = _stateful_deriv_scale(typeof(a.payload))
-        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)), scale)
+        deriv_oneunit = _payload_deriv_oneunit(typeof(a.payload))
+        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)), deriv_oneunit)
     end
     return _cubic_payload_kernel(y, z, _AxisAnchor(getfield(a, :interval), a.inner))
 end
@@ -322,9 +322,9 @@ end
         extrap::AbstractExtrap
     ) where {I <: _AbstractIndices{2}, P}
     if a.state != IN_DOMAIN
-        scale = _stateful_deriv_scale(typeof(a.payload))
+        deriv_oneunit = _payload_deriv_oneunit(typeof(a.payload))
         return _fill_constant_extrap_simd!(
-            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P), scale
+            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P), deriv_oneunit
         )
     end
     return _cubic_payload_kernel!(out, y_point, z_point, _AxisAnchor(getfield(a, :interval), a.inner))

@@ -897,16 +897,25 @@ end
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
-# Derivative UNIT scale for one axis: an order-N derivative carries `value/coordᴺ`,
-# so a zero (or any value built in value units) must be multiplied by `grid⁻ᴺ`.
+# `oneunit` of one axis's derivative space: an order-N derivative carries
+# `value/coordᴺ`, so this is `oneunit(coord⁻ᴺ)` — magnitude exactly `one`, units
+# `grid⁻ᴺ`. Multiplying by it TRANSPORTS a value-space quantity into derivative
+# space (`Y → Y·X⁻ᴺ`); it is NOT a multiplicative identity there (`du * du` has
+# units `X⁻²ᴺ`), and NOT `unit(...)` (which would be a bare `Units` object).
+#
 # `h` supplies the axis's coordinate unit — the GRID's, never the query's: with a
 # `u"hr"` grid and a `u"s"` query the two disagree. `true` is the dimensionless
 # identity, so order-0 and Real grids fold away at compile time (verified: the
-# factor leaves no instruction in the emitted IR). Not constant-specific — every
-# family's OOB/zero path uses it; `Real` grids kept it invisible until the grid
-# axis was relaxed to `<:Number`.
-@inline _deriv_unit_scale(h, ::DerivOp{0}) = true
-@inline _deriv_unit_scale(h, ::DerivOp{N}) where {N} = Base.literal_pow(^, inv(oneunit(h)), Val(N))
+# factor leaves no instruction in the emitted IR).
+#
+# Every family's OOB/zero path needs it: those kernels FABRICATE a result instead
+# of doing the arithmetic that would have produced the units on its own. The
+# `Tv` duck-type contract (docs/src/guides/custom_value_types.md) forbids
+# `zero(::Type{Tv})`, so the units must be carried from the GRID side (`<:Number`,
+# where `oneunit`/`inv` are guaranteed) and applied with a plain `*`.
+# `Real` grids kept this invisible until the grid axis was relaxed to `<:Number`.
+@inline _deriv_oneunit(h, ::DerivOp{0}) = true
+@inline _deriv_oneunit(h, ::DerivOp{N}) where {N} = Base.literal_pow(^, inv(oneunit(h)), Val(N))
 
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".
 #   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
@@ -926,7 +935,7 @@ end
 # the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
 @inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, _scale) =
+@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, _) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, scale) =
-    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq) * scale
+@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, deriv_oneunit) =
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq) * deriv_oneunit

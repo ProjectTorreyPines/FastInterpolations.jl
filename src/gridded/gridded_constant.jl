@@ -74,11 +74,11 @@ end
     carrier = Expr(:call, :*, ones_...)
     value = :(data[$(sels...)] * $carrier)
     if !(ops <: NTuple{N, EvalValue})
-        scale = Expr(
+        deriv_oneunit = Expr(
             :call, :*,
-            [:(_deriv_unit_scale(oneunit(eltype(grids[$d])), ops[$d])) for d in 1:N]...
+            [:(_deriv_oneunit(oneunit(eltype(grids[$d])), ops[$d])) for d in 1:N]...
         )
-        value = :($value * 0 * $scale)
+        value = :($value * 0 * $deriv_oneunit)
     end
     body = :(out[$(js...)] = $value)
     for d in 1:N   # d = 1 built first → innermost loop (stride-1 writes)

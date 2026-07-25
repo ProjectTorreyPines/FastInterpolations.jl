@@ -303,8 +303,8 @@ end
     )
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
-        scale = _deriv_unit_scale(oneunit(aq.h), op)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, scale)
+        deriv_oneunit = _deriv_oneunit(oneunit(aq.h), op)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, deriv_oneunit)
     end
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq) * one(x_last)) : @inbounds 0 * y[aq.idxR] * one(aq.xq) * one(x_last))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)

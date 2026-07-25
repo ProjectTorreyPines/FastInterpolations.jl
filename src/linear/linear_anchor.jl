@@ -373,8 +373,8 @@ end
     )
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
-        scale = _deriv_unit_scale(oneunit(aq.h), op)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, scale)
+        deriv_oneunit = _deriv_oneunit(oneunit(aq.h), op)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, deriv_oneunit)
     end
     @inbounds return _linear_kernel(op, y[aq.idxL], y[aq.idxR], aq)
 end

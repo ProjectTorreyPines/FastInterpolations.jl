@@ -464,18 +464,18 @@ end
 # The value eltype is folded ONE AXIS AT A TIME (the gridded mirror of
 # `_nd_value_eltype`) — joining the axes first collapses a mixed-unit grid to an
 # abstract `Quantity{Float64}` and the output array then boxes every element.
-# `_promote_grid_float` per axis is what the cached axes resolve to (identity on
-# an already-resolved persistent grid, and it passes duck grids through raw).
-# Then folded per-axis into derivative space (Y/Xᴺ) so a unit-grid gridded
-# derivative sizes in ∂-units (e.g. W/s), not value units. Value ops (DerivOp{0})
-# leave it unchanged → the value fast path stays bit-identical.
+# It differs from `_nd_value_eltype` only in the query source: one target vector
+# per axis instead of one scalar query type. The axis map is the shared
+# `_axis_grid_eltype`. Then folded per-axis into derivative space (Y/Xᴺ) so a
+# unit-grid gridded derivative sizes in ∂-units (e.g. W/s), not value units.
+# Value ops (DerivOp{0}) leave it unchanged → the value fast path is bit-identical.
 @generated function _gridded_value_eltype(
         ::Type{Tv}, grids::Tuple{Vararg{Any, N}}, targets::Tuple{Vararg{Any, N}}
     ) where {Tv, N}
     ex = :Tv
     for d in 1:N
         G, T = grids.parameters[d], targets.parameters[d]
-        Gd = :(_promote_grid_float(eltype($G), Tv))
+        Gd = :(_axis_grid_eltype(_interp_op, eltype($G), Tv))
         ex = :(_promote_eltype(_interp_op, $Gd, $ex, _axis_query_eltype(eltype($T), $Gd)))
     end
     return ex

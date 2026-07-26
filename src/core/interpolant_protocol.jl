@@ -260,13 +260,25 @@ end
 # The witness is a parameter because the families disagree on what one axis does
 # to the value: arithmetic kernels blend (`_interp_op`), Constant selects
 # (`_select_op`). Both take `(grid, value, query)`, so the fold is shared.
+#
+# The witness also fixes how an axis resolves. Default: a blending kernel divides
+# by the spacing, so its axis is value-matched to a float (Int grid + Float64 data
+# → Float64). Constant overrides this beside `_select_op` — it only compares and
+# indexes, so an Int grid stays Int and `Int` data keeps returning `Int`. Deriving
+# the map from the witness is what keeps the two from drifting apart.
+@inline _axis_grid_eltype(op, ::Type{Tg}, ::Type{Tv}) where {Tg, Tv} =
+    _promote_grid_float(Tg, Tv)
+
+# `grids` may be raw (one-shot) or already resolved (persistent); the axis map is
+# idempotent on a resolved axis, so both callers share this.
 @generated function _nd_value_eltype(
         op::F, ::Type{Tv}, grids::Tuple{Vararg{Any, N}}, ::Type{Tq}
     ) where {F, Tv, N, Tq}
     ex = :Tv
     for d in 1:N
         G = grids.parameters[d]
-        ex = :(_promote_eltype(op, eltype($G), $ex, _axis_query_eltype(Tq, eltype($G))))
+        Gd = :(_axis_grid_eltype(op, eltype($G), Tv))
+        ex = :(_promote_eltype(op, $Gd, $ex, _axis_query_eltype(Tq, $Gd)))
     end
     return ex
 end

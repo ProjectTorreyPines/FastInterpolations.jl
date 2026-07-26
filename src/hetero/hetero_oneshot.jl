@@ -525,6 +525,12 @@ end
 # Public API — Batch Allocating
 # ========================================
 
+# Value eltype folded PER AXIS (`_nd_value_eltype`), then into derivative space.
+# Joining the axes into one grid type first collapses a mixed-unit grid (`s` × `m`)
+# to an abstract `Quantity{Float64}`; the ND batch kernels are pinned to a
+# concrete output, so that surfaced as an internal `MethodError` on a public call
+# rather than as silent boxing. The witness also picks the axis resolution
+# (blend → value-matched float, select → raw), so it is passed, not spelled here.
 @inline function _interp_nd_output_eltype(
         ::Tuple{Vararg{AbstractInterpMethod}},
         grids::NTuple{N, AbstractVector},
@@ -533,9 +539,7 @@ end
         ops::Tuple;
         shape_op = _interp_op
     ) where {N, Tv, Tq}
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    Tr = _promote_eltype(shape_op, Tg, Tv, Tq)
-    return _deriv_eltype_nd(Tr, grids, ops)
+    return _deriv_eltype_nd(_nd_value_eltype(shape_op, Tv, grids, Tq), grids, ops)
 end
 
 @inline function _interp_nd_output_eltype(
@@ -546,9 +550,7 @@ end
         ops::Tuple;
         shape_op = _select_op
     ) where {N, Tv, Tq}
-    Tg = _promote_grid_eltype(grids)
-    Tr = _promote_eltype(shape_op, Tg, Tv, Tq)
-    return _deriv_eltype_nd(Tr, grids, ops)
+    return _deriv_eltype_nd(_nd_value_eltype(shape_op, Tv, grids, Tq), grids, ops)
 end
 
 """

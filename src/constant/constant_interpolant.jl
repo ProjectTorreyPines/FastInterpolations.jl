@@ -27,6 +27,12 @@ end
 # SVector × Dual → SVector{Dual}; Float y × Dual grid → Dual; etc.).
 @inline _select_op(xL, yv, xq) = yv * one(xq - xL)
 
+# Constant's exception to the default axis resolution (`_axis_grid_eltype` in
+# core): selection never divides by the spacing, so the axis is NOT value-matched
+# to a float — an Int grid stays Int, which is what keeps `Int` data returning
+# `Int` instead of `Float64`.
+@inline _axis_grid_eltype(::typeof(_select_op), ::Type{Tg}, ::Type{Tv}) where {Tg, Tv} = Tg
+
 @inline _promote_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
     _promote_eltype(_select_op, Tg, Tv, Tq)
 

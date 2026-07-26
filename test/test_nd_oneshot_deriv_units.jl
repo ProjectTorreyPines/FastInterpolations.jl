@@ -58,8 +58,15 @@
         @test out[1] ≈ ref_d10
     end
 
-    # Constant is the sibling that already worked — pin it so the shared helper
-    # cannot regress it.
+    @testset "constant_interp batch" begin
+        out = constant_interp(grids, data, [q]; deriv = DerivOp(1, 0))
+        @test eltype(out) === typeof(ref_d10)
+        @test unit(out[1]) === u"W" / u"s"
+        @test iszero(out[1])
+    end
+
+    # Constant is the sibling that already worked on the scalar path — pin it so
+    # the shared helper cannot regress it.
     @test unit(constant_interp(grids, data, q; deriv = DerivOp(1, 0))) === u"W" / u"s"
 end
 

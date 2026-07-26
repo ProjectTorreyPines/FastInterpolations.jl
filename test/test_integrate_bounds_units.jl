@@ -29,6 +29,14 @@
             @test integrate(itp, 1.0e-5u"km", 3.0e-5u"km") ≈ ref
             # partial cells (bounds strictly inside cells) exercise the offset kernel
             @test integrate(itp, 0.005u"m", 0.025u"m") ≈ integrate(itp, 0.5u"cm", 2.5u"cm")
+
+            # BOTH bounds inside ONE cell takes the `i0 == i1` branch, which the
+            # multi-cell `promote` never touches (there both bounds are caller
+            # bounds — only the end cells pair a bound with a grid node).
+            @test integrate(itp, 5.0u"mm", 8.0u"mm") ≈ integrate(itp, 0.5u"cm", 0.8u"cm")
+            @test integrate(itp, 0.005u"m", 0.008u"m") ≈ integrate(itp, 0.5u"cm", 0.8u"cm")
+            # reversed single-cell bounds keep the sign
+            @test integrate(itp, 8.0u"mm", 5.0u"mm") ≈ -integrate(itp, 0.5u"cm", 0.8u"cm")
         end
     end
 end

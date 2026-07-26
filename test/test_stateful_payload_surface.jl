@@ -58,3 +58,21 @@
         "core/series_lean_anchors.jl:47",
     ]
 end
+
+@testitem "Stateful payload: no TinvN-less factory arm survives" begin
+    using FastInterpolations: _maybe_stateful_payload, _StatefulPayload,
+        _LinearValuePayload, ClampExtrap, ExtendExtrap
+    P = _LinearValuePayload{Float64}
+
+    # A 2-arg `_maybe_stateful_payload(extrap, P)` cannot know the axis's
+    # `oneunit(grid⁻ᴺ)`, so its Clamp/Fill arm has to hardcode `TinvN = Bool` —
+    # value units for every derivative order, i.e. exactly the bug this branch
+    # fixed. All four families call the 3-arg form; leaving the 2-arg one around
+    # means the next family to grow a Series path picks it up silently.
+    @test !hasmethod(_maybe_stateful_payload, Tuple{ClampExtrap, Type{P}})
+    @test !hasmethod(_maybe_stateful_payload, Tuple{ExtendExtrap, Type{P}})
+
+    # The 3-arg form is the live one and threads `TinvN` through.
+    @test _maybe_stateful_payload(ClampExtrap(), P, Float64) === _StatefulPayload{P, Float64}
+    @test _maybe_stateful_payload(ExtendExtrap(), P, Float64) === P
+end

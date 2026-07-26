@@ -210,6 +210,17 @@ end
         @test cubic_interp(xr, Series(Y), q) == out          # one-shot parity
         @test cubic_interp(xr, Series(Y), qs) == outv
 
+        # In-place is a separate code path from the out-of-place delegation
+        # (mirrors the quadratic testset above): persistent + one-shot, both shapes.
+        out_inplace = similar(out)
+        @test sitp(out_inplace, q) == out
+        outv_inplace = [similar(v) for v in outv]
+        @test sitp(outv_inplace, qs) == outv
+        one_inplace = similar(out)
+        @test cubic_interp!(one_inplace, xr, Series(Y), q) == out
+        onev_inplace = [similar(v) for v in outv]
+        @test cubic_interp!(onev_inplace, xr, Series(Y), qs) == outv
+
         # BC payloads carry derivative units — `_strip_bc_units` must rescale them.
         for bc in (CubicFit(), ZeroCurvBC(), Deriv1(2.0u"m" / u"s"))
             sitp_bc = cubic_interp(xr, Series(Y); bc = bc)

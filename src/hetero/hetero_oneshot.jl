@@ -270,7 +270,6 @@ function _interp_nd_oneshot_dispatch(
     # Per-axis (hetero) ND one-shot does not support unit-carrying grids yet —
     # match the persistent builder's actionable error, not a deep `_collapse_dims` MethodError.
     _check_nd_hetero_grid(_promote_grid_eltype(grids))
-    Tr = _promote_eltype(eltype(data), Tg, typeof.(query)...)
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
     bcs = map(_bc_for_periodic_check, methods)
@@ -283,6 +282,10 @@ function _interp_nd_oneshot_dispatch(
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids, methods, extraps_val)
+    # Fold the derivative order in AFTER `ops` is known — an all-Linear method
+    # tuple reaches here on a unit grid (only the solver-backed families are
+    # refused above), and the value-space witness would assert `W` on a `W/s`.
+    Tr = _deriv_eltype_nd(_promote_eltype(eltype(data), Tg, typeof.(query)...), grids, ops)
 
     if coeffs isa OnTheFly
         return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hints)::Tr

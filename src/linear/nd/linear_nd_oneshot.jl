@@ -141,13 +141,18 @@ function linear_interp(
     # float (Int grid + Float32 data → Float32) — no eager copy, witness `Tr` matches the eval.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     _validate_nd_grids(grids, data)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
+    # `ops` is resolved BEFORE the witness: a derivative query lands in value/coordᴺ,
+    # so the value-space `Tr` would assert `W` against a `W/s` result (identity on
+    # Real grids and on `DerivOp{0}`).
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _deriv_eltype_nd(
+        _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...)), grids, ops
+    )
 
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
@@ -170,7 +175,10 @@ function linear_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Same fold as the scalar entry — the buffer must be sized in ∂-units, else a
+    # unit-grid derivative batch throws on the first store.
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _deriv_eltype_nd(_promote_eltype(_interp_op, Tg, Tv, Tq), grids, ops)
     output = _alloc_query_output(Tr, queries)
     linear_interp!(output, grids, data, queries; bc, extrap, search, deriv, hint)
     return output

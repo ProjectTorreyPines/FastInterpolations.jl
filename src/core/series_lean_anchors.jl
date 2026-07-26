@@ -15,8 +15,8 @@
 # Clamp/Fill wrap the bare payload so the OOB state branch stays eval-time; every
 # other extrap uses the bare payload with a branch-free kernel. Compile-time
 # (extrap is known at the Series entry), so the anchor type is fully concrete.
-@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P <: _AbstractAnchorPayload} = _StatefulPayload{P, Bool}
-@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P <: _AbstractAnchorPayload} = P
+# `TinvN` is mandatory: a 2-arg form cannot know the axis's `oneunit(grid⁻ᴺ)` and
+# would have to hardcode `Bool` (value units at every derivative order).
 @inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}, ::Type{TinvN}) where {P <: _AbstractAnchorPayload, TinvN} =
     _StatefulPayload{P, TinvN}
 @inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}, ::Type) where {P <: _AbstractAnchorPayload} = P

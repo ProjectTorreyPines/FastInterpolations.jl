@@ -24,6 +24,7 @@
         ("constant_adjoint", () -> constant_adjoint(xu, qu)),
         ("quadratic_adjoint", () -> quadratic_adjoint(xu, qu)),
         ("cardinal_adjoint", () -> cardinal_adjoint(xu, qu)),
+        ("hermite_adjoint", () -> hermite_adjoint(xu, qu)),
         ("pchip_adjoint", () -> pchip_adjoint(xu, yu, qu)),
         ("akima_adjoint", () -> akima_adjoint(xu, yu, qu)),
     )

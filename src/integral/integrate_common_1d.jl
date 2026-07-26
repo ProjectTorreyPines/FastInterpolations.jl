@@ -121,13 +121,21 @@ end
         return convert(Tout, sign * partial_fn(i0, xL0, h, lo, hi))
     end
 
+    # The two end cells pair a caller BOUND with a grid NODE, and `partial_fn`
+    # subtracts both from the same node — so they must share a type. They already
+    # do whenever the bound is spelled in the grid's own unit (and always on Real
+    # grids, where `promote` is the identity), but a `cm` grid integrated between
+    # `m` bounds would otherwise hand the kernel one `m` offset and one `cm` one.
+    # `promote` also widens a Float64 bound against a Float32 grid, as before.
     h0 = _get_h(x, i0)
-    total = convert(Tout, partial_fn(i0, xL0, h0, lo, xL0 + h0))
+    lo0, hi0 = promote(lo, xL0 + h0)
+    total = convert(Tout, partial_fn(i0, xL0, h0, lo0, hi0))
     @inbounds @simd for i in (i0 + 1):(i1 - 1)
         total += convert(Tout, full_fn(i, _get_h(x, i)))
     end
     h1 = _get_h(x, i1)
-    total += convert(Tout, partial_fn(i1, xL1, h1, xL1, hi))
+    lo1, hi1 = promote(xL1, hi)
+    total += convert(Tout, partial_fn(i1, xL1, h1, lo1, hi1))
 
     return sign * total
 end

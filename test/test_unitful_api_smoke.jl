@@ -151,23 +151,34 @@ end
         @test outv[1] == [constant_interp(xr, y1)(qi) for qi in qs]
         @test outv[2] == [constant_interp(xr, y2)(qi) for qi in qs]
     end
+    # ── Solver families (Quadratic, Cubic) under units: Series vs scalar ──
+    # These two do NOT run the same arithmetic. The solve is unit-hostile by
+    # storage, so both nondimensionalize — but at different points: the Series
+    # build strips the whole matrix once (`_quadratic_series_units` /
+    # `_cubic_series_units`), the scalar build strips each vector
+    # (`_quadratic_interp_units` / `_cubic_interp_units`). Same value, last-ULP
+    # apart by construction, and which way it rounds depends on the LLVM version.
+    # So Series-vs-scalar asserts use `rtol`; Series-vs-Series asserts (one-shot
+    # vs persistent, in-place vs out-of-place) stay exact — there the two sides
+    # really are the same computation, which is the point of the assert.
+    SERIES_RTOL = 1.0e-15
     @testset "quadratic series" begin
         sitp = quadratic_interp(xr, Series(Y))
         out = sitp(q)
-        @test out[1] == quadratic_interp(xr, y1)(q)
-        @test out[2] == quadratic_interp(xr, y2)(q)
+        @test out[1] ≈ quadratic_interp(xr, y1)(q) rtol = SERIES_RTOL
+        @test out[2] ≈ quadratic_interp(xr, y2)(q) rtol = SERIES_RTOL
         out_inplace = similar(out)
         @test sitp(out_inplace, q) == out
 
         qs = [q, 3.5u"s"]
         outv = sitp(qs)
-        @test outv[1] == [quadratic_interp(xr, y1)(qi) for qi in qs]
-        @test outv[2] == [quadratic_interp(xr, y2)(qi) for qi in qs]
+        @test outv[1] ≈ [quadratic_interp(xr, y1)(qi) for qi in qs] rtol = SERIES_RTOL
+        @test outv[2] ≈ [quadratic_interp(xr, y2)(qi) for qi in qs] rtol = SERIES_RTOL
         outv_inplace = [similar(v) for v in outv]
         @test sitp(outv_inplace, qs) == outv
 
         d = sitp(q; deriv = DerivOp(1))
-        @test d[1] == quadratic_interp(xr, y1)(q; deriv = DerivOp(1))
+        @test d[1] ≈ quadratic_interp(xr, y1)(q; deriv = DerivOp(1)) rtol = SERIES_RTOL
         @test unit(eltype(d)) == u"m" / u"s"
 
         @test quadratic_interp(xr, Series(Y), q) == out
@@ -179,32 +190,31 @@ end
 
         for bc in (Left(QuadraticFit()), Right(QuadraticFit()))
             sitp_bc = quadratic_interp(xr, Series(Y); bc = bc)
-            @test sitp_bc(q) == [quadratic_interp(xr, y; bc = bc)(q) for y in (y1, y2)]
-            @test sitp_bc(q; deriv = DerivOp(1)) ==
-                [quadratic_interp(xr, y; bc = bc)(q; deriv = DerivOp(1)) for y in (y1, y2)]
+            @test sitp_bc(q) ≈ [quadratic_interp(xr, y; bc = bc)(q) for y in (y1, y2)] rtol = SERIES_RTOL
+            @test sitp_bc(q; deriv = DerivOp(1)) ≈
+                [quadratic_interp(xr, y; bc = bc)(q; deriv = DerivOp(1)) for y in (y1, y2)] rtol = SERIES_RTOL
         end
     end
     # Cubic series build mirrors the scalar `_cubic_interp_units` strip→solve→
     # reattach (`z` is order 2 → `Y/X²`): the Thomas solve is unit-hostile by
-    # STORAGE, so it runs on the nondimensionalized twin. Parity with quadratic.
+    # STORAGE, so it runs on the nondimensionalized twin. Parity with quadratic,
+    # including the `rtol` rule above.
     @testset "cubic series" begin
         sitp = cubic_interp(xr, Series(Y))
         out = sitp(q)
-        @test out[1] == cubic_interp(xr, y1)(q)
-        @test out[2] == cubic_interp(xr, y2)(q)
+        @test out[1] ≈ cubic_interp(xr, y1)(q) rtol = SERIES_RTOL
+        @test out[2] ≈ cubic_interp(xr, y2)(q) rtol = SERIES_RTOL
 
         qs = [q, 3.5u"s"]
         outv = sitp(qs)
-        # batch vs scalar differ in the last ULP (kernel associativity) — the
-        # codebase's standing convention for batch-vs-scalar asserts.
-        @test outv[1] ≈ [cubic_interp(xr, y1)(qi) for qi in qs] rtol = 1.0e-15
-        @test outv[2] ≈ [cubic_interp(xr, y2)(qi) for qi in qs] rtol = 1.0e-15
+        @test outv[1] ≈ [cubic_interp(xr, y1)(qi) for qi in qs] rtol = SERIES_RTOL
+        @test outv[2] ≈ [cubic_interp(xr, y2)(qi) for qi in qs] rtol = SERIES_RTOL
 
         d = sitp(q; deriv = DerivOp(1))
-        @test d[1] == cubic_interp(xr, y1)(q; deriv = DerivOp(1))
+        @test d[1] ≈ cubic_interp(xr, y1)(q; deriv = DerivOp(1)) rtol = SERIES_RTOL
         @test unit(eltype(d)) == u"m" / u"s"
         d2 = sitp(q; deriv = DerivOp(2))
-        @test d2[1] == cubic_interp(xr, y1)(q; deriv = DerivOp(2))
+        @test d2[1] ≈ cubic_interp(xr, y1)(q; deriv = DerivOp(2)) rtol = SERIES_RTOL
         @test unit(eltype(d2)) == u"m" / u"s"^2
 
         @test cubic_interp(xr, Series(Y), q) == out          # one-shot parity
@@ -222,9 +232,11 @@ end
         @test cubic_interp!(onev_inplace, xr, Series(Y), qs) == outv
 
         # BC payloads carry derivative units — `_strip_bc_units` must rescale them.
+        # `CubicFit` fits a polynomial at the boundary, so this is the assert most
+        # exposed to reassociation: it is the one that broke on Ubuntu LTS.
         for bc in (CubicFit(), ZeroCurvBC(), Deriv1(2.0u"m" / u"s"))
             sitp_bc = cubic_interp(xr, Series(Y); bc = bc)
-            @test sitp_bc(q) == [cubic_interp(xr, y; bc = bc)(q) for y in (y1, y2)]
+            @test sitp_bc(q) ≈ [cubic_interp(xr, y; bc = bc)(q) for y in (y1, y2)] rtol = SERIES_RTOL
         end
 
         # PeriodicBC stays unsupported under units (same friendly error as scalar).

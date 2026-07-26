@@ -14,18 +14,17 @@
 # Included AFTER gridded/gridded_linear.jl (payloads/resolve/kernel live there).
 # Design: docs/design/series_lean_ports_plan.md
 
-# DerivOp{N≥2}: the ONE payload Linear does not reuse from gridded. The gridded
-# `_LinearZeroPayload{Tα}` fabricates its zero and lets the caller supply the
-# `coordᴺ` units — the ND fold does exactly that (`_nd_fill_deriv_scale`). Series
-# eval has no grid in scope, so it needs them baked in; `TinvN` also keeps
-# N=2,3,… distinct, which `_payload_op`'s collapse to `DerivOp(2)` would lose.
-# Series-owned so the gridded/ND path keeps applying its own factor exactly once.
+# DerivOp{N≥2}: the ONE payload Linear does not reuse from gridded. Both zero
+# payloads bake the same `TinvN` (the axis's `oneunit(grid⁻ᴺ)`), so the split is
+# purely about the combine: Series uses the single-term `0 * y[idxL]` that keeps
+# `-0.0`, gridded the two-term `(0*yL + 0*yR)`. `TinvN` also keeps N=2,3,…
+# distinct, which `_payload_op`'s collapse to `DerivOp(2)` would lose.
 struct _LinearSeriesZeroPayload{Tα, TinvN} <: _AbstractAnchorPayload end
 
 @inline _linear_series_payload_type(op::AbstractEvalOp, ::Type{Tα}, ::Type{Tinv}, ::Type{TinvN}) where {Tα, Tinv, TinvN} =
     _LinearSeriesZeroPayload{Tα, TinvN}
-@inline _linear_series_payload_type(op::Union{EvalValue, EvalDeriv1}, ::Type{Tα}, ::Type{Tinv}, ::Type) where {Tα, Tinv} =
-    _linear_payload_type(op, Tα, Tinv)
+@inline _linear_series_payload_type(op::Union{EvalValue, EvalDeriv1}, ::Type{Tα}, ::Type{Tinv}, ::Type{TinvN}) where {Tα, Tinv, TinvN} =
+    _linear_payload_type(op, Tα, Tinv, TinvN)
 
 # Payload identity → op instance / carrier eltype (kernels + OOB arms stay op-free).
 @inline _payload_op(::Type{<:_LinearValuePayload}) = EvalValue()

@@ -25,9 +25,15 @@
 # promotion lands on an abstract `Quantity` — which has no `zero`/`oneunit`, so
 # `det`, `zeros` and `similar` fail downstream even if we handed it back.
 #
-# The decision is purely type-level (grid eltypes × value eltype), so the check
-# constant-folds away on Real and same-unit grids. Without it the user meets a
-# raw `DimensionError` from inside the kernel.
+# The in-place forms are the exception: whether ONE type exists is a property of
+# the caller's BUFFER, not of the grid. A `Vector{Any}` (or an abstract-`Quantity`
+# store) holds `K/s` beside `K/m` fine and the generic kernels already fill it —
+# so they check `T <: eltype(store)` too and only refuse a buffer that genuinely
+# cannot hold the components.
+#
+# The decision is purely type-level (grid eltypes × value eltype × store eltype),
+# so the check constant-folds away on Real and same-unit grids. Without it the
+# user meets a raw `DimensionError` from inside the kernel.
 
 # ∂²f/∂xᵢ∂xⱼ eltype: the `_deriv1_op` witness folded once per axis (never `h^-2`,
 # which is type-unstable for units). `i == j` is the same expression twice.
@@ -65,10 +71,10 @@ end
     )
 end
 
-@inline function _check_nd_hessian_units(::Type{Tv}, grids::Tuple, what::String = "hessian") where {Tv}
+@inline function _check_nd_hessian_units(::Type{Tv}, grids::Tuple) where {Tv}
     T = _nd_hessian_eltype(Tv, grids)
     isconcretetype(T) || _throw_mixed_unit_nd(
-        what,
+        "hessian",
         "Query the components you need individually, e.g. " *
             "`itp(query...; deriv = DerivOp(2, 0))`, or strip units (`ustrip`).",
         T,
@@ -87,12 +93,29 @@ end
     return nothing
 end
 
-@inline function _check_nd_gradient_store_units(::Type{Tv}, grids::Tuple) where {Tv}
+# In-place forms: `T` is the promotion of every component, so `T <: TS` means the
+# caller's store holds all of them — accept it even when `T` itself is abstract.
+# A concrete `T` (Real, same-unit) short-circuits before the subtype test, so a
+# `Float32` store still takes `Float64` components exactly as it always did.
+@inline function _check_nd_gradient_store_units(::Type{Tv}, grids::Tuple, ::Type{TS}) where {Tv, TS}
     T = _nd_gradient_eltype(Tv, grids)
-    isconcretetype(T) || _throw_mixed_unit_nd(
+    (isconcretetype(T) || T <: TS) || _throw_mixed_unit_nd(
         "gradient!",
         "Use the allocating `gradient`, which returns a Tuple and so keeps each " *
-            "component's own units, or strip units (`ustrip`).",
+            "component's own units, pass a store that can hold them (e.g. " *
+            "`Vector{Any}`), or strip units (`ustrip`).",
+        T,
+    )
+    return nothing
+end
+
+@inline function _check_nd_hessian_store_units(::Type{Tv}, grids::Tuple, ::Type{TS}) where {Tv, TS}
+    T = _nd_hessian_eltype(Tv, grids)
+    (isconcretetype(T) || T <: TS) || _throw_mixed_unit_nd(
+        "hessian!",
+        "Query the components you need individually, e.g. " *
+            "`itp(query...; deriv = DerivOp(2, 0))`, pass a store that can hold them " *
+            "(e.g. `Matrix{Any}`), or strip units (`ustrip`).",
         T,
     )
     return nothing
@@ -257,7 +280,7 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    _check_nd_gradient_store_units(Tv, itp.grids)
+    _check_nd_gradient_store_units(Tv, itp.grids, eltype(G))
     return _gradient_generic!(G, itp, query, hint)
 end
 
@@ -581,7 +604,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    _check_nd_hessian_units(Tv, itp.grids, "hessian!")
+    _check_nd_hessian_store_units(Tv, itp.grids, eltype(H))
     return _hessian_generic!(H, itp, query, hint)
 end
 

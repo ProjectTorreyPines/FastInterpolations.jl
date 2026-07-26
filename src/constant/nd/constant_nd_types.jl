@@ -85,7 +85,9 @@ end
 @inline grid_type(::ConstantInterpolantND{Tg}) where {Tg} = Tg
 @inline value_type(::ConstantInterpolantND{Tg, Tv}) where {Tg, Tv} = Tv
 
-# Mirrors the 1D override: trait routes to `_select_op` so the
-# inferred return matches the kernel's actual `y * one(dL)` shape.
-@inline _promote_eltype(::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _promote_eltype(_select_op, Tg, Tv, Tq)
+# Mirrors the 1D override: trait routes to `_select_op` so the inferred return
+# matches the kernel's actual `y * one(dL)` shape. The axis fold is the shared
+# `_nd_value_eltype` — feeding the struct's joined `Tg` instead would box the
+# buffer on a mixed-unit grid (`s` × `m` has no concrete common type).
+@inline _promote_eltype(itp::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _nd_value_eltype(_select_op, Tv, itp.grids, Tq)

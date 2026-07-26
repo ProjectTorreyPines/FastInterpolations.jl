@@ -21,7 +21,7 @@ end
     payload_types = (
         _LinearValuePayload{Float64},
         _LinearDeriv1Payload{Float64, Float64},
-        _LinearZeroPayload{Float64},
+        _LinearZeroPayload{Float64, Float64},
         _ConstantValuePayload{Float64},
         _ConstantZeroPayload{Float64, Float64},
         _QuadraticPayload{Float64},

@@ -257,19 +257,22 @@ end
 @inline _axis_query_eltype(::Type{Tq}, ::Type{Tgd}) where {Tq, Tgd} =
     isconcretetype(promote_type(Tq, Tgd)) ? Tq : Tgd
 
+# The witness is a parameter because the families disagree on what one axis does
+# to the value: arithmetic kernels blend (`_interp_op`), Constant selects
+# (`_select_op`). Both take `(grid, value, query)`, so the fold is shared.
 @generated function _nd_value_eltype(
-        ::Type{Tv}, grids::Tuple{Vararg{Any, N}}, ::Type{Tq}
-    ) where {Tv, N, Tq}
+        op::F, ::Type{Tv}, grids::Tuple{Vararg{Any, N}}, ::Type{Tq}
+    ) where {F, Tv, N, Tq}
     ex = :Tv
     for d in 1:N
         G = grids.parameters[d]
-        ex = :(_promote_eltype(_interp_op, eltype($G), $ex, _axis_query_eltype(Tq, eltype($G))))
+        ex = :(_promote_eltype(op, eltype($G), $ex, _axis_query_eltype(Tq, eltype($G))))
     end
     return ex
 end
 
 @inline _promote_eltype(itp::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _nd_value_eltype(Tv, itp.grids, Tq)
+    _nd_value_eltype(_interp_op, Tv, itp.grids, Tq)
 
 # ========================================
 # Unified Batch Interpolant Evaluation (Generic ND)

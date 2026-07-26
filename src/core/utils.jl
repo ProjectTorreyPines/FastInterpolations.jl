@@ -551,21 +551,22 @@ end
 # Refuse at the public boundary instead. `<: Real` is the right test, not "is it
 # a plain float": `ForwardDiff.Dual <: Real` and Dual grids do work.
 # `constant_adjoint` keeps its grid raw and calls this directly.
-@noinline function _throw_adjoint_grid_not_real(::Type{Tg}) where {Tg}
+@noinline function _throw_adjoint_grid_not_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
     throw(
         ArgumentError(
             "adjoint operators on a unit-carrying grid are not supported (grid eltype " *
-                "`$Tg`): the anchor weights are built homogeneously in the grid type. " *
-                "Strip units first (`ustrip`) and reattach them to the result, or " *
-                "differentiate the forward evaluation, which does preserve units."
+                "`$Tg`, query eltype `$Tq`): the anchor weights are built homogeneously " *
+                "in the grid type. Strip units first (`ustrip`) and reattach them to the " *
+                "result, or differentiate the forward evaluation, which does preserve units."
         )
     )
 end
 
-@inline function _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
-    (Tg <: Real && Tq <: Real) || _throw_adjoint_grid_not_real(Tg <: Real ? Tq : Tg)
-    return nothing
-end
+# Dispatch, not a boolean test, so the accepted case is a signature (matching the
+# `_check_nd_solver_grid` style above) and the check folds to nothing on `Real`.
+@inline _check_adjoint_grid_real(::Type{<:Real}, ::Type{<:Real}) = nothing
+@noinline _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq} =
+    _throw_adjoint_grid_not_real(Tg, Tq)
 
 
 # ========================================

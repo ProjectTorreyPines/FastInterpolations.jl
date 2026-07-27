@@ -116,18 +116,31 @@ end
     i0, _, xL0, _ = search_interval(searcher, x, lo)
     i1, _, xL1, _ = search_interval(searcher, x, hi)
 
+    # `partial_fn` subtracts BOTH of its bounds from the same node and takes the
+    # two offsets as ONE type. Here both bounds are the caller's, so they must
+    # agree with each other — `integrate(itp, 1, 1.5)` on an Int grid, or `mm`
+    # beside `cm`, otherwise hands the kernel two different offset types.
     if i0 == i1
         h = _get_h(x, i0)
-        return convert(Tout, sign * partial_fn(i0, xL0, h, lo, hi))
+        lo1c, hi1c = promote(lo, hi)
+        return convert(Tout, sign * partial_fn(i0, xL0, h, lo1c, hi1c))
     end
 
+    # The two end cells pair a caller BOUND with a grid NODE instead, so each is
+    # promoted against its own node. They already agree whenever the bound is
+    # spelled in the grid's own unit (and always on Real grids, where `promote`
+    # is the identity), but a `cm` grid integrated between `m` bounds would
+    # otherwise hand the kernel one `m` offset and one `cm` one. `promote` also
+    # widens a Float64 bound against a Float32 grid, as before.
     h0 = _get_h(x, i0)
-    total = convert(Tout, partial_fn(i0, xL0, h0, lo, xL0 + h0))
+    lo0, hi0 = promote(lo, xL0 + h0)
+    total = convert(Tout, partial_fn(i0, xL0, h0, lo0, hi0))
     @inbounds @simd for i in (i0 + 1):(i1 - 1)
         total += convert(Tout, full_fn(i, _get_h(x, i)))
     end
     h1 = _get_h(x, i1)
-    total += convert(Tout, partial_fn(i1, xL1, h1, xL1, hi))
+    lo1, hi1 = promote(xL1, hi)
+    total += convert(Tout, partial_fn(i1, xL1, h1, lo1, hi1))
 
     return sign * total
 end

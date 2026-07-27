@@ -538,11 +538,35 @@ constant, pchip, cardinal, akima.
         x::AbstractVector,
         xq::AbstractVector
     )
+    _check_adjoint_grid_real(eltype(x), eltype(xq))
     Tg = _promote_grid_float(eltype(x), eltype(xq))
     x_p = _to_float(x, Tg)
     xq_p = _promote_query_typed(xq, Tg)
     return x_p, xq_p, Tg
 end
+
+# Adjoint builders bake grid geometry into anchor structs whose weight kernels
+# are homogeneous in `Tg`, so a unit-carrying grid breaks them from the inside
+# (a private `MethodError`, or a `DimensionError` once `h` and `inv(h)` meet).
+# Refuse at the public boundary instead. `<: Real` is the right test, not "is it
+# a plain float": `ForwardDiff.Dual <: Real` and Dual grids do work.
+# `constant_adjoint` keeps its grid raw and calls this directly.
+@noinline function _throw_adjoint_grid_not_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
+    throw(
+        ArgumentError(
+            "adjoint operators on a unit-carrying grid are not supported (grid eltype " *
+                "`$Tg`, query eltype `$Tq`): the anchor weights are built homogeneously " *
+                "in the grid type. Strip units first (`ustrip`) and reattach them to the " *
+                "result, or differentiate the forward evaluation, which does preserve units."
+        )
+    )
+end
+
+# Dispatch, not a boolean test, so the accepted case is a signature (matching the
+# `_check_nd_solver_grid` style above) and the check folds to nothing on `Real`.
+@inline _check_adjoint_grid_real(::Type{<:Real}, ::Type{<:Real}) = nothing
+@noinline _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq} =
+    _throw_adjoint_grid_not_real(Tg, Tq)
 
 
 # ========================================
@@ -897,11 +921,25 @@ end
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
-# Deriv-order aware form (1D OOB path): a flat extrap's derivative is zero in
-# value/coordᴺ units. Real queries: value ≡ deriv carrier space — no scale.
-@inline _promote_extrap_zero(val, xq::Real, ::DerivOp) = _promote_extrap_zero(val, xq)
-@inline _promote_extrap_zero(val, xq, ::DerivOp{N}) where {N} =
-    _promote_extrap_zero(val, xq) * inv(oneunit(xq))^N
+# `oneunit` of one axis's derivative space: an order-N derivative carries
+# `value/coordᴺ`, so this is `oneunit(coord⁻ᴺ)` — magnitude exactly `one`, units
+# `grid⁻ᴺ`. Multiplying by it TRANSPORTS a value-space quantity into derivative
+# space (`Y → Y·X⁻ᴺ`); it is NOT a multiplicative identity there (`du * du` has
+# units `X⁻²ᴺ`), and NOT `unit(...)` (which would be a bare `Units` object).
+#
+# `h` supplies the axis's coordinate unit — the GRID's, never the query's: with a
+# `u"hr"` grid and a `u"s"` query the two disagree. `true` is the dimensionless
+# identity, so order-0 and Real grids fold away at compile time (verified: the
+# factor leaves no instruction in the emitted IR).
+#
+# Every family's OOB/zero path needs it: those kernels FABRICATE a result instead
+# of doing the arithmetic that would have produced the units on its own. The
+# `Tv` duck-type contract (docs/src/guides/custom_value_types.md) forbids
+# `zero(::Type{Tv})`, so the units must be carried from the GRID side (`<:Number`,
+# where `oneunit`/`inv` are guaranteed) and applied with a plain `*`.
+# `Real` grids kept this invisible until the grid axis was relaxed to `<:Number`.
+@inline _deriv_oneunit(h, ::DerivOp{0}) = true
+@inline _deriv_oneunit(h, ::DerivOp{N}) where {N} = Base.literal_pow(^, inv(oneunit(h)), Val(N))
 
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".
 #   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
@@ -921,5 +959,7 @@ end
 # the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
 @inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(op::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
-    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq, op)
+@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, _) =
+    _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, deriv_oneunit) =
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq) * deriv_oneunit

@@ -243,9 +243,48 @@ end
 # ║       ND Interpolant Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── Output eltype trait (ND) — mirrors the 1D version. ──
-@inline _promote_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _promote_eltype(_interp_op, Tg, Tv, Tq)
+# ── Output eltype trait (ND) — mirrors the 1D version, but PER AXIS. ──
+# The struct's single `Tg` cannot stand in for the axes: on mixed-unit grids
+# (`s` × `m`) no concrete common grid type exists, so `Tg` degrades to an
+# abstract `Quantity{Float64}` and takes the buffer eltype with it (the values
+# stay right — only the container boxes). Fold `_interp_op` axis by axis instead,
+# each with its OWN grid type, so every `dL/h` cancels in its own dimension.
+#
+# The query type joins only on axes where it is dimensionally compatible — that
+# is what carries a `Dual` query's tag, or a Float64 query over a Float32 grid,
+# and on a `cm` axis queried in `m` it is the (dimensionless) `m/cm`. On the
+# axes it does not belong to, the axis supplies both slots.
+@inline _axis_query_eltype(::Type{Tq}, ::Type{Tgd}) where {Tq, Tgd} =
+    isconcretetype(promote_type(Tq, Tgd)) ? Tq : Tgd
+
+# The witness is a parameter because the families disagree on what one axis does
+# to the value: arithmetic kernels blend (`_interp_op`), Constant selects
+# (`_select_op`). Both take `(grid, value, query)`, so the fold is shared.
+#
+# The witness also fixes how an axis resolves. Default: a blending kernel divides
+# by the spacing, so its axis is value-matched to a float (Int grid + Float64 data
+# → Float64). Constant overrides this beside `_select_op` — it only compares and
+# indexes, so an Int grid stays Int and `Int` data keeps returning `Int`. Deriving
+# the map from the witness is what keeps the two from drifting apart.
+@inline _axis_grid_eltype(op, ::Type{Tg}, ::Type{Tv}) where {Tg, Tv} =
+    _promote_grid_float(Tg, Tv)
+
+# `grids` may be raw (one-shot) or already resolved (persistent); the axis map is
+# idempotent on a resolved axis, so both callers share this.
+@generated function _nd_value_eltype(
+        op::F, ::Type{Tv}, grids::Tuple{Vararg{Any, N}}, ::Type{Tq}
+    ) where {F, Tv, N, Tq}
+    ex = :Tv
+    for d in 1:N
+        G = grids.parameters[d]
+        Gd = :(_axis_grid_eltype(op, eltype($G), Tv))
+        ex = :(_promote_eltype(op, $Gd, $ex, _axis_query_eltype(Tq, $Gd)))
+    end
+    return ex
+end
+
+@inline _promote_eltype(itp::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _nd_value_eltype(_interp_op, Tv, itp.grids, Tq)
 
 # ========================================
 # Unified Batch Interpolant Evaluation (Generic ND)

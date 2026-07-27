@@ -307,7 +307,7 @@ end
 # Scalar query convenience
 function cardinal_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         tension::Real = 0.0,
         extrap::AbstractExtrap = NoExtrap(),

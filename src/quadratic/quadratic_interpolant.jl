@@ -162,7 +162,7 @@ end
 # `d` order 1 (`Y/X`). The original unit axis serves eval/search.
 function _quadratic_interp_units(x, y, bc, extrap, search, store)
     ux = oneunit(eltype(x))
-    uy = oneunit(eltype(y))
+    uy = _carrier_oneunit(eltype(y))
     xs = x ./ ux
     ys = y ./ uy
     bc_s = _strip_bc_units(bc, uy, ux)

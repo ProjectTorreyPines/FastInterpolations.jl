@@ -631,7 +631,7 @@ end
 # Scalar query convenience
 function quadratic_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
     )

@@ -84,6 +84,10 @@ function _format_num(x::Real)
     return Printf.@sprintf("%.3g", x)
 end
 
+# Non-Real grid carriers (Unitful `Quantity`, duck-typed `Tg <: Number`): `%g`
+# is Real-only, so fall back to `string`, which renders value + unit (e.g. "1.0 s").
+_format_num(x) = string(x)
+
 """
     _show_grid_row(io, is_last, x)
 

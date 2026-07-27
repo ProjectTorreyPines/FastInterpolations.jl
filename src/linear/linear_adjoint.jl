@@ -289,7 +289,7 @@ end
 # Scalar query convenience
 function linear_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
     )

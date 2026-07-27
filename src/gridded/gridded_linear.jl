@@ -37,11 +37,18 @@ end
 struct _LinearDeriv1Payload{Talpha, Tinv} <: _AbstractAnchorPayload
     inv_h::Tinv
 end
-struct _LinearZeroPayload{Talpha} <: _AbstractAnchorPayload end
+# `TinvN` = `oneunit(gridᵈ⁻ᴺ)`'s type for THIS axis. The zero arm stores no
+# geometry, so unlike the value/deriv1 arms it has nothing carrying the axis's
+# `coord⁻ᴺ` — and the separable engine multiplies one per-axis kernel per
+# dimension, so no later fold supplies it either (`_nd_fill_deriv_scale` runs on
+# the Fill/OOB post-pass only). Without it a `(DerivOp(2), DerivOp(0))` query on
+# a unit grid hands the output array a VALUE-unit zero. `true` on Real grids.
+struct _LinearZeroPayload{Talpha, TinvN} <: _AbstractAnchorPayload end
 
-@inline _linear_payload_type(::EvalValue, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearValuePayload{Tα}
-@inline _linear_payload_type(::EvalDeriv1, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearDeriv1Payload{Tα, Tinv}
-@inline _linear_payload_type(::AbstractEvalOp, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearZeroPayload{Tα}
+@inline _linear_payload_type(::EvalValue, ::Type{Tα}, ::Type{Tinv}, ::Type) where {Tα, Tinv} = _LinearValuePayload{Tα}
+@inline _linear_payload_type(::EvalDeriv1, ::Type{Tα}, ::Type{Tinv}, ::Type) where {Tα, Tinv} = _LinearDeriv1Payload{Tα, Tinv}
+@inline _linear_payload_type(::AbstractEvalOp, ::Type{Tα}, ::Type{Tinv}, ::Type{TinvN}) where {Tα, Tinv, TinvN} =
+    _LinearZeroPayload{Tα, TinvN}
 
 # Op-minimal gridded combine: the fused/fullbuffer kernels pass the whole anchor
 # so each op reads only the field its payload carries. Results match the
@@ -52,12 +59,19 @@ struct _LinearZeroPayload{Talpha} <: _AbstractAnchorPayload end
     _linear_value_blend(a.alpha, yL, yR)
 
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, _LinearDeriv1Payload{Tα, Tinv}}) where {Tv, Tα, Tinv}
-    Tc = _promote_eltype(_coeff_op, Tinv, Tv)
+    # `_fielddiff` types the VALUE difference `yR - yL` (dimension Y, e.g. m), NOT
+    # the slope output (Y/X) — the `* inv_h` supplies the 1/X. Feeding `Tinv` to
+    # `_coeff_op` mistook the reciprocal spacing for the spacing (→ Y·X = m·s) and
+    # threw on unit grids; recover the value-diff witness so Real stays Float-widened.
+    Tg = _promote_eltype(_inv_op, Tinv)
+    Tc = _promote_eltype(_interp_op, Tg, Tv, Tg)
     return _fielddiff(Tc, yR, yL) * a.inv_h * one(Tα)
 end
 
-@inline _linear_kernel(::AbstractEvalOp, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, _LinearZeroPayload{Tα}}) where {Tv, Tα} =
-    (0 * yL + 0 * yR) * one(Tα)
+# `oneunit(TinvN)` transports the value-space zero into this axis's derivative
+# space (identity `true` on Real grids, so the Real codegen is unchanged).
+@inline _linear_kernel(::AbstractEvalOp, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, _LinearZeroPayload{Tα, TinvN}}) where {Tv, Tα, TinvN} =
+    (0 * yL + 0 * yR) * one(Tα) * oneunit(TinvN)
 
 # One method covers ordinary AND exclusive-periodic Linear: the interval type
 # selector carries the right-tap distinction, so only the op-minimal payload
@@ -71,8 +85,14 @@ end
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
     Tinv = _promote_eltype(_inv_op, Tw)
-    Tα = promote_type(eltype(grid), eltype(targets), Tinv)
-    return _AxisAnchor{_interval_type(grid), _linear_payload_type(op, Tα, Tinv)}
+    # α is the in-cell fraction `(q - L)·inv_h` — dimensionless for unit grids
+    # (s·s⁻¹). A raw `promote_type` of the coordinate/inverse types collapses to
+    # an abstract `Quantity{Float64}` (Real: still Float64); the op-witness keeps
+    # it the concrete dimensionless carrier the payload converts α into.
+    Tα = _promote_eltype(_alpha_of, eltype(targets), eltype(grid), Tinv)
+    # This axis's `oneunit(grid⁻ᴺ)` type — only the zero payload consumes it.
+    TinvN = typeof(_deriv_oneunit(oneunit(eltype(grid)), op))
+    return _AxisAnchor{_interval_type(grid), _linear_payload_type(op, Tα, Tinv, TinvN)}
 end
 
 # EvalValue: only the in-cell weight `alpha` (Clamp/Fill fold it into [0, 1]).
@@ -118,7 +138,7 @@ end
 # EvalDeriv2 and higher: the derivative is zero everywhere → no stored geometry.
 @inline function _resolve_anchor(
         ::LinearInterp,
-        ::Type{_AxisAnchor{I, _LinearZeroPayload{Tα}}},
+        ::Type{_AxisAnchor{I, _LinearZeroPayload{Tα, TinvN}}},
         grid::AbstractVector,
         idxL::Int,
         idxR::Int,
@@ -126,9 +146,9 @@ end
         xL,
         xR,
         extrap::AbstractExtrap
-    ) where {I, Tα}
+    ) where {I, Tα, TinvN}
     interval = _interval_indices(grid, idxL, idxR)
-    return _AxisAnchor{I, _LinearZeroPayload{Tα}}(interval, _LinearZeroPayload{Tα}())
+    return _AxisAnchor{I, _LinearZeroPayload{Tα, TinvN}}(interval, _LinearZeroPayload{Tα, TinvN}())
 end
 
 # `op` selects the op-minimal payload (value → alpha, deriv1 → inv_h, higher →
@@ -441,10 +461,28 @@ end
 
 # ---- entry points ------------------------------------------------------------
 # Output eltype: matches point-wise scalar eval's promotion (pinned by test).
-# `Tg`/`Tv` are the value-matched grid float and value type; both the persistent
-# functor and the one-shot front resolve them the same way before this call.
-@inline _gridded_out_eltype(::Type{Tg}, ::Type{Tv}, targets::Tuple) where {Tg, Tv} =
-    _promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, targets)...))
+# The value eltype is folded ONE AXIS AT A TIME (the gridded mirror of
+# `_nd_value_eltype`) — joining the axes first collapses a mixed-unit grid to an
+# abstract `Quantity{Float64}` and the output array then boxes every element.
+# It differs from `_nd_value_eltype` only in the query source: one target vector
+# per axis instead of one scalar query type. The axis map is the shared
+# `_axis_grid_eltype`. Then folded per-axis into derivative space (Y/Xᴺ) so a
+# unit-grid gridded derivative sizes in ∂-units (e.g. W/s), not value units.
+# Value ops (DerivOp{0}) leave it unchanged → the value fast path is bit-identical.
+@generated function _gridded_value_eltype(
+        ::Type{Tv}, grids::Tuple{Vararg{Any, N}}, targets::Tuple{Vararg{Any, N}}
+    ) where {Tv, N}
+    ex = :Tv
+    for d in 1:N
+        G, T = grids.parameters[d], targets.parameters[d]
+        Gd = :(_axis_grid_eltype(_interp_op, eltype($G), Tv))
+        ex = :(_promote_eltype(_interp_op, $Gd, $ex, _axis_query_eltype(eltype($T), $Gd)))
+    end
+    return ex
+end
+
+@inline _gridded_out_eltype(::Type{Tv}, targets::Tuple, grids::Tuple, ops::Tuple) where {Tv} =
+    _deriv_eltype_nd(_gridded_value_eltype(Tv, grids, targets), grids, ops)
 
 # `grids` here are already resolved to the value-matched `Tg` (persistent: the
 # interpolant's cached axes; one-shot: `_cache_axis_pooled`) — the eval reads
@@ -498,8 +536,7 @@ end
         ops,
         extraps
     ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    _gridded_eval!(out, grids, data, targets, ops, extraps, _gridded_out_eltype(Tg, Tv, targets))
+    _gridded_eval!(out, grids, data, targets, ops, extraps, _gridded_out_eltype(Tv, targets, grids, ops))
     return true
 end
 
@@ -514,7 +551,7 @@ end
         _search,
         _hint
     ) where {Tg, Tv, N}
-    return _gridded_eval(itp.grids, itp.data, gq.axes, ops, extraps, _gridded_out_eltype(Tg, Tv, gq.axes))
+    return _gridded_eval(itp.grids, itp.data, gq.axes, ops, extraps, _gridded_out_eltype(Tv, gq.axes, itp.grids, ops))
 end
 
 # ---- one-shot API ------------------------------------------------------------
@@ -633,7 +670,7 @@ end
     bcs = map(m -> m.bc, methods)
     extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    Tout = _gridded_out_eltype(Tg, Tv, targets)
+    Tout = _gridded_out_eltype(Tv, targets, grids, ops)
     _linear_gridded_oneshot!(out_nd, grids, data, targets, bcs, ops, extraps, Tg, Tout)
     return true
 end

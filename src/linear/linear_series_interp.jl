@@ -242,8 +242,11 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
-    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    ) where {Tg, Tv, P, Tq <: Number}
+    # Fold the derivative order into the buffer eltype (Y/Xᴺ); DerivOp{0} is the
+    # identity, so the value path is unchanged. Without this a unit-grid deriv
+    # batch sizes in value units and the store throws (m vs m/s).
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, Tv, Tq), Tg, deriv)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -263,7 +266,7 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     _validate_scalar_output(output, n_series(sitp))
 
     # One lean op/extrap-aware anchor (shared build; NoExtrap throws OOB inside),
@@ -295,10 +298,13 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Fold the derivative order into the buffer eltype (Y/Xᴺ); DerivOp{0} is the
+    # identity, so the value path is unchanged. Without this a unit-grid deriv
+    # batch sizes in value units and the store throws (m vs m/s).
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, Tv, Tq), Tg, deriv)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -318,7 +324,7 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 
 # Arguments
 - `outputs`: Vector of pre-allocated output buffers (one per y-series)
-- `xq`: Query points (any Real type, auto-promoted for search)
+- `xq`: Query points (any Number type — Real or Unitful `Quantity` — auto-promoted for search)
 - `deriv`: Derivative order (0 or 1)
 
 Zero-alloc by construction (Q outer × K inner): anchor is built once per
@@ -335,7 +341,7 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Number}
     _validate_series_outputs(outputs, n_series(sitp), length(xq))
     searcher = _resolve_search(sitp.x, xq, search, hint)
     return _linear_series_inplace_kernel!(outputs, sitp, xq, searcher, deriv)

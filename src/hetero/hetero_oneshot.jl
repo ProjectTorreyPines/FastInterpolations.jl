@@ -270,7 +270,6 @@ function _interp_nd_oneshot_dispatch(
     # Per-axis (hetero) ND one-shot does not support unit-carrying grids yet —
     # match the persistent builder's actionable error, not a deep `_collapse_dims` MethodError.
     _check_nd_hetero_grid(_promote_grid_eltype(grids))
-    Tr = _promote_eltype(eltype(data), Tg, typeof.(query)...)
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
     bcs = map(_bc_for_periodic_check, methods)
@@ -283,6 +282,10 @@ function _interp_nd_oneshot_dispatch(
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids, methods, extraps_val)
+    # Fold the derivative order in AFTER `ops` is known — an all-Linear method
+    # tuple reaches here on a unit grid (only the solver-backed families are
+    # refused above), and the value-space witness would assert `W` on a `W/s`.
+    Tr = _deriv_eltype_nd(_promote_eltype(eltype(data), Tg, typeof.(query)...), grids, ops)
 
     if coeffs isa OnTheFly
         return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hints)::Tr
@@ -522,26 +525,32 @@ end
 # Public API — Batch Allocating
 # ========================================
 
+# Value eltype folded PER AXIS (`_nd_value_eltype`), then into derivative space.
+# Joining the axes into one grid type first collapses a mixed-unit grid (`s` × `m`)
+# to an abstract `Quantity{Float64}`; the ND batch kernels are pinned to a
+# concrete output, so that surfaced as an internal `MethodError` on a public call
+# rather than as silent boxing. The witness also picks the axis resolution
+# (blend → value-matched float, select → raw), so it is passed, not spelled here.
 @inline function _interp_nd_output_eltype(
         ::Tuple{Vararg{AbstractInterpMethod}},
         grids::NTuple{N, AbstractVector},
         ::Type{Tv},
-        ::Type{Tq};
+        ::Type{Tq},
+        ops::Tuple;
         shape_op = _interp_op
     ) where {N, Tv, Tq}
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    return _promote_eltype(shape_op, Tg, Tv, Tq)
+    return _deriv_eltype_nd(_nd_value_eltype(shape_op, Tv, grids, Tq), grids, ops)
 end
 
 @inline function _interp_nd_output_eltype(
         ::Tuple{ConstantInterp, Vararg{ConstantInterp}},
         grids::NTuple{N, AbstractVector},
         ::Type{Tv},
-        ::Type{Tq};
+        ::Type{Tq},
+        ops::Tuple;
         shape_op = _select_op
     ) where {N, Tv, Tq}
-    Tg = _promote_grid_eltype(grids)
-    return _promote_eltype(shape_op, Tg, Tv, Tq)
+    return _deriv_eltype_nd(_nd_value_eltype(shape_op, Tv, grids, Tq), grids, ops)
 end
 
 """
@@ -565,7 +574,8 @@ function interp(
     ) where {Tv, N}
     method_tuple = _method_tuple(method, Val(N))
     Tq = _query_eltype(queries)
-    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq, ops)
     # Output takes the query's shape: a flat vector for ordinary batches, the
     # N-D `size(gq)` array for a shaped container like GriddedQuery.
     output = Array{Tr}(undef, _query_size(queries))

@@ -75,7 +75,13 @@ end
     # Build cache on the user's grid (BC-aware: `_build_periodic_cache`).
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
     # Seam-aware LEAN anchor (bare payload — periodic eval always wraps in-domain).
-    A = _AxisAnchor{_interval_type(cache.x), _cubic_series_payload_type(op, _coord_eltype(typeof(xq), eltype(cache.x)))}
+    Tg_c = eltype(cache.x)
+    Tinv_c = _promote_eltype(_inv_op, _promote_grid_float(Tg_c, Tg_c))
+    TinvN_c = typeof(_deriv_oneunit(oneunit(Tg_c), op))
+    A = _AxisAnchor{
+        _interval_type(cache.x),
+        _cubic_series_payload_type(op, _coord_eltype(typeof(xq), Tg_c), Tg_c, Tinv_c, TinvN_c),
+    }
     a = _build_periodic_series_anchor(A, cache, xq, searcher)
 
     # Solve + eval per series. For `:exclusive` periodic, wrap each `vecs[k]`
@@ -103,7 +109,7 @@ end
         op::AbstractEvalOp,
         autocache::Bool,
         search::AbstractSearchPolicy
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     vecs = _series_vectors(s)
     n = length(x)
     K = n_series(s)
@@ -121,7 +127,11 @@ end
     # extrap dispatch, queries always wrap in-domain).
     Tg_c = eltype(cache.x)
     Tq_w = _coord_eltype(Tq, Tg_c)
-    A = _AxisAnchor{_interval_type(cache.x), _cubic_series_payload_type(op, Tq_w)}
+    Tinv_c = _promote_eltype(_inv_op, _promote_grid_float(Tg_c, Tg_c))
+    TinvN_c = typeof(_deriv_oneunit(oneunit(Tg_c), op))
+    A = _AxisAnchor{
+        _interval_type(cache.x), _cubic_series_payload_type(op, Tq_w, Tg_c, Tinv_c, TinvN_c),
+    }
     anchors = acquire!(pool, A, length(xqs))
     # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for
     # `:exclusive`) — axis-level seam dispatch fires via `g.period`. No `bc` thread.
@@ -170,13 +180,21 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
+    # Unit-carrying grids: the one-shot inline solve is unit-hostile by storage —
+    # route through the persistent build, which solves a nondimensionalized twin.
+    _promote_grid_float(Tg, _series_eltype(s)) <: Real || return cubic_interp(
+        x, s; bc = bc, extrap = extrap, autocache = autocache, search = search
+    )(xq; deriv = deriv, search = search, hint = hint)
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
     Tg_actual = eltype(x)
-    output = Vector{_promote_eltype(_interp_op, Tg_actual, _series_eltype(s), Tq)}(undef, K)
+    T_out = _deriv_eltype(
+        _promote_eltype(_interp_op, Tg_actual, _series_eltype(s), Tq), Tg_actual, deriv
+    )
+    output = Vector{T_out}(undef, K)
     # Periodic helper searches against `cache.x` (wrapped from the cache pool),
     # so axis-level dispatch handles seam — no `bc` thread into the Searcher.
     searcher = _resolve_search(x, xq, search, hint)
@@ -202,9 +220,13 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    # Unit grids → persistent build (nondimensionalized twin); see the scalar arm.
+    _promote_grid_float(Tg, _series_eltype(s)) <: Real || return cubic_interp(
+        x, s; bc = bc, extrap = extrap, autocache = autocache, search = search
+    )(output, xq; deriv = deriv, search = search, hint = hint)
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
@@ -233,8 +255,12 @@ end
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
+    # Unit grids → persistent build (nondimensionalized twin); see the scalar arm.
+    _promote_grid_float(Tg, _series_eltype(s)) <: Real || return cubic_interp(
+        x, s; bc = bc, extrap = extrap, autocache = autocache, search = search
+    )(outputs, xqs; deriv = deriv, search = search)
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
@@ -287,10 +313,12 @@ function cubic_interp(
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    Tv = _promote_eltype(_interp_op, Tg_float, _series_eltype(s), Tq)
+    Tv = _deriv_eltype(
+        _promote_eltype(_interp_op, Tg_float, _series_eltype(s), Tq), Tg_float, deriv
+    )
     outputs = _alloc_series_batch_outputs(Tv, K, length(xqs))
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs

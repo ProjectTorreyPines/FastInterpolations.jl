@@ -94,14 +94,11 @@ end
     ops::NTuple{N, AbstractEvalOp}, ::Val{N}
 ) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls) * 0 * _constant_nd_deriv_scale(hs, ops)
 
-# Per-axis grid⁻ᴺ unit scale (value 0, units only). `hs[d]` carries axis d's grid unit;
-# `true` is the dimensionless identity (order-0 axes, Real grids → no widening). literal_pow
-# keeps each axis type-stable for unit grids even at a type-parameter order.
+# Per-axis grid⁻ᴺ unit scale, folded across the axes. The single-axis factor is
+# the shared `_deriv_oneunit` (core/utils.jl); `hs[d]` carries axis d's grid unit.
 @inline _constant_nd_deriv_scale(::Tuple{}, ::Tuple{}) = true
 @inline _constant_nd_deriv_scale(hs::Tuple, ops::Tuple) =
-    _constant_axis_deriv_scale(first(hs), first(ops)) * _constant_nd_deriv_scale(Base.tail(hs), Base.tail(ops))
-@inline _constant_axis_deriv_scale(h, ::DerivOp{0}) = true
-@inline _constant_axis_deriv_scale(h, ::DerivOp{N}) where {N} = Base.literal_pow(^, inv(oneunit(h)), Val(N))
+    _deriv_oneunit(first(hs), first(ops)) * _constant_nd_deriv_scale(Base.tail(hs), Base.tail(ops))
 
 # ========================================
 # Derivative Check

@@ -99,34 +99,47 @@
         "coeffs.jl" => 4,
         "constant/constant_adjoint.jl" => 1,
         "constant/constant_anchor.jl" => 3,
-        "constant/constant_oneshot_series.jl" => 5,
-        "constant/constant_series_interp.jl" => 3,
+        # constant series + one-shot: relaxed to Number (unit-grid Series eval,
+        # Codex follow-up) — were 3 + 5, now 0 → keys dropped.
         "constant/nd/constant_nd_adjoint.jl" => 1,
-        "core/anchor_common.jl" => 3,
+        # anchor_common.jl (`_anchor_loc` ×2 + `_AnchorLoc` struct): relaxed to
+        # Number for the deferred anchored-query paths (ND GriddedQuery on unit
+        # grids) — was 3, now 0 → key dropped.
         "core/nd_utils.jl" => 2,
         "core/search.jl" => 4,
-        "core/series_lean_anchors.jl" => 1,
-        "core/series_utils.jl" => 6,
-        "core/utils.jl" => 7,
+        # series_lean_anchors.jl (`_build_series_anchor`): relaxed to Number for
+        # unit-grid Series eval — was 1, now 0 → key dropped.
+        # series_utils.jl (the 6 `_constant_extrap_boundary_value` /
+        # `_fill_constant_extrap_simd!` OOB arms): the `Tq <: Real` bound was a
+        # `<:Real`-era leftover that made EVERY Series batch OOB query throw a
+        # MethodError on a unit grid (constant/quadratic/cubic — linear escaped
+        # only because its carrier is the dimensionless α). Bodies already went
+        # through `one(Tq)`, so relaxing needed no other change — was 6, now 0.
+        "core/utils.jl" => 6,
         "cubic/cubic_adjoint.jl" => 1,
         "cubic/cubic_anchor.jl" => 4,
         "cubic/cubic_oneshot.jl" => 3,
-        "cubic/cubic_oneshot_series.jl" => 5,
-        "cubic/cubic_series_interp.jl" => 4,
+        # cubic series + one-shot: eval sigs relaxed to Number for unit-grid cubic
+        # Series (build nondimensionalizes like the scalar path) — one-shot was 5,
+        # now 0 → key dropped; interp was 4, now 1 = the `Tg <: Real ||` units-branch
+        # idiom itself (allowlist class 3b).
+        "cubic/cubic_series_interp.jl" => 1,
         "cubic/nd/cubic_nd_adjoint.jl" => 1,
-        "derivative_view.jl" => 2,
+        # derivative_view.jl: in-place view query bounds relaxed to Number (Codex
+        # #4) — was 2, now 0 → key dropped.
         "hetero/hetero_adjoint.jl" => 1,
         "linear/linear_adjoint.jl" => 1,
         "linear/linear_anchor.jl" => 6,
-        "linear/linear_oneshot_series.jl" => 5,
-        "linear/linear_series_interp.jl" => 4,
+        # linear series + one-shot (eval sigs): relaxed to Number for unit-grid
+        # Series eval (Codex #1) — now 0 → keys dropped.
         "linear/nd/linear_nd_adjoint.jl" => 1,
         "quadratic/nd/quadratic_nd_adjoint.jl" => 1,
         "quadratic/quadratic_anchor.jl" => 8,
         "quadratic/quadratic_interpolant.jl" => 1,
         "quadratic/quadratic_oneshot.jl" => 2,
-        "quadratic/quadratic_oneshot_series.jl" => 4,
-        "quadratic/quadratic_series_interp.jl" => 4,
+        # quadratic series + one-shot: eval sigs relaxed to Number (Codex parity;
+        # eval reaches a documented solver-storage limit, but the SIG isn't the
+        # blocker) — were 4 + 4, now 0 → keys dropped.
     )
     if allowed_hits != expected_hits
         drift = [

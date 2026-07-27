@@ -55,9 +55,11 @@ end
 
 In-place batch one-shot ND constant evaluation.
 """
+# `grids` is NOT pinned to one shared axis eltype — see the Linear sibling: the
+# body reads each axis on its own, and the pin excluded mixed-unit grids.
 function _constant_interp_nd_oneshot_batch!(
         output::AbstractArray,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -66,7 +68,7 @@ function _constant_interp_nd_oneshot_batch!(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         ops::NTuple{N, AbstractEvalOp},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     _check_query_output_size(output, queries)
@@ -96,7 +98,7 @@ end
 Allocating wrapper: creates output vector, delegates to in-place batch.
 """
 function _constant_interp_nd_oneshot_batch(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -105,10 +107,14 @@ function _constant_interp_nd_oneshot_batch(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         ops::NTuple{N, AbstractEvalOp},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
-    # Buffer eltype via Constant's kernel shape (mirrors 1D oneshot wrapper).
+    ) where {Tv, N}
+    # Buffer eltype must include derivative units for unit-carrying grids, matching
+    # the scalar and generic `interp(...; method=ConstantInterp())` fronts. Folded
+    # per axis — a joined grid type is abstract on mixed-unit axes.
     Tq = _query_eltype(queries)
-    output = _alloc_query_output(_promote_eltype(_select_op, Tg, Tv, Tq), queries)
+    output = _alloc_query_output(
+        _deriv_eltype_nd(_nd_value_eltype(_select_op, Tv, grids, Tq), grids, ops), queries
+    )
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, ops, hint)
 end
 

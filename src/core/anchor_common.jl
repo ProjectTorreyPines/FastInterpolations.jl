@@ -73,7 +73,7 @@ with NO geometry (h, inv_h, dL, dR). Geometry is each method's internal concern.
 struct _AnchorLoc{
         I <: _AbstractIndices{2},
         Tg,
-        Tq <: Real,
+        Tq <: Number,
     }
     interval::I
     xq::Tq
@@ -122,7 +122,7 @@ h/inv_h/dL/dR from `xL`, `xR`, `xq` as needed.
 
 # Arguments
 - `x::AbstractVector{Tg}`: sorted grid points
-- `xq::Tq`: query point (Real — can be Float or ForwardDiff.Dual)
+- `xq::Tq`: query point (Number — Float, Unitful `Quantity`, or ForwardDiff.Dual)
 - `wrap::Bool`: whether to wrap query to domain (for periodic/WrapExtrap)
 - `policy::Searcher`: search policy (default: `DEFAULT_SEARCHER`)
 
@@ -135,7 +135,7 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Number, P <: Searcher}
     # Actual grid span — used only for wrap-fold geometry (period stays exactly
     # `last - first`, not the widened bracket).
     x_min, x_max = first(x), last(x)
@@ -180,7 +180,7 @@ end
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Number, P <: Searcher}
     # Actual grid span — used only for wrap-fold geometry (period stays exactly
     # `last - first`, not the widened bracket).
     x_min, x_max = first(x), last(x)

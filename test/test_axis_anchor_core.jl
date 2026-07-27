@@ -21,9 +21,9 @@ end
     payload_types = (
         _LinearValuePayload{Float64},
         _LinearDeriv1Payload{Float64, Float64},
-        _LinearZeroPayload{Float64},
+        _LinearZeroPayload{Float64, Float64},
         _ConstantValuePayload{Float64},
-        _ConstantZeroPayload{Float64},
+        _ConstantZeroPayload{Float64, Float64},
         _QuadraticPayload{Float64},
         _CubicValuePayload1D{Float64},
         _CubicDeriv1Payload1D{Float64},
@@ -36,7 +36,7 @@ end
     )
 
     @test all(P -> P <: _AbstractAnchorPayload, payload_types)
-    @test _StatefulPayload{_LinearValuePayload{Float64}} <:
+    @test _StatefulPayload{_LinearValuePayload{Float64}, Bool} <:
     _AbstractAnchorPayload
     @test_throws MethodError _StatefulPayload((alpha = 0.25,), IN_DOMAIN)
 end
@@ -59,7 +59,7 @@ end
     end
 
     @testset "isbits (pool/stream eligibility)" begin
-        @test isbitstype(_StatefulPayload{_LinearValuePayload{Float64}})
+        @test isbitstype(_StatefulPayload{_LinearValuePayload{Float64}, Bool})
         @test isbits(_StatefulPayload(inner, IN_DOMAIN))
     end
 end

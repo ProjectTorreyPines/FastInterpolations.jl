@@ -15,8 +15,19 @@
 # Clamp/Fill wrap the bare payload so the OOB state branch stays eval-time; every
 # other extrap uses the bare payload with a branch-free kernel. Compile-time
 # (extrap is known at the Series entry), so the anchor type is fully concrete.
-@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P <: _AbstractAnchorPayload} = _StatefulPayload{P}
-@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P <: _AbstractAnchorPayload} = P
+# `TinvN` is mandatory: a 2-arg form cannot know the axis's `oneunit(grid⁻ᴺ)` and
+# would have to hardcode `Bool` (value units at every derivative order).
+@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}, ::Type{TinvN}) where {P <: _AbstractAnchorPayload, TinvN} =
+    _StatefulPayload{P, TinvN}
+@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}, ::Type) where {P <: _AbstractAnchorPayload} = P
+
+# `TinvN` is `Tinv` (the `inv(h)` geometry type, i.e. `grid⁻¹`) at derivative
+# order N: the type of `oneunit(grid⁻ᴺ)` — magnitude exactly 1, carrying only the
+# derivative space's coordinate units (see `_deriv_oneunit`). It comes from the
+# GRID, never the query: `_coord_eltype` promotes toward the query, so an `hr`
+# grid read with an `s` query would otherwise yield `s⁻ᴺ`. Recovered as a value
+# here so the OOB arms can transport a value-space zero into `value/coordᴺ`.
+@inline _payload_deriv_oneunit(::Type{<:_StatefulPayload{<:Any, TinvN}}) where {TinvN} = oneunit(TinvN)
 
 # ─── Resolution (method-generic; family provides `_resolve_anchor(m, …)`) ─────
 # `m::M` (type parameter) forces specialization on the concrete interp singleton so
@@ -26,14 +37,14 @@
 # thread — the Series build loop below passes the whole `loc`.
 @inline function _resolve_series_anchor(
         m::M,
-        ::Type{_AxisAnchor{I, _StatefulPayload{P}}},
+        ::Type{_AxisAnchor{I, _StatefulPayload{P, TinvN}}},
         grid::AbstractVector,
         loc,
         extrap::AbstractExtrap
-    ) where {M <: AbstractInterpMethod, I <: _AbstractIndices{2}, P}
+    ) where {M <: AbstractInterpMethod, I <: _AbstractIndices{2}, P, TinvN}
     bare = _resolve_anchor(m, _AxisAnchor{I, P}, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
-    return _AxisAnchor{I, _StatefulPayload{P}}(
-        getfield(bare, :interval), _StatefulPayload(getfield(bare, :payload), loc.state)
+    return _AxisAnchor{I, _StatefulPayload{P, TinvN}}(
+        getfield(bare, :interval), _StatefulPayload{P, TinvN}(getfield(bare, :payload), loc.state)
     )
 end
 
@@ -62,7 +73,7 @@ end
         m::M,
         ::Type{A},
         x::AbstractVector{Tg},
-        xq::Real,
+        xq::Number,
         extrap::AbstractExtrap,
         wrap::Bool,
         searcher::SR
@@ -85,7 +96,7 @@ end
         extrap::AbstractExtrap,
         wrap::Bool,
         searcher::SR
-    ) where {M <: AbstractInterpMethod, A <: _AxisAnchor, S <: Real, SR <: Searcher}
+    ) where {M <: AbstractInterpMethod, A <: _AxisAnchor, S <: Number, SR <: Searcher}
     @inbounds for j in eachindex(xqs)
         buffer[j] = _build_series_anchor(m, A, x, xqs[j], extrap, wrap, searcher)
     end

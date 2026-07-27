@@ -49,7 +49,14 @@ end
 # classification. Selected at anchor-build time for the flat extraps
 # (Clamp/Fill) whose OOB handling needs an eval-time state branch; all other
 # extraps use the bare payload and a branch-free kernel.
-struct _StatefulPayload{P <: _AbstractAnchorPayload} <: _AbstractAnchorPayload
+#
+# `TinvN` is a phantom parameter: the type of `coord⁻ᴺ`'s `oneunit` for the
+# anchor's derivative order (`Bool` for value / Real grids — the dimensionless
+# identity). It costs no storage and lets the OOB arms transport a value-space
+# zero into `value/coordᴺ` without the grid being in scope at eval time.
+struct _StatefulPayload{P <: _AbstractAnchorPayload, TinvN} <: _AbstractAnchorPayload
     inner::P
     state::UInt8      # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
 end
+@inline _StatefulPayload(inner::P, state::UInt8) where {P <: _AbstractAnchorPayload} =
+    _StatefulPayload{P, Bool}(inner, state)

@@ -16,6 +16,112 @@
 # This file is included last in the module to ensure all interpolant types are defined.
 
 # ========================================
+# Shared-element-type guards (mixed-unit grids)
+# ========================================
+# `gradient` returns a Tuple, so its per-axis components may carry different
+# units (`K/s`, `K/m`) — nothing has to agree. `hessian` (a Matrix), `laplacian`
+# (a sum) and `gradient!` (the caller's Vector) each need ONE element type for
+# every component. On a mixed-unit grid the components differ per axis, so the
+# promotion lands on an abstract `Quantity` — which has no `zero`/`oneunit`, so
+# `det`, `zeros` and `similar` fail downstream even if we handed it back.
+#
+# The in-place forms are the exception: whether ONE type exists is a property of
+# the caller's BUFFER, not of the grid. A `Vector{Any}` (or an abstract-`Quantity`
+# store) holds `K/s` beside `K/m` fine and the generic kernels already fill it —
+# so they check `T <: eltype(store)` too and only refuse a buffer that genuinely
+# cannot hold the components.
+#
+# The decision is purely type-level (grid eltypes × value eltype × store eltype),
+# so the check constant-folds away on Real and same-unit grids. Without it the
+# user meets a raw `DimensionError` from inside the kernel.
+
+# ∂²f/∂xᵢ∂xⱼ eltype: the `_deriv1_op` witness folded once per axis (never `h^-2`,
+# which is type-unstable for units). `i == j` is the same expression twice.
+@inline _deriv2_pair_eltype(::Type{Tv}, ::Type{Gi}, ::Type{Gj}) where {Tv, Gi, Gj} =
+    _promote_eltype(_deriv1_op, _promote_eltype(_deriv1_op, Tv, eltype(Gi)), eltype(Gj))
+
+# Unrolled at compile time: `@generated` keeps the N² / N type folds out of the
+# runtime frame entirely (a `map`/`ntuple` over types can leave Type objects on
+# the heap under coverage).
+@generated function _nd_hessian_eltype(::Type{Tv}, grids::Tuple{Vararg{Any, N}}) where {Tv, N}
+    G = grids.parameters
+    terms = [:(_deriv2_pair_eltype(Tv, $(G[i]), $(G[j]))) for i in 1:N for j in 1:N]
+    return :(promote_type($(terms...)))
+end
+
+@generated function _nd_laplacian_eltype(::Type{Tv}, grids::Tuple{Vararg{Any, N}}) where {Tv, N}
+    G = grids.parameters
+    terms = [:(_deriv2_pair_eltype(Tv, $(G[i]), $(G[i]))) for i in 1:N]
+    return :(promote_type($(terms...)))
+end
+
+@generated function _nd_gradient_eltype(::Type{Tv}, grids::Tuple{Vararg{Any, N}}) where {Tv, N}
+    G = grids.parameters
+    terms = [:(_promote_eltype(_deriv1_op, Tv, eltype($(G[i])))) for i in 1:N]
+    return :(promote_type($(terms...)))
+end
+
+@noinline function _throw_mixed_unit_nd(what::String, alternative::String, T)
+    throw(
+        ArgumentError(
+            "$what on a mixed-unit ND grid is not supported: the per-axis components " *
+                "carry different units, so they have no shared element type " *
+                "(they promote to the abstract `$T`). $alternative"
+        )
+    )
+end
+
+@inline function _check_nd_hessian_units(::Type{Tv}, grids::Tuple) where {Tv}
+    T = _nd_hessian_eltype(Tv, grids)
+    isconcretetype(T) || _throw_mixed_unit_nd(
+        "hessian",
+        "Query the components you need individually, e.g. " *
+            "`itp(query...; deriv = DerivOp(2, 0))`, or strip units (`ustrip`).",
+        T,
+    )
+    return nothing
+end
+
+@inline function _check_nd_laplacian_units(::Type{Tv}, grids::Tuple) where {Tv}
+    T = _nd_laplacian_eltype(Tv, grids)
+    isconcretetype(T) || _throw_mixed_unit_nd(
+        "laplacian",
+        "Its terms `∂²f/∂xᵢ²` would have to be added across axes. Query them " *
+            "individually, e.g. `itp(query...; deriv = DerivOp(2, 0))`, or strip units (`ustrip`).",
+        T,
+    )
+    return nothing
+end
+
+# In-place forms: `T` is the promotion of every component, so `T <: TS` means the
+# caller's store holds all of them — accept it even when `T` itself is abstract.
+# A concrete `T` (Real, same-unit) short-circuits before the subtype test, so a
+# `Float32` store still takes `Float64` components exactly as it always did.
+@inline function _check_nd_gradient_store_units(::Type{Tv}, grids::Tuple, ::Type{TS}) where {Tv, TS}
+    T = _nd_gradient_eltype(Tv, grids)
+    (isconcretetype(T) || T <: TS) || _throw_mixed_unit_nd(
+        "gradient!",
+        "Use the allocating `gradient`, which returns a Tuple and so keeps each " *
+            "component's own units, pass a store that can hold them (e.g. " *
+            "`Vector{Any}`), or strip units (`ustrip`).",
+        T,
+    )
+    return nothing
+end
+
+@inline function _check_nd_hessian_store_units(::Type{Tv}, grids::Tuple, ::Type{TS}) where {Tv, TS}
+    T = _nd_hessian_eltype(Tv, grids)
+    (isconcretetype(T) || T <: TS) || _throw_mixed_unit_nd(
+        "hessian!",
+        "Query the components you need individually, e.g. " *
+            "`itp(query...; deriv = DerivOp(2, 0))`, pass a store that can hold them " *
+            "(e.g. `Matrix{Any}`), or strip units (`ustrip`).",
+        T,
+    )
+    return nothing
+end
+
+# ========================================
 # GRADIENT
 # ========================================
 
@@ -174,6 +280,7 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    _check_nd_gradient_store_units(Tv, itp.grids, eltype(G))
     return _gradient_generic!(G, itp, query, hint)
 end
 
@@ -393,6 +500,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    _check_nd_hessian_units(Tv, itp.grids)
     return _hessian_generic(itp, query, hint)
 end
 
@@ -496,6 +604,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    _check_nd_hessian_store_units(Tv, itp.grids, eltype(H))
     return _hessian_generic!(H, itp, query, hint)
 end
 
@@ -587,6 +696,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    _check_nd_laplacian_units(Tv, itp.grids)
     return _laplacian_generic(itp, query, hint)
 end
 

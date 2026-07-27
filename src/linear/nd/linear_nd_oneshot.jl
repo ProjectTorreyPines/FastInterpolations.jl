@@ -74,9 +74,13 @@ end
 
 In-place batch one-shot ND multilinear evaluation.
 """
+# `grids` is NOT pinned to one shared axis eltype: the body resolves and searches
+# each axis independently (`Tg` was never read), and requiring a common `Tg`
+# excluded mixed-unit grids (`s` × `m`) from the batch path entirely — the scalar
+# sibling has always accepted them.
 function _linear_interp_nd_oneshot_batch!(
         output::AbstractArray,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -84,7 +88,7 @@ function _linear_interp_nd_oneshot_batch!(
         ops::NTuple{N, AbstractEvalOp},
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
@@ -139,15 +143,19 @@ function linear_interp(
     ) where {Tv, N}
     # Scalar one-shot: raw grids shaped per axis by `_resolve_axis(…, Tg)` at the value-matched
     # float (Int grid + Float32 data → Float32) — no eager copy, witness `Tr` matches the eval.
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     _validate_nd_grids(grids, data)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
+    # `ops` is resolved BEFORE the witness: a derivative query lands in value/coordᴺ,
+    # so the value-space `Tr` would assert `W` against a `W/s` result (identity on
+    # Real grids and on `DerivOp{0}`).
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _deriv_eltype_nd(
+        _nd_value_eltype(_interp_op, Tv, grids, promote_type(typeof.(query)...)), grids, ops
+    )
 
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
@@ -168,9 +176,11 @@ function linear_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Same fold as the scalar entry — the buffer must be sized in ∂-units, else a
+    # unit-grid derivative batch throws on the first store.
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _deriv_eltype_nd(_nd_value_eltype(_interp_op, Tv, grids, Tq), grids, ops)
     output = _alloc_query_output(Tr, queries)
     linear_interp!(output, grids, data, queries; bc, extrap, search, deriv, hint)
     return output

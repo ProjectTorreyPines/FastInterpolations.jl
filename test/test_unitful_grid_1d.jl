@@ -271,6 +271,45 @@ end
     end
 end
 
+@testitem "Unitful 1D: solver families preserve SVector value carriers" begin
+    using StaticArrays: SVector
+    using Unitful
+
+    xf = collect(0.0:1.0:5.0)
+    xu = xf .* u"s"
+    yf = [SVector(v, -0.5v) for v in (0.0, 0.8, 0.9, 0.1, -0.8, -1.0)]
+    yu = [v .* u"W" for v in yf]
+    qf = 2.3
+    qu = qf * u"s"
+
+    @testset "value and derivative evaluation" begin
+        for fn in (cubic_interp, quadratic_interp)
+            itp = fn(xu, yu)
+            twin = fn(xf, yf)
+            @test itp(qu) ≈ twin(qf) .* u"W"
+            @test itp(qu; deriv = DerivOp(1)) ≈
+                twin(qf; deriv = DerivOp(1)) .* u"W/s"
+        end
+    end
+
+    @testset "derivative BC normalization" begin
+        cubic_bc = Deriv1(SVector(0.5u"W/s", -0.25u"W/s"))
+        cubic_twin_bc = Deriv1(SVector(0.5, -0.25))
+        @test cubic_interp(xu, yu; bc = cubic_bc)(qu) ≈
+            cubic_interp(xf, yf; bc = cubic_twin_bc)(qf) .* u"W"
+
+        quadratic_bc = Left(Deriv1(SVector(0.5u"W/s", -0.25u"W/s")))
+        quadratic_twin_bc = Left(Deriv1(SVector(0.5, -0.25)))
+        @test quadratic_interp(xu, yu; bc = quadratic_bc)(qu) ≈
+            quadratic_interp(xf, yf; bc = quadratic_twin_bc)(qf) .* u"W"
+    end
+
+    cubic = @inferred cubic_interp(xu, yu)
+    quadratic = @inferred quadratic_interp(xu, yu)
+    @test (@inferred cubic(qu)) isa SVector{2, typeof(1.0u"W")}
+    @test (@inferred quadratic(qu)) isa SVector{2, typeof(1.0u"W")}
+end
+
 # ========================================
 # Phase 4 — local-slope families (PCHIP/Akima/Cardinal/Hermite)
 # ========================================

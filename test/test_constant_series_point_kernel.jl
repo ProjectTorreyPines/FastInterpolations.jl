@@ -45,7 +45,12 @@
         m = FI.ConstantInterp(sitp.side)
         a = FI._build_series_anchor(m, A, sitp.x, xqp, sitp.extrap, FI._should_wrap(sitp), searcher)
         yp = FI._ensure_point_layout!(sitp)
-        T_out = FI._promote_eltype(FI._select_op, Tg, eltype(sitp.y), typeof(xqp))
+        # Mirror the shipped allocator: derivative outputs fold in the grid's
+        # reciprocal-spacing unit (`DerivOp{0}` is the identity), so an Int grid's
+        # derivative carrier floats — Int/Int is a rational, not an Int.
+        T_out = FI._deriv_eltype(
+            FI._promote_eltype(FI._select_op, Tg, eltype(sitp.y), typeof(xqp)), Tg, op
+        )
         out = Vector{T_out}(undef, FI.n_series(sitp))
         FI._constant_series_eval!(out, yp, a, sitp.extrap)
         return out

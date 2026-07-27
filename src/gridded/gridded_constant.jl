@@ -63,6 +63,7 @@ end
 
 @generated function _constant_gridded_gather!(
         out::AbstractArray{<:Any, N},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         anchors::Tuple{Vararg{Vector, N}},
         ops::Tuple{Vararg{AbstractEvalOp, N}}
@@ -72,7 +73,13 @@ end
     ones_ = [Symbol(:one_, d) for d in 1:N]
     carrier = Expr(:call, :*, ones_...)
     value = :(data[$(sels...)] * $carrier)
-    ops <: NTuple{N, EvalValue} || (value = :($value * 0))
+    if !(ops <: NTuple{N, EvalValue})
+        deriv_oneunit = Expr(
+            :call, :*,
+            [:(_deriv_oneunit(oneunit(eltype(grids[$d])), ops[$d])) for d in 1:N]...
+        )
+        value = :($value * 0 * $deriv_oneunit)
+    end
     body = :(out[$(js...)] = $value)
     for d in 1:N   # d = 1 built first → innermost loop (stride-1 writes)
         a = Symbol(:a_, d)
@@ -109,7 +116,7 @@ end
     )
     anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, ops, Tv, Tv, Val(N))
     any(iszero, out_size) && return out
-    _constant_gridded_gather!(out, data, anchors, ops)
+    _constant_gridded_gather!(out, grids, data, anchors, ops)
     return _gridded_fill_oob!(out, grids, data, targets, extraps, ops)
 end
 

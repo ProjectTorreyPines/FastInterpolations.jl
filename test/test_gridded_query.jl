@@ -30,7 +30,9 @@
     @test bd1[1].idxL == 3 && bd1[1].idxR == 4
     @test bd1[1].inv_h == 1.0     # unit-step grid → reciprocal cell width is exactly 1
     bd2 = _gridded_anchors(g, [3.25], ExtendExtrap(), 1, EvalDeriv2())
-    @test eltype(bd2) == _AxisAnchor{_ContiguousIndices{2}, _LinearZeroPayload{Float64}}
+    # `TinvN` (the axis's `oneunit(grid⁻ᴺ)` type) rides as a phantom parameter —
+    # the payload still stores nothing.
+    @test eltype(bd2) == _AxisAnchor{_ContiguousIndices{2}, _LinearZeroPayload{Float64, Float64}}
     @test isbits(bd2[1]) && sizeof(bd2[1]) == 8   # interval(8) + zero-size payload
 
     # Clamp folds the OOB weight to the boundary node; Extend keeps it

@@ -312,6 +312,12 @@ function cubic_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
+    # Non-Real (unit-carrying) grids: strip→solve→reattach, mirroring the scalar
+    # `_cubic_interp_units` (the Thomas solve is unit-hostile by STORAGE).
+    Tg <: Real || return _cubic_series_units(
+        x, y_mat, bc, extrap, n_ser, autocache, precompute_transpose, search
+    )
+
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
         return _build_series_periodic(x, y_mat, bc, n_pts, n_ser, autocache, precompute_transpose, search)
@@ -347,6 +353,50 @@ function cubic_interp(
 
     return sitp
 end
+
+# ── Non-Real (unit-carrying) grids: nondimensionalized solve ──
+# Series mirror of the scalar `_cubic_interp_units`: the Thomas machinery is
+# unit-hostile by STORAGE (factorization overwrites the h-typed diagonal with its
+# 1/X inverse), so solve on a oneunit-stripped twin — division by `oneunit` is
+# exact — and reattach `z`'s order-2 units (`Y/X²`). The ORIGINAL unit axis
+# serves eval/search.
+function _cubic_series_units(
+        x, y_mat, bc, extrap, n_ser, autocache, precompute_transpose, search
+    )
+    (bc isa AbstractBC && _is_periodic_bc(bc)) && throw(
+        ArgumentError(
+            "cubic PeriodicBC on a unit-carrying grid is not supported yet — " *
+                "strip units (e.g. `ustrip`) or use a Real grid"
+        )
+    )
+    ux = oneunit(eltype(x))
+    uy = _carrier_oneunit(eltype(y_mat))
+    tw = cubic_interp(
+        x ./ ux, Series(y_mat ./ uy);
+        bc = _strip_series_bc_units(bc, uy, ux), extrap = NoExtrap(),
+        autocache = autocache, precompute_transpose = false, search = search
+    )
+    z_mat = tw.z .* (uy / (ux * ux))
+    xc = _cache_axis(_convert_copy(x, eltype(x)), NoBC())
+    bc_u = bc isa AbstractBC ? _normalize_bc(bc, first(y_mat)) :
+        _normalize_bc_array(bc, eltype(y_mat), n_ser)[1]
+    # NOTE: `thomas` is the STRIPPED twin's factorization paired with a unit axis
+    # — unused by eval, but do not feed this cache back into a unit-data rebuild.
+    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, Vector{eltype(xc)}())
+    extrap_p = _promote_extrap(extrap, eltype(y_mat))
+    sitp = CubicSeriesInterpolant(cache, bc_u, y_mat, z_mat, extrap_p, search)
+
+    if precompute_transpose
+        _ensure_point_layout!(sitp)
+    end
+
+    return sitp
+end
+
+# Per-series BC arrays strip element-wise; scalar BCs reuse the shared helper.
+@inline _strip_series_bc_units(bc::AbstractBC, uy, ux) = _strip_bc_units(bc, uy, ux)
+@inline _strip_series_bc_units(bc::AbstractVector, uy, ux) =
+    [_strip_bc_units(b, uy, ux) for b in bc]
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
 
@@ -400,7 +450,7 @@ end
 # ========================================
 
 """
-    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=AutoSearch())
+    (sitp::CubicSeriesInterpolant)(xq::Number; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -415,10 +465,10 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_coord(xq, Tg)
-    T_out = _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted))
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted)), Tg, deriv)
     output = Vector{T_out}(undef, n_series(sitp))
     # Delegate to in-place (holds the shared lean anchor build + point-layout eval)
     sitp(output, xq; deriv = deriv, search = search, hint = hint)
@@ -426,7 +476,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=AutoSearch())
+    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Number; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 
@@ -439,7 +489,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     _validate_scalar_output(output, n_series(sitp))
 
     # One lean op/extrap-aware anchor, built from the statically-typed `sitp.extrap`
@@ -476,10 +526,10 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, Tv, Tq), Tg, deriv)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -493,7 +543,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector{Tq}; deriv=EvalValue(), search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tq<:Real}
+    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector{Tq}; deriv=EvalValue(), search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tq<:Number}
 
 Evaluate multi-Y interpolant at multiple query points (in-place).
 
@@ -515,7 +565,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Number}
     n_query = length(xq)
     n_ser = n_series(sitp)
 

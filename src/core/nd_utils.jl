@@ -141,7 +141,7 @@ end
 @inline _nd_fill_deriv_scale(grids::Tuple, op::AbstractEvalOp) = _nd_fill_deriv_scale(grids, map(_ -> op, grids))
 @inline _nd_fill_deriv_scale(::Tuple{}, ::Tuple{}) = true
 @inline _nd_fill_deriv_scale(grids::Tuple, ops::Tuple) =
-    _constant_axis_deriv_scale(oneunit(eltype(first(grids))), first(ops)) * _nd_fill_deriv_scale(Base.tail(grids), Base.tail(ops))
+    _deriv_oneunit(oneunit(eltype(first(grids))), first(ops)) * _nd_fill_deriv_scale(Base.tail(grids), Base.tail(ops))
 
 # Extract fill_value from the first FillExtrap in extraps tuple.
 # Only called on OOB cold path (guarded by _is_fill_oob).

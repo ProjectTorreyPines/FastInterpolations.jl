@@ -496,7 +496,7 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
 # a cubic spline of log(ρ₀) near nuclear cusps.
 time_phs = @elapsed itp_phs = phs_interp(
-    grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
+    grids, rho_3d; stencil_size = 8, degree = 3,
     reference_interp = ref_rho0
 )
 build_times["PHS"] = time_phs

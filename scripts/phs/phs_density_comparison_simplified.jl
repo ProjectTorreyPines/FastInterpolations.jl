@@ -475,6 +475,9 @@ if BENCHMARK
     @printf "%.4f seconds (%.2f μs per query point)\n" t_lap (t_lap * 1.0e6 / (BENCHMARK_REPS * N_path))
 
     if PROFILE
+        # Increase profile buffer for more complete data collection
+        Profile.init(n = 50_000_000, delay = 0.001)
+
         # 1. Profile Density (ρ) Evaluation
         println("\nRunning CPU Profiling for Density (ρ) Evaluation (100 repetitions)...")
         Profile.clear()
@@ -482,9 +485,9 @@ if BENCHMARK
             itp_phs(ρ_phs, queries)
         end
         println("\n" * "="^60)
-        println("CPU PROFILING RESULTS: DENSITY (ρ) EVALUATION (FLAT PROFILE)")
+        println("CPU PROFILING RESULTS: DENSITY (ρ) EVALUATION")
         println("="^60)
-        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0)
+        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0, groupby = [:task, :thread], maxdepth = 40)
 
         # 2. Profile Gradient (|∇ρ|) Evaluation
         println("\nRunning CPU Profiling for Gradient (|∇ρ|) Evaluation (100 repetitions)...")
@@ -495,9 +498,9 @@ if BENCHMARK
             itp_phs(_gz, queries; deriv = (D0, D0, D1))
         end
         println("\n" * "="^60)
-        println("CPU PROFILING RESULTS: GRADIENT (|∇ρ|) EVALUATION (FLAT PROFILE)")
+        println("CPU PROFILING RESULTS: GRADIENT (|∇ρ|) EVALUATION")
         println("="^60)
-        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0)
+        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0, groupby = [:task, :thread], maxdepth = 40)
 
         # 3. Profile Laplacian (|∇²ρ|) Evaluation
         println("\nRunning CPU Profiling for Laplacian (|∇²ρ|) Evaluation (100 repetitions)...")
@@ -509,9 +512,9 @@ if BENCHMARK
             @. ∇²ρ_phs = abs(_gx + _gy + _gz)
         end
         println("\n" * "="^60)
-        println("CPU PROFILING RESULTS: LAPLACIAN (|∇²ρ|) EVALUATION (FLAT PROFILE)")
+        println("CPU PROFILING RESULTS: LAPLACIAN (|∇²ρ|) EVALUATION")
         println("="^60)
-        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0)
+        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0, groupby = [:task, :thread], maxdepth = 40)
     end
 
     println("="^60)

@@ -31,16 +31,16 @@ println("Grid size: $(length(x)) × $(length(y)) × $(length(z))")
 println("Test points: $(length(test_queries))")
 println()
 
-# Test different blend factors
-blend_factors = [0.75, 1.0, 1.25, 1.5, 2.0]
+# Test different blend factors (using stencil_size=8 for consistency with production)
+blend_factors = [0.5, 1.0, 1.5, 2.0]
 results = Dict{Float64, Any}()
 
 for bf in blend_factors
-    @printf "Testing blend_factor = %.2f ... " bf
+    @printf "Testing blend_factor = %.1f ... " bf
     flush(stdout)
     
     # Build interpolant
-    time_build = @elapsed itp = phs_interp((x, y, z), data; stencil_size=6, degree=3, blend_factor=bf)
+    time_build = @elapsed itp = phs_interp((x, y, z), data; stencil_size=8, degree=3, blend_factor=bf)
     
     # Evaluate on test points
     out = Vector{Float64}(undef, length(test_queries))
@@ -53,6 +53,7 @@ for bf in blend_factors
     blend_nodes = prod(2 .* itp.blend_r_idx .+ 1)
     
     results[bf] = (
+        time_build = time_build,
         time_eval = time_eval,
         max_error = maximum(errors),
         mean_error = mean(errors),
@@ -61,31 +62,65 @@ for bf in blend_factors
         blend_nodes = blend_nodes
     )
     
-    @printf "%.3fms, %d nodes, max_rel_err=%.2e\n" time_eval*1000 blend_nodes results[bf].max_rel_error
+    @printf "%.3fms eval, %d nodes, max_rel_err=%.2e\n" time_eval*1000 blend_nodes results[bf].max_rel_error
 end
 
 # Print summary
-println("\n" * "="^70)
+println("\n" * "="^80)
 println("SUMMARY TABLE")
-println("="^70)
-println("Factor | Nodes | Time(ms) | Max Rel Err | Mean Rel Err |  vs bf=2.0")
-println("="^70)
+println("="^80)
+
+# ASCII table (for terminal viewing)
+println("\nFactor | Nodes | Build(ms) | Eval(ms) | Max Rel Err | Speedup | Rel.Err")
+println("-" ^ 80)
 
 baseline_time = results[2.0].time_eval
+baseline_err = results[2.0].max_rel_error
+
 for bf in blend_factors
     r = results[bf]
     speedup = baseline_time / r.time_eval
-    speedup_str = speedup < 1.1 ? @sprintf("%.1f%%", speedup*100) : @sprintf("%.2f×", speedup)
-    @printf "%6.2f | %5d | %8.2f | %11.2e | %12.2e | %9s\n" bf r.blend_nodes r.time_eval*1000 r.max_rel_error r.mean_rel_error speedup_str
+    if speedup >= 1.1
+        speedup_str = @sprintf("%.2f×", speedup)
+    elseif speedup < 1.0
+        speedup_str = @sprintf("%.2f×↓", 1/speedup)
+    else
+        speedup_str = "baseline"
+    end
+    err_ratio = r.max_rel_error / baseline_err
+    @printf "%6.1f | %5d | %9.2f | %8.3f | %11.2e | %7s | %8.2f×\n" bf r.blend_nodes r.time_build*1000 r.time_eval*1000 r.max_rel_error speedup_str err_ratio
 end
 
-println("="^70)
+# Markdown table
+println("\n" * "="^80)
+println("MARKDOWN TABLE")
+println("="^80)
+println()
+println("| blend_factor | Blend Nodes | Build (ms) | Eval (ms) | Max Rel Err | Speedup | Rel.Err |")
+println("|---|---|---|---|---|---|---|")
+for bf in blend_factors
+    r = results[bf]
+    speedup = baseline_time / r.time_eval
+    if speedup >= 1.1
+        speedup_str = @sprintf("%.2f×", speedup)
+    elseif speedup < 1.0
+        speedup_str = @sprintf("%.2f×↓", 1/speedup)
+    else
+        speedup_str = "baseline"
+    end
+    err_ratio = r.max_rel_error / baseline_err
+    @printf "| %.1f | %d | %.2f | %.3f | %.2e | %s | %.2f× |\n" bf r.blend_nodes r.time_build*1000 r.time_eval*1000 r.max_rel_error speedup_str err_ratio
+end
+println()
 println("\nRecommendation:")
-err_ratio = results[1.0].max_rel_error / results[2.0].max_rel_error
-time_ratio = results[1.0].time_eval / results[2.0].time_eval
-@printf "• blend_factor=1.0: %.1f%% faster, error increases by %.1f×\n" (1-time_ratio)*100 err_ratio
-if err_ratio < 2.0
-    println("  ✓ Acceptable trade-off for most applications")
-else
-    println("  ✗ Too much error increase, use blend_factor=1.25")
+if haskey(results, 1.0)
+    err_ratio = results[1.0].max_rel_error / results[2.0].max_rel_error
+    time_ratio = results[1.0].time_eval / results[2.0].time_eval
+    speedup = (1 - time_ratio) * 100
+    @printf "• blend_factor=1.0: %.1f%% faster than 2.0, error increases by %.1f×\n" speedup err_ratio
+    if err_ratio < 2.0
+        println("  ✓ Excellent trade-off: recommended for most applications")
+    else
+        println("  ⚠ Noticeable error increase; consider 1.5 for balance")
+    end
 end

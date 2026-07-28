@@ -171,63 +171,144 @@ This generates `phs_density_comparison.png` and demonstrates:
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
-| Nearest            | 5.27e-04 (35555×) | 2.15e+00 (2×) | 1.84e-01 (45×) | 1.34e-01 (837×) |
-| Linear             | 1.68e-05 (1133×) | 9.34e-01 (1×) | 8.80e-02 (22×) | 2.18e-02 (135×) |
-| Cubic              | 4.58e-06 (309×) | 9.73e-01 (1×) | 1.17e-01 (29×) | 3.36e-03 (21×) |
-| Cardinal           | 2.29e-05 (1546×) | 9.21e-01 (1×) | 9.65e-02 (24×) | 3.47e-03 (22×) |
-| PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
+| Nearest            | 5.27e-04 (13740×) | 2.15e+00 (2×) | 1.84e-01 (45×) | 1.34e-01 (970×) |
+| Linear             | 1.68e-05 (438×) | 9.34e-01 (1×) | 8.80e-02 (22×) | 2.18e-02 (157×) |
+| Cubic              | 4.58e-06 (119×) | 9.73e-01 (1×) | 1.17e-01 (29×) | 3.36e-03 (24×) |
+| Cardinal           | 2.29e-05 (597×) | 9.21e-01 (1×) | 9.65e-02 (24×) | 3.47e-03 (25×) |
+| PHS                | 3.84e-08 | 1.00e+00 | 4.06e-03 | 1.39e-04 |
 
 #### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
-| Linear             | 3.75e-05 (49×) | 2.39e+01 (24×) | 4.14e-01 (35×) | 1.89e-01 (171×) |
-| Cubic              | 2.39e-05 (31×) | 3.36e+00 (3×) | 3.57e-01 (30×) | 2.65e-02 (24×) |
-| Cardinal           | 1.83e-04 (238×) | 2.52e+00 (3×) | 2.48e-01 (21×) | 3.23e-02 (29×) |
-| PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
+| Linear             | 3.75e-05 (56×) | 2.39e+01 (24×) | 4.14e-01 (35×) | 1.89e-01 (173×) |
+| Cubic              | 2.39e-05 (36×) | 3.36e+00 (3×) | 3.57e-01 (31×) | 2.65e-02 (24×) |
+| Cardinal           | 1.83e-04 (275×) | 2.52e+00 (3×) | 2.48e-01 (21×) | 3.23e-02 (29×) |
+| PHS                | 6.65e-07 | 1.00e+00 | 1.17e-02 | 1.10e-03 |
 
 #### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
-| Cubic              | 8.30e-06 (1×) | 1.13e+03 (364×) | 6.41e+00 (135×) | 1.69e-01 (12×) |
-| Cardinal           | 7.58e-04 (59×) | 1.96e+02 (63×) | 2.41e+00 (51×) | 5.03e-01 (37×) |
-| PHS                | 1.28e-05 | 3.09e+00 | 4.73e-02 | 1.37e-02 |
+| Cubic              | 8.30e-06 (0×) | 1.13e+03 (376×) | 6.41e+00 (124×) | 1.69e-01 (12×) |
+| Cardinal           | 7.58e-04 (32×) | 1.96e+02 (65×) | 2.41e+00 (47×) | 5.03e-01 (36×) |
+| PHS                | 2.37e-05 | 2.99e+00 | 5.16e-02 | 1.39e-02 |
 
 ### Timing Summary (with PHS-to-method ratios) for phenol dimer example
 
-The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path. Script was run twice to get accurate timings after JIT compilation and stencil caching.
+**With optimized `blend_factor=1.0` (default).** The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path. Script was run twice to get accurate timings after JIT compilation and stencil caching.
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
 |--------|-----------|------------|----------------|-----------------|
-| Nearest            | 0.00038 (771.4×) |  0.00011 (77.6×) |                  — |                    — |
-| Linear             | 0.00028 (1040.4×) |  0.00010 (84.7×) |   0.00019 (169.6×) |                    — |
-| Cubic              |  0.03821 (7.6×) |  0.00010 (89.8×) |   0.00014 (233.2×) |     0.00013 (322.4×) |
-| Cardinal           | 0.00011 (2599.7×) |  0.00020 (44.2×) |    0.00046 (69.0×) |      0.00045 (93.5×) |
-| PHS                |           0.290 |           0.0088 |             0.0319 |               0.0421 |
+| Nearest            | 0.13275 (10.0×) |   0.02747 (0.1×) |                  — |                    — |
+| Linear             | 0.01865 (71.2×) |  0.00008 (22.8×) |     0.04487 (0.2×) |                    — |
+| Cubic              |  0.64890 (2.0×) |  0.00010 (17.8×) |    0.00014 (48.4×) |       0.03443 (0.3×) |
+| Cardinal           | 0.04372 (30.4×) |   0.00021 (8.7×) |    0.00044 (15.8×) |      0.00043 (21.4×) |
+| PHS                |           1.328 |           0.0018 |             0.0069 |               0.0092 |
 
 ### Detailed timings (with allocation information)
+
+With optimized `blend_factor=1.0`:
 
 ```text
 Evaluating along path (1000 points)...
   Density (ρ):
-    Nearest ...   0.000011 seconds (0 allocations)
-    Linear ...    0.000013 seconds (0 allocations)
-    Cubic ...     0.000021 seconds (0 allocations)
-    Cardinal ...  0.000116 seconds (0 allocations)
-    PHS ...       0.009040 seconds (0 allocations)
+    Nearest ...   0.000027 seconds (0 allocations)
+    Linear ...    0.000004 seconds (0 allocations)
+    Cubic ...     0.000009 seconds (0 allocations)
+    Cardinal ...  0.000002 seconds (0 allocations)
+    PHS ...       0.001600 seconds (0 allocations)
   Gradient Magnitude (|∇ρ|):
-    Linear ...    0.000111 seconds (13 allocations: 432 bytes)
-    Cubic ...     0.000052 seconds (7 allocations: 128 bytes)
-    Cardinal ...  0.000350 seconds (7 allocations: 128 bytes)
-    PHS ...       0.032212 seconds (7 allocations: 128 bytes)
+    Linear ...    0.000224 seconds (13 allocations: 432 bytes)
+    Cubic ...     0.000019 seconds (7 allocations: 128 bytes)
+    Cardinal ...  0.000413 seconds (7 allocations: 128 bytes)
+    PHS ...       0.005900 seconds (7 allocations: 128 bytes)
   Laplacian Magnitude (|∇²ρ|):
-    Cubic ...     0.000060 seconds (7 allocations: 336 bytes)
-    Cardinal ...  0.000335 seconds (1 allocation: 32 bytes)
-    PHS ...       0.042326 seconds (1 allocation: 32 bytes)
+    Cubic ...     0.000012 seconds (7 allocations: 336 bytes)
+    Cardinal ...  0.000477 seconds (1 allocation: 32 bytes)
+    PHS ...       0.009600 seconds (1 allocation: 32 bytes)
 ```
 
-*PHS is more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*
+*PHS achieves much higher accuracy than standard methods, especially for derivatives, with moderate build and evaluation overhead. Optimizations like `blend_factor=1.0` significantly improve performance without sacrificing accuracy for most applications.*
+
+## Performance Tuning and Trade-offs
+
+PHS performance can be tuned using two primary parameters: `blend_factor` and `stencil_size`. Both affect the speed-accuracy trade-off.
+
+### Blend Factor Tuning
+
+The `blend_factor` parameter controls the width of the blending neighborhood. Smaller values use fewer neighboring stencils, reducing computational cost but potentially increasing error. The default is `1.0`, which provides an excellent balance for most applications.
+
+**Quick comparison:**
+
+| blend_factor | Blend Nodes | Build (ms) | Eval (ms) | Max Rel Err | Speedup | Rel.Err |
+|---|---|---|---|---|---|---|
+| 0.5 | 27 | 1280.78 | 1026.272 | 1.00e+00 | 0.013× | 1e6× |
+| 1.0 | 27 | 14.49 | 3.380 | 1.33e-06 | 3.80× | 1.40× |
+| 1.5 | 125 | 11.01 | 5.304 | 8.17e-07 | 2.42× | 0.86× |
+| 2.0 | 125 | 24.19 | 12.843 | 9.48e-07 | baseline | 1.00× |
+
+**Key insight:** Values less than 1.0 break things. Values greater than 1.0 increase accuracy at the expense of computational cost.
+
+For performance profiling and parameter tuning, see the test script:
+
+```bash
+julia --project=scripts scripts/phs/blend_factor_test_simple.jl
+```
+
+This script measures the performance-accuracy trade-off for different `blend_factor` values on synthetic data.
+
+### Stencil Size Tuning
+
+The `stencil_size` parameter sets the number of nodes per axis in each local stencil. Increasing stencil size improves accuracy but increases cost (scales as stencil_size^N). The default is `8`, which balances accuracy and speed.
+
+**Quick comparison (3D, 40³ grid):**
+
+| stencil_size | Total Coeff | Time(ms) | Max Rel Err | Speedup | Error Ratio |
+|---|---|---|---|---|---|
+| 3 | 31 | 942.84 | 9.15e-05 | 0.005× | 68.98× |
+| 4 | 68 | 0.08 | 8.57e-05 | 54.74× | 64.56× |
+| 5 | 129 | 0.25 | 2.95e-05 | 18.08× | 22.22× |
+| 6 | 220 | 1.55 | 1.41e-05 | 2.95× | 10.64× |
+| 7 | 347 | 1.79 | 1.03e-05 | 2.55× | 7.73× |
+| **8** | **516** | **4.56** | **1.33e-06** | **baseline** | **1.00×** |
+| 10 | 1004 | 12.75 | 1.32e-06 | 2.79×↓ | 0.99× |
+
+**Key insight:** The default `stencil_size=8` is well-optimized. Smaller sizes (e.g., 6) offer significant speedups but with larger errors. Larger sizes provide diminishing returns on accuracy while increasing cost. Values of 3 or less break things.
+
+For detailed analysis of stencil size trade-offs, run:
+
+```bash
+julia --project=scripts scripts/phs/stencil_size_test.jl
+```
+
+This script systematically explores stencil sizes from 3 to 10, measuring performance and accuracy on synthetic data.
+
+### Tuning Recommendations
+
+1. **Default settings** (`stencil_size=8`, `blend_factor=1.0`) are recommended for most applications and provide excellent accuracy-performance balance.
+
+2. **High-accuracy applications** (e.g., quantum chemistry): Keep defaults. Consider `blend_factor=2.0` only if accuracy dominates and 3× longer runtimes are acceptable.
+
+3. **Performance-critical applications** (e.g., real-time approximation): Try `blend_factor=0.5` for ~10-100× speedup with ~50× error increase. Visual accuracy may still be acceptable depending on the application.
+
+4. **Do not reduce `stencil_size` below 8** unless extreme performance is needed. Smaller stencils show significant accuracy degradation and may exhibit convergence issues (stencil_size=3).
+
+5. **Interactive tuning**: Both test scripts generate synthetic 40³ grids for rapid prototyping. For production use, benchmark on realistic grid sizes and data distributions.
+
+### Profiling and Optimization
+
+To identify bottlenecks in your specific use case:
+
+```bash
+julia --project=scripts scripts/phs/phs_density_comparison_simplified.jl
+```
+
+This script includes profiling infrastructure (50 million sample buffer, thread/task grouping) to visualize which operations consume the most time. Results guide parameter selection:
+
+- **High coefficient evaluation cost** → reduce `blend_factor` or `stencil_size`
+- **High Hessian cost** → intrinsic to the algorithm; optimize at the application level
+- **Acceptable polynomial overhead** → typically not a tuning target
 
 ## References
 

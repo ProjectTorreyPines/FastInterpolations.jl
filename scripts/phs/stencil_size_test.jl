@@ -66,25 +66,55 @@ for ss in stencil_sizes
 end
 
 # Print summary
-println("\n" * "="^70)
+println("\n" * "="^80)
 println("SUMMARY TABLE")
-println("="^70)
-println("Stencil | Total Coeff | Time(ms) | Max Rel Err | Mean Rel Err |  vs ss=8")
-println("="^70)
+println("="^80)
+
+# ASCII table (for terminal viewing)
+println("\nSize | Total Coeff | Time(ms) | Max Rel Err | Speedup | Error Ratio")
+println("-" ^ 80)
 
 baseline_time = results[8].time_eval
+baseline_err = results[8].max_rel_error
+
 for ss in stencil_sizes
     r = results[ss]
     speedup = baseline_time / r.time_eval
-    speedup_str = speedup < 1.1 ? @sprintf("%.1f%%", speedup*100) : @sprintf("%.2f×", speedup)
-    @printf "%7d | %11d | %8.2f | %11.2e | %12.2e | %9s\n" ss r.stencil_size_total r.time_eval*1000 r.max_rel_error r.mean_rel_error speedup_str
+    if speedup >= 1.1
+        speedup_str = @sprintf("%.2f×", speedup)
+    elseif speedup < 1.0
+        speedup_str = @sprintf("%.2f×↓", 1/speedup)
+    else
+        speedup_str = "baseline"
+    end
+    err_ratio = r.max_rel_error / baseline_err
+    @printf "%4d | %11d | %8.2f | %11.2e | %8s | %12.2f×\n" ss r.stencil_size_total r.time_eval*1000 r.max_rel_error speedup_str err_ratio
 end
 
-println("="^70)
+# Markdown table
+println("\n" * "="^80)
+println("MARKDOWN TABLE")
+println("="^80)
+println()
+println("| stencil_size | Total Coeff | Time(ms) | Max Rel Err | Speedup | Error Ratio |")
+println("|---|---|---|---|---|---|")
+for ss in stencil_sizes
+    r = results[ss]
+    speedup = baseline_time / r.time_eval
+    if speedup >= 1.1
+        speedup_str = @sprintf("%.2f×", speedup)
+    elseif speedup < 1.0
+        speedup_str = @sprintf("%.2f×↓", 1/speedup)
+    else
+        speedup_str = "baseline"
+    end
+    err_ratio = r.max_rel_error / baseline_err
+    @printf "| %d | %d | %.2f | %.2e | %s | %.2f× |\n" ss r.stencil_size_total r.time_eval*1000 r.max_rel_error speedup_str err_ratio
+end
+println()
 println("\nAnalysis:")
 
 # Find optimal stencil_size (best speed/accuracy trade-off)
-baseline_err = results[8].max_rel_error
 min_ss_for_accuracy = nothing
 
 for ss in stencil_sizes[1:end-1]
@@ -93,9 +123,10 @@ for ss in stencil_sizes[1:end-1]
     err_ratio = r.max_rel_error / baseline_err
     
     if err_ratio < 1.5 && speedup > 1.3
-        speedup_pct = (1-1/speedup)*100
-        println("✓ stencil_size=$(ss): $(round(speedup_pct, digits=1))% faster, error increases by $(round(err_ratio, digits=2))×")
-        println("  RECOMMENDED for high-performance use cases")
+        speedup_pct = (1 - 1/speedup) * 100
+        err_increase = (err_ratio - 1) * 100
+        println("✓ stencil_size=$(ss): $(round(speedup_pct, digits=1))% faster, max error $(round(err_increase, digits=0))% larger ($(round(err_ratio, digits=2))× relative)")
+        println("  → RECOMMENDED for high-performance use cases")
         break
     end
 end
@@ -111,7 +142,11 @@ end
 
 if min_ss_for_accuracy !== nothing && min_ss_for_accuracy < 8
     speedup = baseline_time / results[min_ss_for_accuracy].time_eval
-    err_increase = (results[min_ss_for_accuracy].max_rel_error/baseline_err - 1)*100
-    speedup_pct = (1-1/speedup)*100
-    println("\n✓ stencil_size=$(min_ss_for_accuracy) achieves similar accuracy ($(round(err_increase, digits=1))% error vs ss=8) while being $(round(speedup_pct, digits=1))% faster")
+    err_ratio = results[min_ss_for_accuracy].max_rel_error / baseline_err
+    err_increase = (err_ratio - 1) * 100
+    speedup_pct = (1 - 1/speedup) * 100
+    println("\n✓ stencil_size=$(min_ss_for_accuracy): achieves similar accuracy ($(round(err_increase, digits=0))% error increase) while being $(round(speedup_pct, digits=1))% faster")
+    println("  → GOOD BALANCE for production")
 end
+
+println("\n✓ Default stencil_size=8 provides excellent accuracy. Smaller sizes trade significant accuracy for moderate speedup.")

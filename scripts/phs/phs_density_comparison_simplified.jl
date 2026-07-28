@@ -355,9 +355,9 @@ const ref_rho0 = PromolecularRef(ATOMS)
 # 3. Build only the PHS Interpolant
 # ============================================================
 grids = (x_grid, y_grid, z_grid)
-println("\nBuilding Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
+println("\nBuilding Polyharmonic spline (PHS-3, stencil_size=8, blend_factor=1.0, log-density transform)...")
 time_phs = @elapsed itp_phs = phs_interp(
-    grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
+    grids, rho_3d; stencil_size = 8, degree = 3,
     reference_interp = ref_rho0
 )
 @printf "  Built in %.4f seconds\n" time_phs

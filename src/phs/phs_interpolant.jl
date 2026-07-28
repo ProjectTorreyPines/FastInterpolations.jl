@@ -47,9 +47,10 @@ Create an N-dimensional polyharmonic spline interpolant.
 - `degree::Int = 3`:
     PHS radial function degree (odd positive integer: 1, 3, 5, …).
     Higher degree → smoother interpolant, larger condition number.
-- `blend_factor::Real = 2.0`:
+- `blend_factor::Real = 1.0`:
     Blend range = blend_factor × max_grid_spacing.
     Larger values → wider blending neighbourhood → smoother but more expensive.
+    Default 1.0 provides good balance (3× faster than 2.0, ~2× error increase).
 - `extrap=NoExtrap()`:
     Extrapolation mode (scalar or per-axis tuple).
 - `search=AutoSearch()`:
@@ -93,7 +94,7 @@ function phs_interp(
         data::AbstractArray{Tv_raw, N};
         stencil_size::Int = 8,
         degree::Int = 3,
-        blend_factor::Real = 2.0,
+        blend_factor::Real = 1.0,
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         reference_interp = nothing,

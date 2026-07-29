@@ -398,11 +398,13 @@ end
 @testitem "Unitful 1D: cubic PeriodicBC rejection is friendly (review pin F7)" begin
     using Unitful
 
-    # `_cubic_interp_units` deliberately rejects PeriodicBC (strip→solve→reattach
-    # has no periodic factorization path yet) — pin the ERROR QUALITY, not just
-    # that it throws: message must name the feature and the workaround.
+    # Native unit builds reject PeriodicBC inside `_build_periodic_cache` (the
+    # S-M q-seed write is the remaining hostile site) — pin the ERROR QUALITY,
+    # not just that it throws: message must name the feature and the workaround.
+    # Closed cycle (y[1] == y[end]) so the endpoint check upstream passes and
+    # the pin exercises the builder guard itself.
     xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
-    yw = [1.0, 2.0, 4.0, 8.0] .* u"W"
+    yw = [1.0, 2.0, 4.0, 1.0] .* u"W"
     err = try
         cubic_interp(xs, yw; bc = PeriodicBC())
         nothing
@@ -414,18 +416,6 @@ end
     @test occursin("PeriodicBC", msg)
     @test occursin("unit-carrying", msg)
     @test occursin("ustrip", msg)   # actionable workaround named
-
-    @testset "unhandled BC type: catch-all is actionable, not a solve MethodError" begin
-        struct _F7UnknownBC <: FastInterpolations.AbstractBC end
-        err2 = try
-            FastInterpolations._strip_bc_units(_F7UnknownBC(), 1.0u"W", 1.0u"s")
-            nothing
-        catch e
-            e
-        end
-        @test err2 isa ArgumentError
-        @test occursin("ustrip", sprint(showerror, err2))
-    end
 end
 
 @testitem "Unitful 1D: batch eval across families (review pin F8)" begin

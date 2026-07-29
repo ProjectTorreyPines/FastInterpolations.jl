@@ -156,10 +156,10 @@ end
 end
 
 # ── Non-Real (unit-carrying) grids: nondimensionalized solve ──
-# Same strategy as cubic (`_cubic_interp_units`): the solver stores mixed-order
-# coefficients through shared buffers, so solve on a oneunit-stripped twin
-# (exact division) and reattach per-order units — `a` is order 2 (`Y/X²`),
-# `d` order 1 (`Y/X`). The original unit axis serves eval/search.
+# Strip→solve→reattach twin: the solver stores mixed-order coefficients through
+# shared buffers, so solve on a oneunit-stripped twin (exact division) and
+# reattach per-order units — `a` is order 2 (`Y/X²`), `d` order 1 (`Y/X`).
+# The original unit axis serves eval/search.
 function _quadratic_interp_units(x, y, bc, extrap, search, store)
     ux = oneunit(eltype(x))
     uy = _carrier_oneunit(eltype(y))
@@ -176,8 +176,25 @@ function _quadratic_interp_units(x, y, bc, extrap, search, store)
     return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_u; store = store)
 end
 
+# BC payloads carry derivative units (`Y/X`, `Y/X²`, `Y/X³`) — strip to match
+# the nondimensionalized twin; structural BCs pass through. Shared by the
+# quadratic and cubic-Series strip twins (deleted with them).
+@inline _strip_bc_units(bc::Union{PolyFit, ZeroCurvBC, ZeroSlopeBC}, uy, ux) = bc
+@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.val / (uy / ux))
+@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.val / (uy / (ux * ux)))
+@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.val / (uy / (ux * ux * ux)))
+@inline _strip_bc_units(bc::BCPair, uy, ux) =
+    BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
 # Quadratic side-selector BCs wrap PointBC payloads — recurse into them.
 @inline _strip_bc_units(bc::Left, uy, ux) = Left(_strip_bc_units(bc.bc, uy, ux))
 @inline _strip_bc_units(bc::Right, uy, ux) = Right(_strip_bc_units(bc.bc, uy, ux))
 # MinCurvFit is a payload-free marker (like QuadraticFit/PolyFit) — strip is identity.
 @inline _strip_bc_units(bc::MinCurvFit, uy, ux) = bc
+# Catch-all: an unhandled BC type must fail HERE with an actionable message,
+# not as a MethodError deep inside the stripped solve.
+@noinline _strip_bc_units(bc::AbstractBC, uy, ux) = throw(
+    ArgumentError(
+        "BC type $(typeof(bc)) is not supported on a unit-carrying grid yet — " *
+            "strip units (e.g. `ustrip`) or use a Real grid"
+    )
+)

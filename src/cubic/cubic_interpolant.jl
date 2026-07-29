@@ -175,7 +175,9 @@ val = itp(0.5)  # returns ComplexF64
     end
 end
 
-# Unified entry: handles all grid types including duck-typed (Dual).
+# Unified entry: ONE native path for every grid eltype (Real, Dual,
+# unit-carrying). BC payloads travel verbatim — the solver's RHS rules promote
+# them in place (H9: never pre-convert into value space).
 function cubic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv};
@@ -186,67 +188,9 @@ function cubic_interp(
         store::StorePolicy = StorePolicy()
     ) where {Tg <: Number, Tv, P <: AbstractSearchPolicy}
     _check_grid_orderable(Tg)
-    Tg_f = _promote_grid_float(Tg, Tv)
-    # Non-Real (unit-carrying) grids: strip→solve→reattach (type-level branch folds).
-    Tg_f <: Real ||
-        return _cubic_interp_units(x, y, bc, extrap, autocache, search, store)
-    xc = _store_grid(x, Tg_f)
-    Tv_out = _value_type(Tv, Tg_f)
-    bc_promoted = _promote_bc(bc, Tv_out)
-    return _cubic_interp_impl(xc, y, bc_promoted, extrap, autocache, search; store = store)
+    xc = _store_grid(x, _promote_grid_float(Tg, Tv))
+    return _cubic_interp_impl(xc, y, bc, extrap, autocache, search; store = store)
 end
-
-# ── Non-Real (unit-carrying) grids: nondimensionalized solve ──
-# The Thomas machinery is unit-hostile by STORAGE, not algebra: factorization
-# overwrites h-typed arrays with L multipliers (dimensionless) and inv-diagonal
-# (1/X), and the ldiv turns the RHS buffer (Y/X) into the solution (Y/X²) in
-# place. Rather than triple-aliasing the core solver, solve on a oneunit-
-# stripped twin (division by `oneunit` is exact — bit-identical mantissas),
-# reattach units to `z`, and keep the ORIGINAL unit axis for eval/search.
-function _cubic_interp_units(x, y, bc, extrap, autocache, search, store)
-    _is_periodic_bc(bc) && throw(
-        ArgumentError(
-            "cubic PeriodicBC on a unit-carrying grid is not supported yet — " *
-                "strip units (e.g. `ustrip`) or use a Real grid"
-        )
-    )
-    ux = oneunit(eltype(x))
-    uy = _carrier_oneunit(eltype(y))
-    xs = x ./ ux
-    ys = y ./ uy
-    tw = _cubic_interp_impl(
-        xs, ys, _strip_bc_units(bc, uy, ux), NoExtrap(), autocache, search
-    )
-    z = tw.z .* (uy / (ux * ux))
-    Tgu = eltype(x)
-    # Cubic 1D ALWAYS owns its axis (copy-then-wrap) — deliberately NOT the
-    # store-aware `_policy_axis` the quadratic units path uses; do not "unify".
-    xc = _cache_axis(_convert_copy(x, Tgu), NoBC())
-    bc_u = _normalize_bc(bc, first(y))
-    # NOTE: `thomas` is the STRIPPED twin's factorization paired with a unit
-    # axis — unused by eval/integrate, but do not feed this cache back into
-    # `cubic_interp(cache, y2)`-style rebuilds with unit data.
-    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, nothing)
-    extrap_p = _resolve_extrap(extrap, xc, eltype(y))
-    return CubicInterpolant(cache, y, z, bc_u, extrap_p, search; store = store)
-end
-
-# BC payloads carry derivative units (`Y/X`, `Y/X²`, `Y/X³`) — strip to match
-# the nondimensionalized twin; structural BCs pass through.
-@inline _strip_bc_units(bc::Union{PolyFit, ZeroCurvBC, ZeroSlopeBC}, uy, ux) = bc
-@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.val / (uy / ux))
-@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.val / (uy / (ux * ux)))
-@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.val / (uy / (ux * ux * ux)))
-@inline _strip_bc_units(bc::BCPair, uy, ux) =
-    BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
-# Catch-all: an unhandled BC type must fail HERE with an actionable message,
-# not as a MethodError deep inside the stripped solve.
-@noinline _strip_bc_units(bc::AbstractBC, uy, ux) = throw(
-    ArgumentError(
-        "BC type $(typeof(bc)) is not supported on a unit-carrying grid yet — " *
-            "strip units (e.g. `ustrip`) or use a Real grid"
-    )
-)
 
 """
     cubic_interp(cache, y; extrap=NoExtrap(), search=AutoSearch()) -> CubicInterpolant

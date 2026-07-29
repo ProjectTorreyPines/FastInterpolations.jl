@@ -312,8 +312,8 @@ function cubic_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
-    # Non-Real (unit-carrying) grids: strip→solve→reattach, mirroring the scalar
-    # `_cubic_interp_units` (the Thomas solve is unit-hostile by STORAGE).
+    # Non-Real (unit-carrying) grids: strip→solve→reattach twin (the batch
+    # Series solve still stores mixed unit spaces through shared buffers).
     Tg <: Real || return _cubic_series_units(
         x, y_mat, bc, extrap, n_ser, autocache, precompute_transpose, search
     )
@@ -355,9 +355,8 @@ function cubic_interp(
 end
 
 # ── Non-Real (unit-carrying) grids: nondimensionalized solve ──
-# Series mirror of the scalar `_cubic_interp_units`: the Thomas machinery is
-# unit-hostile by STORAGE (factorization overwrites the h-typed diagonal with its
-# 1/X inverse), so solve on a oneunit-stripped twin — division by `oneunit` is
+# Series strip twin: the batch solve routes every series through shared
+# buffers, so solve on a oneunit-stripped twin — division by `oneunit` is
 # exact — and reattach `z`'s order-2 units (`Y/X²`). The ORIGINAL unit axis
 # serves eval/search.
 function _cubic_series_units(

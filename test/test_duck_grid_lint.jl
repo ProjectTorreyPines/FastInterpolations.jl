@@ -170,11 +170,11 @@ end
     src_dir = dirname(pathof(FastInterpolations))
 
     expected_tokens = Dict(
-        "_cubic_interp_units" => 5,
+        "_cubic_interp_units" => 0,   # P2: cubic scalar twin deleted
         "_cubic_series_units" => 2,
         "_quadratic_interp_units" => 2,
         "_strip_series_bc_units" => 3,
-        "_strip_bc_units" => 15,
+        "_strip_bc_units" => 14,      # P2: cubic call gone; defs moved beside the quadratic twin
     )
     # `Tg <: Real || return …` / `if !(Tg <: Real)` REROUTE forks, counted only
     # inside the solver family trees (cubic/, quadratic/) — `utils.jl`'s
@@ -183,7 +183,7 @@ end
     # actionable error for a not-yet-native combo is the endorsed idiom, not a
     # parallel solve path (e.g. the periodic-units guard until Phase 3).
     fork_res = (r"<: Real \|\|", r"if !\([A-Za-z_][A-Za-z0-9_]* <: Real\)")
-    expected_forks = 15
+    expected_forks = 14   # P2: cubic scalar surface fork deleted
 
     counts, forks = let counts = Dict(k => 0 for k in keys(expected_tokens)), forks = 0
         for (root, _, files) in walkdir(src_dir), f in files

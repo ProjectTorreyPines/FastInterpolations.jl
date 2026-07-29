@@ -382,7 +382,7 @@ function _cubic_series_units(
         _normalize_bc_array(bc, eltype(y_mat), n_ser)[1]
     # NOTE: `thomas` is the STRIPPED twin's factorization paired with a unit axis
     # — unused by eval, but do not feed this cache back into a unit-data rebuild.
-    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, Vector{eltype(xc)}())
+    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, nothing)
     extrap_p = _promote_extrap(extrap, eltype(y_mat))
     sitp = CubicSeriesInterpolant(cache, bc_u, y_mat, z_mat, extrap_p, search)
 

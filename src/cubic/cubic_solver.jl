@@ -151,14 +151,14 @@ function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
         du[n - 1] = h_nm1
     end
 
-    thomas = thomas_factorize!(dl, d_diag, du)
+    thomas = thomas_factorize(dl, d_diag, du)
 
     # Pre-compute q = A'⁻¹ · u (u = [1, 0, …, 0, 1]ᵀ).
     q = Vector{T}(undef, n)
     fill!(q, zero(T))
     q[1] = one(T)
     q[n] = one(T)
-    _ldiv_tridiagonal_nopiv!(q, thomas)
+    _ldiv_tridiagonal_nopiv!(q, q, thomas)
 
     # Persist resolved-period bc on the cache so display / cache-pool comparison
     # / `_with_resolved_period(itp.bc, cache.bc.period)` work without a separate
@@ -222,12 +222,12 @@ function _build_derivative_bc_cache(
     end
 
     # ONE-PASS Thomas factorization: d_diag becomes inv_d
-    thomas = thomas_factorize!(dl, d_diag, du)
+    thomas = thomas_factorize(dl, d_diag, du)
 
     bc_pair = BCPair(left_bc, right_bc)
 
     # Empty `q` for non-periodic (Sherman-Morrison vector unused).
-    return CubicSplineCache(cache_x, bc_pair, thomas, Vector{T}())
+    return CubicSplineCache(cache_x, bc_pair, thomas, nothing)
 end
 
 # ========================================
@@ -397,7 +397,7 @@ eval can read `z[n+1]` at the closed-cycle endpoint.
     n = length(q)   # n_cells
 
     compute_rhs_periodic!(y_temp, y, cache.x)
-    _ldiv_tridiagonal_nopiv!(y_temp, cache.thomas)
+    _ldiv_tridiagonal_nopiv!(y_temp, y_temp, cache.thomas)
 
     α = _get_h(cache.x, n)   # seam-cell width (last real cell or virtual seam)
 
@@ -457,7 +457,7 @@ compatibility (callers pass `cache.bc` explicitly or a fresh BC for one-shot).
         bc_pair::BCPair{L, R}
     ) where {Tg, X, F, L <: PointBC, R <: PointBC}
     compute_rhs!(out_z, y, cache.x, bc_pair)
-    _ldiv_tridiagonal_nopiv!(out_z, cache.thomas)
+    _ldiv_tridiagonal_nopiv!(out_z, out_z, cache.thomas)
     return out_z
 end
 

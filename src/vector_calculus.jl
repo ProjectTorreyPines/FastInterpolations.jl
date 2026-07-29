@@ -38,7 +38,7 @@
 # ∂²f/∂xᵢ∂xⱼ eltype: the `_deriv1_op` witness folded once per axis (never `h^-2`,
 # which is type-unstable for units). `i == j` is the same expression twice.
 @inline _deriv2_pair_eltype(::Type{Tv}, ::Type{Gi}, ::Type{Gj}) where {Tv, Gi, Gj} =
-    _promote_eltype(_deriv1_op, _promote_eltype(_deriv1_op, Tv, eltype(Gi)), eltype(Gj))
+    _promote_eltype(_deriv1_op, eltype(Gj), _promote_eltype(_deriv1_op, eltype(Gi), Tv))
 
 # Unrolled at compile time: `@generated` keeps the N² / N type folds out of the
 # runtime frame entirely (a `map`/`ntuple` over types can leave Type objects on
@@ -57,7 +57,7 @@ end
 
 @generated function _nd_gradient_eltype(::Type{Tv}, grids::Tuple{Vararg{Any, N}}) where {Tv, N}
     G = grids.parameters
-    terms = [:(_promote_eltype(_deriv1_op, Tv, eltype($(G[i])))) for i in 1:N]
+    terms = [:(_promote_eltype(_deriv1_op, eltype($(G[i])), Tv)) for i in 1:N]
     return :(promote_type($(terms...)))
 end
 

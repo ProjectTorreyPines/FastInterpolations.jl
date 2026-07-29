@@ -82,7 +82,7 @@ The `x` field stores a snapshot (copy) for Vector inputs, preventing external
 mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
 even on objectid match to detect in-place mutation.
 """
-mutable struct CacheEntry{T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{T, Vector{T}}, BCPair{L, R}}} <: AbstractCacheEntry{T, X}
+mutable struct CacheEntry{T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{Vector{T}, Vector{T}, Vector{T}}, BCPair{L, R}, Nothing}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X                                  # user-input snapshot (Vector / Range)
     cache::C                              # concrete cache type — preserves wrapped-axis X for inference
@@ -111,7 +111,7 @@ Cache entry for periodic BC (uses PeriodicData).
 # Mutation Safety
 See `CacheEntry` documentation for details on mutation safety pattern.
 """
-mutable struct PeriodicCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{T, Vector{T}}, <:PeriodicBC}} <: AbstractCacheEntry{T, X}
+mutable struct PeriodicCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{Vector{T}, Vector{T}, Vector{T}}, <:PeriodicBC, Vector{T}}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::C
@@ -362,7 +362,7 @@ Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 """
 @inline function _get_derivative_bank(::Type{X}, ::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
     Xc = _cached_axis_type(X, T)
-    Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, BCPair{L, R}}
+    Cc = CubicSplineCache{T, Xc, ThomasFactorization{Vector{T}, Vector{T}, Vector{T}}, BCPair{L, R}, Nothing}
     EntryType = CacheEntry{T, L, R, X, Cc}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
@@ -388,7 +388,7 @@ fit into a bank typed for `check=true`.
     Xc = _cached_axis_type(X, T, Val(E))
     # `E` ∈ {:inclusive, :exclusive, :extended} — each gets its own bank.
     bc = PeriodicBC{E, T, C}
-    Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, bc}
+    Cc = CubicSplineCache{T, Xc, ThomasFactorization{Vector{T}, Vector{T}, Vector{T}}, bc, Vector{T}}
     EntryType = PeriodicCacheEntry{T, X, E, Cc}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end

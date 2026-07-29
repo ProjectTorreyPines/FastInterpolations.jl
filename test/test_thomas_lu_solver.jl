@@ -146,9 +146,9 @@
                     dl = copy(A.dl)
                     d_diag = copy(A.d)
                     du = copy(A.du)
-                    thomas = FI.thomas_factorize!(dl, d_diag, du)
+                    thomas = FI.thomas_factorize(dl, d_diag, du)
                     x_custom = copy(rhs)
-                    FI._ldiv_tridiagonal_nopiv!(x_custom, thomas)
+                    FI._ldiv_tridiagonal_nopiv!(x_custom, x_custom, thomas)
 
                     # Residuals should be comparable
                     resid_base = maximum(abs.(A * x_base .- rhs))
@@ -189,9 +189,9 @@
                 dl = copy(Aprime.dl)
                 d_diag = copy(Aprime.d)
                 du = copy(Aprime.du)
-                thomas = FI.thomas_factorize!(dl, d_diag, du)
+                thomas = FI.thomas_factorize(dl, d_diag, du)
                 x_custom = copy(rhs)
-                FI._ldiv_tridiagonal_nopiv!(x_custom, thomas)
+                FI._ldiv_tridiagonal_nopiv!(x_custom, x_custom, thomas)
 
                 resid_base = maximum(abs.(Aprime * x_base .- rhs))
                 resid_custom = maximum(abs.(Aprime * x_custom .- rhs))
@@ -227,11 +227,11 @@
                 dl = copy(Aprime.dl)
                 d_diag = copy(Aprime.d)
                 du = copy(Aprime.du)
-                thomas = FI.thomas_factorize!(dl, d_diag, du)
+                thomas = FI.thomas_factorize(dl, d_diag, du)
                 q_custom = zeros(T, n_sys)
                 q_custom[1] = one(T)
                 q_custom[end] = one(T)
-                FI._ldiv_tridiagonal_nopiv!(q_custom, thomas)
+                FI._ldiv_tridiagonal_nopiv!(q_custom, q_custom, thomas)
 
                 # Residual check: A' * q ≈ u
                 u_ref = zeros(T, n_sys)
@@ -272,7 +272,8 @@
 
                     # Sequential reference: solve each RHS row independently
                     @inbounds for i in 1:n_batch
-                        FI._ldiv_tridiagonal_nopiv!(view(z_seq, i, :), cache.thomas)
+                        v = view(z_seq, i, :)
+                        FI._ldiv_tridiagonal_nopiv!(v, v, cache.thomas)
                     end
 
                     FI._ldiv_along_dim!(z_batch, cache.thomas, Val(2))
@@ -291,7 +292,8 @@
             z_ref = copy(z)
 
             @inbounds for i in 1:size(z, 1)
-                FI._ldiv_tridiagonal_nopiv!(view(z_ref, i, :), cache.thomas)
+                v = view(z_ref, i, :)
+                FI._ldiv_tridiagonal_nopiv!(v, v, cache.thomas)
             end
 
             FI._ldiv_along_dim!(z, cache.thomas, Val(2))

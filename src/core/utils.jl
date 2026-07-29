@@ -253,10 +253,15 @@ end
 # Unitful inverse units and duck carriers.
 @inline _inv_op(h) = inv(h)
 
+# `_thomas_l_op` (2-arg, both grid-space): Thomas L-multiplier eltype —
+# `dl[i]*inv(d)` cancels the axis unit (dimensionless float for unit grids,
+# `Tg` for Real). Drives `thomas_factorize`'s `l` output allocation.
+@inline _thomas_l_op(h::Tg, d::Tg2) where {Tg, Tg2} = h * inv(d)
+
 # `_deriv1_op` (2-arg): ONE order of differentiation — output type `r` scaled by a single
 # `inv(h)`. dⁿf/dxⁿ ∈ `[value]/[grid]ⁿ` is this folded n times (`_deriv_eltype`); one
 # `inv(h)` per order — never `h^-n` (type-unstable for units) — keeps every step concrete.
-@inline _deriv1_op(r::Tr, h::Tg) where {Tr, Tg} = r * inv(h)
+@inline _deriv1_op(h::Tg, r::Tr) where {Tg, Tr} = r * inv(h)
 
 # Grid-precision DIMENSIONLESS constant `1/n` (kernel coefficients like 1/24):
 # `Tg(n)` would demand a unit for unit-carrying grids — `one(Tg)` keeps the

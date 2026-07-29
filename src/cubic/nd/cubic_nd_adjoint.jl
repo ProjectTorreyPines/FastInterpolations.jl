@@ -194,7 +194,7 @@ matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
             _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, x_axis)
 
             # Step b: transpose Thomas solve (A⁻ᵀ z_bar)
-            _ldiv_tridiagonal_transpose!(z_bar, cache_d.thomas)
+            _ldiv_tridiagonal_transpose!(z_bar, z_bar, cache_d.thomas)
 
             # Step c: RHS stencil adjoint (f_contrib += Rᵀ z_bar)
             _compute_rhs_adjoint!(f_contrib, z_bar, x_axis, bc_pair, pf)
@@ -333,7 +333,7 @@ barriers — no `spacings` parameter needed.
             fill!(q_t, zero(Tg))
             @inbounds q_t[1] = one(Tg)
             @inbounds q_t[n_intervals] = one(Tg)
-            _ldiv_tridiagonal_transpose!(q_t, caches[d].thomas)
+            _ldiv_tridiagonal_transpose!(q_t, q_t, caches[d].thomas)
         end
 
         for p_src in 1:bit_d

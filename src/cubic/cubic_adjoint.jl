@@ -146,7 +146,7 @@ end
     _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar, deriv)
 
     # Step 2: Transpose solve — A⁻ᵀz̄ → r̄ (result in z_bar)
-    _ldiv_tridiagonal_transpose!(z_bar, adj.cache.thomas)
+    _ldiv_tridiagonal_transpose!(z_bar, z_bar, adj.cache.thomas)
 
     # Step 3: RHS adjoint — f̄ += Rᵀr̄
     # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
@@ -553,7 +553,7 @@ end
     fill!(q_t, zero(Tg))
     @inbounds q_t[1] = one(Tg)
     @inbounds q_t[n] = one(Tg)
-    _ldiv_tridiagonal_transpose!(q_t, adj.cache.thomas)
+    _ldiv_tridiagonal_transpose!(q_t, q_t, adj.cache.thomas)
 
     _adjoint_periodic_solve!(z_bar, adj.cache, q_t, n)
 
@@ -585,7 +585,7 @@ function _adjoint_periodic_solve!(
     ) where {Tv, Tg, X, F}
 
     # Transpose Thomas solve on z_bar[1:n]
-    _ldiv_tridiagonal_transpose!(z_bar, cache.thomas)
+    _ldiv_tridiagonal_transpose!(z_bar, z_bar, cache.thomas)
 
     # Sherman-Morrison correction with q_t = A'^{-T} u
     α = Tv(_get_h(cache.x, n))

@@ -323,7 +323,7 @@ end
             fill!(q_t, zero(Tg))
             @inbounds q_t[1] = one(Tg)
             @inbounds q_t[n_intervals] = one(Tg)
-            _ldiv_tridiagonal_transpose!(q_t, adj.caches[d].thomas)
+            _ldiv_tridiagonal_transpose!(q_t, q_t, adj.caches[d].thomas)
         end
 
         for p_src_offset in 0:(stride_d - 1)

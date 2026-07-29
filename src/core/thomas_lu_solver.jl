@@ -8,54 +8,52 @@
 # - Cubic spline system solvers (periodic + derivative BC)
 # - Batch ND interpolation (SIMD-optimized vectorized solver)
 #
-# Design: ThomasFactorization stores dl, du, inv_d for zero-allocation hot loops.
+# Unit spaces: the matrix entries carry the grid unit `X`, but the
+# factorization does not stay in that space — `l` is dimensionless and
+# `inv_d` lives in `1/X`, and a solve maps a `B`-space RHS to a `B/X`-space
+# result. The storage is therefore per-field typed and the solve writes into a
+# caller-provided output; overwriting an `X`-typed buffer with those values is
+# exactly the write a unit-carrying axis cannot represent. For `Real` grids
+# every space collapses to the same element type and the loops below are
+# op-for-op identical to the historic in-place implementation (bit-identical
+# results — pinned by test_thomas_lu_solver.jl).
 
 # ========================================
 # ThomasFactorization Type
 # ========================================
 
 """
-    ThomasFactorization{T<:AbstractFloat, V<:AbstractVector{T}}
+    ThomasFactorization{Vl, Vu, Vd}
 
-Lightweight LU factorization for tridiagonal matrices using Thomas algorithm.
-Zero-allocation alternative to `LinearAlgebra.LU` for diagonally-dominant systems.
+Lightweight LU factorization for tridiagonal matrices using the Thomas
+algorithm. Zero-allocation alternative to `LinearAlgebra.LU` for
+diagonally-dominant systems.
 
-# Fields
-- `dl::V`: Lower diagonal - L multipliers after factorization (n-1 elements)
-- `du::V`: Upper diagonal - unchanged from input (n-1 elements)
-- `inv_d::V`: Inverse U diagonal - 1/d[i] for fast back-substitution (n elements)
+# Fields (one unit space per field)
+- `dl::Vl`: L multipliers (n-1) — dimensionless (`dl_in[i] * inv_d[i]`)
+- `du::Vu`: U super-diagonal (n-1) — grid space `X`, captured by reference
+  from the assembly input, unchanged
+- `inv_d::Vd`: inverse U diagonal (n) — `1/X`
 
-# Memory Layout
-For n×n tridiagonal system:
-- `dl`: n-1 elements (L multipliers)
-- `du`: n-1 elements (U super-diagonal, unchanged)
-- `inv_d`: n elements (1/U diagonal for backward substitution)
-
-Total: 3n-2 elements. Compared to `LinearAlgebra.LU` which stores dl, d, du, ipiv, info.
+For `Real` grids all three are plain `Vector{T}` — same layout the old
+single-`T` struct had.
 
 # Thread Safety
 Immutable after construction. Safe for concurrent reads from multiple tasks.
 
 # Example
 ```julia
-# Allocate persistent arrays (NOT from pool!)
-dl = Vector{Float64}(undef, n-1)
-d = Vector{Float64}(undef, n)
-du = Vector{Float64}(undef, n-1)
-
-# Fill with tridiagonal entries...
-
-# One-pass factorization: d becomes inv_d
-thomas = thomas_factorize!(dl, d, du)
-
-# Solve Ax = b in-place
-_ldiv_tridiagonal_nopiv!(b, thomas)
+dl = rand(n - 1); d = 4.0 .+ rand(n); du = rand(n - 1)
+thomas = thomas_factorize(dl, d, du)   # inputs read-only
+x = similar(b)
+_ldiv_tridiagonal_nopiv!(x, b, thomas) # b consumed as forward-sweep scratch
+_ldiv_tridiagonal_nopiv!(b, b, thomas) # alias form ≡ historic in-place solve
 ```
 """
-struct ThomasFactorization{T, V <: AbstractVector{T}}
-    dl::V     # Lower diagonal (L multipliers after factorization)
-    du::V     # Upper diagonal (unchanged from input)
-    inv_d::V  # Inverse of U diagonal (1/d[i])
+struct ThomasFactorization{Vl <: AbstractVector, Vu <: AbstractVector, Vd <: AbstractVector}
+    dl::Vl     # L multipliers (dimensionless)
+    du::Vu     # Upper diagonal (unchanged input, grid space)
+    inv_d::Vd  # Inverse of U diagonal (1/grid space)
 end
 
 # ========================================
@@ -63,72 +61,62 @@ end
 # ========================================
 
 """
-    thomas_factorize!(dl, d, du) -> ThomasFactorization
+    thomas_factorize(dl, d, du) -> ThomasFactorization
 
-In-place Thomas algorithm factorization. Computes L, U, and inv_d in ONE PASS.
-
-# Arguments
-- `dl::AbstractVector{T}`: Lower diagonal (n-1), modified in-place to store L multipliers
-- `d::AbstractVector{T}`: Main diagonal (n), modified in-place to store 1/U diagonal (inv_d)
-- `du::AbstractVector{T}`: Upper diagonal (n-1), unchanged
-
-# Returns
-`ThomasFactorization(dl, du, d)` where `d` now contains `inv_d`.
+One-pass Thomas factorization. Inputs are **read-only**; `l` and `inv_d` are
+allocated with witness-computed element types (`_thomas_l_op`, `_inv_op`) so a
+unit-carrying axis factorizes natively. `du` is captured by reference.
 
 # Algorithm (Thomas/TDMA)
 For i = 1 to n:
     inv_d[i] = 1/d[i]
     if i < n:
-        l[i] = dl[i] * inv_d[i]           # L multiplier
-        d[i+1] = d[i+1] - l[i] * du[i]    # U diagonal update
+        l[i] = dl[i] * inv_d[i]            # L multiplier (dimensionless)
+        d'[i+1] = d[i+1] - l[i] * du[i]    # U diagonal update (grid space)
+
+The loop is op-for-op the historic in-place factorization — `Real` results
+are bit-identical; only the destination of the two unit-changing writes moved
+(they used to overwrite the `X`-typed inputs).
 
 # Safety
-This function assumes the matrix is **diagonally dominant** (no pivoting required).
-For non-diagonally-dominant matrices, use `LinearAlgebra.lu` with pivoting.
+Assumes the matrix is **diagonally dominant** (no pivoting). For general
+matrices use `LinearAlgebra.lu`.
 
 # Performance
-- O(n) time and space
-- Zero allocations (modifies inputs in-place)
-- Single pass through data (cache-friendly)
-
-# Example
-```julia
-n = 100
-dl = rand(n-1)
-d = 4.0 .+ rand(n)  # Diagonally dominant
-du = rand(n-1)
-
-thomas = thomas_factorize!(dl, d, du)
-# dl now contains L multipliers
-# d now contains inv_d (aliased as thomas.inv_d)
-```
+O(n) single pass; allocates the two output vectors (build-time only — the
+factorization is cached, never rebuilt on the eval hot path).
 """
-function thomas_factorize!(
-        dl::V, d::V, du::V
-    ) where {T, V <: AbstractVector{T}}
+function thomas_factorize(
+        dl::AbstractVector, d::AbstractVector, du::AbstractVector
+    )
+    Tg = eltype(d)
+    Tl = _promote_eltype(_thomas_l_op, Tg, Tg)
+    Tinv = _promote_eltype(_inv_op, Tg)
     n = length(d)
+    l = Vector{Tl}(undef, n - 1)
+    inv_d = Vector{Tinv}(undef, n)
 
     @inbounds begin
         # First diagonal element: compute inverse
         inv_d_val = inv(d[1])
-        d[1] = inv_d_val
+        inv_d[1] = inv_d_val
 
         # Forward elimination with simultaneous inverse computation
         for i in 1:(n - 1)
-            # L factor: l_i = dl[i] / d_i (use pre-computed inverse)
+            # L factor: l_i = dl[i] / d'_i (use pre-computed inverse)
             l_val = dl[i] * inv_d_val
-            dl[i] = l_val
+            l[i] = l_val
 
-            # U diagonal update: d_{i+1} = d_{i+1} - l_i * du[i]
+            # U diagonal update: d'_{i+1} = d[i+1] - l_i * du[i]
             d_next = d[i + 1] - l_val * du[i]
 
             # Compute inverse for next step and final storage
             inv_d_val = inv(d_next)
-            d[i + 1] = inv_d_val
+            inv_d[i + 1] = inv_d_val
         end
     end
 
-    return ThomasFactorization(dl, du, d)
+    return ThomasFactorization(l, du, inv_d)
 end
 
 # ========================================
@@ -136,33 +124,35 @@ end
 # ========================================
 
 """
-    _ldiv_tridiagonal_nopiv!(b, thomas::ThomasFactorization) -> b
+    _ldiv_tridiagonal_nopiv!(x, b, thomas::ThomasFactorization) -> x
 
-Fast Thomas algorithm solver using `ThomasFactorization`.
-
-Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
-
-# Type Parameters
-- `Tg<:AbstractFloat`: Grid type (Thomas factorization type)
-- `Tv`: Value type for RHS (unconstrained)
+Fast Thomas solve of `Ax = b` using the pre-computed factorization.
 
 # Arguments
-- `b::AbstractVector{Tv}`: RHS vector (modified in-place to hold solution)
-- `thomas::ThomasFactorization{Tg,V}`: Pre-computed factorization with dl, du, inv_d
+- `x::AbstractVector`: output, in `[b]/X` space (caller allocates with the
+  witness eltype; for `Real` grids that is `eltype(b)`)
+- `b::AbstractVector`: RHS — **consumed as scratch** by the forward sweep
+  (L is dimensionless, so the sweep stays in b's space)
+- `thomas`: factorization from [`thomas_factorize`](@ref)
+
+# Aliasing
+`x === b` is allowed and degenerates to the historic in-place solve
+bit-for-bit (`b[i]` is read before `x[i]` is written; `x[i+1]` reads are the
+intended already-substituted values). Partially-overlapping *distinct* arrays
+are not supported.
 
 # Algorithm
-1. **Forward elimination**: `b[i+1] -= L[i] * b[i]` for i = 1:n-1
-2. **Backward substitution**: `b[i] = (b[i] - U[i] * b[i+1]) * inv_d[i]` for i = n:-1:1
+1. Forward elimination (in place on `b`): `b[i+1] -= l[i] * b[i]`
+2. Backward substitution (into `x`): `x[i] = (b[i] - du[i] * x[i+1]) * inv_d[i]`
 
 # Performance
-- O(n) time complexity
-- Zero allocations in hot path
-- Uses `muladd` for fused multiply-add when available
+O(n), zero allocations, `muladd`-fused.
 """
 @inline function _ldiv_tridiagonal_nopiv!(
-        b::AbstractVector{Tv},
-        thomas::ThomasFactorization{Tg, V},
-    ) where {Tg, Tv, V <: AbstractVector{Tg}}
+        x::AbstractVector,
+        b::AbstractVector,
+        thomas::ThomasFactorization,
+    )
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -175,12 +165,12 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
     end
 
     # Backward substitution
-    @inbounds b[n] *= inv_d[n]
+    @inbounds x[n] = b[n] * inv_d[n]
     @inbounds for i in (n - 1):-1:1
-        b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
+        x[i] = muladd(-du[i], x[i + 1], b[i]) * inv_d[i]
     end
 
-    return b
+    return x
 end
 
 # ========================================
@@ -188,24 +178,26 @@ end
 # ========================================
 
 """
-    _ldiv_tridiagonal_transpose!(b, thomas::ThomasFactorization) -> b
+    _ldiv_tridiagonal_transpose!(x, b, thomas::ThomasFactorization) -> x
 
-Solve `Aᵀx = b` in-place using the same `ThomasFactorization` as the forward solve.
+Solve `Aᵀx = b` using the same `ThomasFactorization` as the forward solve.
 
-Given `A = L·U` where L is unit lower bidiagonal (dl) and U is upper bidiagonal (du, inv_d),
-the transpose `Aᵀ = Uᵀ·Lᵀ` is solved in two steps:
+Given `A = L·U` with L unit lower bidiagonal (dl) and U upper bidiagonal
+(du, inv_d), `Aᵀ = Uᵀ·Lᵀ` is solved in two sweeps:
 
-1. **Uᵀ forward sweep**: `b[1] *= inv_d[1]`; `b[i] = (b[i] - du[i-1]*b[i-1]) * inv_d[i]`
-2. **Lᵀ backward sweep**: `b[i] -= dl[i] * b[i+1]`
+1. **Uᵀ forward sweep** (writes `x`, reads `b`):
+   `x[1] = b[1] * inv_d[1]`; `x[i] = (b[i] - du[i-1] * x[i-1]) * inv_d[i]`
+2. **Lᵀ backward sweep** (in place on `x`): `x[i] -= dl[i] * x[i+1]`
 
-When `A` is symmetric (e.g. Deriv1/PolyFit BCs), this produces identical results
-to `_ldiv_tridiagonal_nopiv!`. For asymmetric `A` (Deriv2/Deriv3 BCs), this is the
-correct transpose solve needed by the cubic adjoint operator.
+`b` is read-only here (unlike the non-transpose solve). Output space is
+`[b]/X`. `x === b` is allowed and matches the historic in-place solve
+bit-for-bit; partially-overlapping distinct arrays are not supported.
 """
 @inline function _ldiv_tridiagonal_transpose!(
-        b::AbstractVector{Tv},
-        thomas::ThomasFactorization{Tg, V},
-    ) where {Tg, Tv, V <: AbstractVector{Tg}}
+        x::AbstractVector,
+        b::AbstractVector,
+        thomas::ThomasFactorization,
+    )
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -213,17 +205,17 @@ correct transpose solve needed by the cubic adjoint operator.
     n = length(inv_d)
 
     # Step 1: Uᵀ forward sweep (lower bidiagonal with du as sub-diagonal)
-    @inbounds b[1] *= inv_d[1]
+    @inbounds x[1] = b[1] * inv_d[1]
     @inbounds for i in 2:n
-        b[i] = muladd(-du[i - 1], b[i - 1], b[i]) * inv_d[i]
+        x[i] = muladd(-du[i - 1], x[i - 1], b[i]) * inv_d[i]
     end
 
     # Step 2: Lᵀ backward sweep (upper bidiagonal with dl as super-diagonal)
     @inbounds for i in (n - 1):-1:1
-        b[i] = muladd(-dl[i], b[i + 1], b[i])
+        x[i] = muladd(-dl[i], x[i + 1], x[i])
     end
 
-    return b
+    return x
 end
 
 # ========================================
@@ -247,6 +239,11 @@ Batch Thomas solver for 2D matrix using `ThomasFactorization`.
 Each row `z[i, :]` is an independent RHS vector. Solves all rows simultaneously
 using SIMD vectorization along the contiguous axis 1.
 
+**Real-only in-place contract**: the RHS is overwritten with the solution, so
+the two spaces must share one element type — the signature pins `eltype(z)`
+to the factorization eltype. Unit-carrying ND builds never reach this path
+(the ND PreCompute boundary refuses them).
+
 # Memory Layout (column-major)
 ```
 z[n_batch, n_sys] where:
@@ -261,9 +258,11 @@ z[n_batch, n_sys] where:
 """
 @inline function _ldiv_along_dim!(
         z::AbstractMatrix{T},
-        thomas::ThomasFactorization{T, V},
+        thomas::ThomasFactorization{
+            <:AbstractVector{T}, <:AbstractVector{T}, <:AbstractVector{T},
+        },
         ::Val{2},
-    ) where {T, V <: AbstractVector{T}}
+    ) where {T}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d

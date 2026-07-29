@@ -124,7 +124,7 @@ derivatives from data. For other BC types, they are ignored.
 end
 
 # Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
-# κ ∈ [Y/X²] ≠ slope space — never pre-convert (H9); κ·h lands in [Y/X].
+# κ ∈ [Y/X²] ≠ slope space — never pre-convert; κ·h lands in [Y/X].
 @inline function _fill_slopes!(
         d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
         bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector

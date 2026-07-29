@@ -235,7 +235,7 @@ function _build_derivative_bc_cache(
 
     bc_pair = BCPair(left_bc, right_bc)
 
-    # Empty `q` for non-periodic (Sherman-Morrison vector unused).
+    # q = nothing: the Sherman-Morrison vector exists only for periodic caches.
     return CubicSplineCache(cache_x, bc_pair, thomas, nothing)
 end
 
@@ -252,7 +252,7 @@ end
 
 # First element - Deriv2: oneunit(Tg)·z[1] = d[1] with payload val ∈ [Y/X²] —
 # the grid-space row scale enters the RHS as `* oneunit(Tg)` ([Y/X], matching
-# the interior rows). Payloads are never pre-converted (H9): Real ×1.0 is exact.
+# the interior rows). Payloads are never pre-converted: Real ×1.0 is exact.
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}
     ) where {Tg}

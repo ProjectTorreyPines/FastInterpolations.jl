@@ -331,7 +331,7 @@ function cubic_interp(
         cache = _get_cubic_cache(x, bc_representative, _effective_autocache(autocache, eltype(x)))
     else
         # Uniform BC: structural form keys the cache; the grid-aware normalize
-        # puts zero-BC payloads in their true derivative spaces (H9).
+        # puts zero-BC payloads in their true derivative spaces.
         bc_for_cache = _normalize_bc(bc)
         bc_for_solve = _normalize_bc(bc, x, y_mat)
         cache = _get_cubic_cache(x, bc_for_cache, _effective_autocache(autocache, eltype(x)))

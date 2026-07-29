@@ -177,7 +177,7 @@ end
 
 # Unified entry: ONE native path for every grid eltype (Real, Dual,
 # unit-carrying). BC payloads travel verbatim — the solver's RHS rules promote
-# them in place (H9: never pre-convert into value space).
+# them in place (never pre-convert into value space).
 function cubic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv};

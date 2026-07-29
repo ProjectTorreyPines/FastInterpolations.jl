@@ -45,7 +45,7 @@
     )
     output = Vector{T_out}(undef, K)
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, _promote_eltype(_deriv1_op, eltype(x), Tcoeff), nx - 1)   # order-2: [Y/X²]
+    a = acquire!(pool, _promote_eltype(_coeff_op2, Tg_actual, _series_eltype(s)), nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -86,7 +86,7 @@ end
     Tg_actual = eltype(x)
     Tcoeff = _promote_eltype(_coeff_op, Tg_actual, _series_eltype(s))
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, _promote_eltype(_deriv1_op, eltype(x), Tcoeff), nx - 1)   # order-2: [Y/X²]
+    a = acquire!(pool, _promote_eltype(_coeff_op2, Tg_actual, _series_eltype(s)), nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -135,7 +135,7 @@ end
     _fill_series_anchors_resolved!(QuadraticInterp(), anchors, x, xqs, extrap_eff, extrap_eff isa WrapExtrap, search, nothing)
 
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, _promote_eltype(_deriv1_op, eltype(x), Tcoeff), nx - 1)   # order-2: [Y/X²]
+    a = acquire!(pool, _promote_eltype(_coeff_op2, Tg_actual, _series_eltype(s)), nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)

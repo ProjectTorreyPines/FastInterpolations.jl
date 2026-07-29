@@ -130,9 +130,6 @@ end
     ) where {TX <: Number, TY}
     _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
-    # Non-Real (unit-carrying) grids: strip→solve→reattach (type-level branch folds).
-    Tg <: Real ||
-        return _quadratic_interp_units(x, y, bc, extrap, search, store)
     Tv = _value_type(TY, Tg)
     # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,
     # Vector → `_CachedVector{Tg, Tinv}` aliasing user buffer. Mirrors
@@ -154,47 +151,3 @@ end
     extrap_p = _resolve_extrap(extrap, x_eff, Tv)
     return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p; store = store)
 end
-
-# ── Non-Real (unit-carrying) grids: nondimensionalized solve ──
-# Strip→solve→reattach twin: the solver stores mixed-order coefficients through
-# shared buffers, so solve on a oneunit-stripped twin (exact division) and
-# reattach per-order units — `a` is order 2 (`Y/X²`), `d` order 1 (`Y/X`).
-# The original unit axis serves eval/search.
-function _quadratic_interp_units(x, y, bc, extrap, search, store)
-    ux = oneunit(eltype(x))
-    uy = _carrier_oneunit(eltype(y))
-    xs = x ./ ux
-    ys = y ./ uy
-    bc_s = _strip_bc_units(bc, uy, ux)
-    tw = quadratic_interp(xs, ys; bc = bc_s, extrap = NoExtrap(), search = search)
-    a = tw.a .* (uy / (ux * ux))
-    d = tw.d .* (uy / ux)
-    Tgu = eltype(x)
-    x_eff = _policy_axis(x, NoBC(), Tgu, store)
-    bc_u = _normalize_bc(bc, first(y))
-    extrap_p = _resolve_extrap(extrap, x_eff, eltype(y))
-    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_u; store = store)
-end
-
-# BC payloads carry derivative units (`Y/X`, `Y/X²`, `Y/X³`) — strip to match
-# the nondimensionalized twin; structural BCs pass through. Shared by the
-# quadratic and cubic-Series strip twins (deleted with them).
-@inline _strip_bc_units(bc::Union{PolyFit, ZeroCurvBC, ZeroSlopeBC}, uy, ux) = bc
-@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.val / (uy / ux))
-@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.val / (uy / (ux * ux)))
-@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.val / (uy / (ux * ux * ux)))
-@inline _strip_bc_units(bc::BCPair, uy, ux) =
-    BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
-# Quadratic side-selector BCs wrap PointBC payloads — recurse into them.
-@inline _strip_bc_units(bc::Left, uy, ux) = Left(_strip_bc_units(bc.bc, uy, ux))
-@inline _strip_bc_units(bc::Right, uy, ux) = Right(_strip_bc_units(bc.bc, uy, ux))
-# MinCurvFit is a payload-free marker (like QuadraticFit/PolyFit) — strip is identity.
-@inline _strip_bc_units(bc::MinCurvFit, uy, ux) = bc
-# Catch-all: an unhandled BC type must fail HERE with an actionable message,
-# not as a MethodError deep inside the stripped solve.
-@noinline _strip_bc_units(bc::AbstractBC, uy, ux) = throw(
-    ArgumentError(
-        "BC type $(typeof(bc)) is not supported on a unit-carrying grid yet — " *
-            "strip units (e.g. `ustrip`) or use a Real grid"
-    )
-)

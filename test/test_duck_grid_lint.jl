@@ -135,7 +135,6 @@
         "linear/nd/linear_nd_adjoint.jl" => 1,
         "quadratic/nd/quadratic_nd_adjoint.jl" => 1,
         "quadratic/quadratic_anchor.jl" => 8,
-        "quadratic/quadratic_interpolant.jl" => 1,
         "quadratic/quadratic_oneshot.jl" => 2,
         # quadratic series + one-shot: eval sigs relaxed to Number (Codex parity;
         # eval reaches a documented solver-storage limit, but the SIG isn't the
@@ -170,11 +169,11 @@ end
     src_dir = dirname(pathof(FastInterpolations))
 
     expected_tokens = Dict(
-        "_cubic_interp_units" => 0,   # P2: cubic scalar twin deleted
+        "_cubic_interp_units" => 0,      # P2: cubic scalar twin deleted
         "_cubic_series_units" => 2,
-        "_quadratic_interp_units" => 2,
+        "_quadratic_interp_units" => 0,  # P4: quadratic scalar twin deleted
         "_strip_series_bc_units" => 3,
-        "_strip_bc_units" => 14,      # P2: cubic call gone; defs moved beside the quadratic twin
+        "_strip_bc_units" => 9,          # P4: defs beside their last consumer (cubic Series twin)
     )
     # `Tg <: Real || return …` / `if !(Tg <: Real)` REROUTE forks, counted only
     # inside the solver family trees (cubic/, quadratic/) — `utils.jl`'s
@@ -183,7 +182,7 @@ end
     # actionable error for a not-yet-native combo is the endorsed idiom, not a
     # parallel solve path (e.g. the periodic-units guard until Phase 3).
     fork_res = (r"<: Real \|\|", r"if !\([A-Za-z_][A-Za-z0-9_]* <: Real\)")
-    expected_forks = 14   # P2: cubic scalar surface fork deleted
+    expected_forks = 12   # P2: cubic surface fork gone; P4: quadratic surface + Series forks gone
 
     counts, forks = let counts = Dict(k => 0 for k in keys(expected_tokens)), forks = 0
         for (root, _, files) in walkdir(src_dir), f in files

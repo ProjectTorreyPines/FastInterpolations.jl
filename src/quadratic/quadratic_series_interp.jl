@@ -188,28 +188,17 @@ function quadratic_interp(
     Tv_out = _value_type(Tv, Tg_new)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
-    if !(Tg_new <: Real)
-        ux = oneunit(Tg_new)
-        uy = _carrier_oneunit(Tv_out)
-        tw = quadratic_interp(
-            x ./ ux, Series(y_mat ./ uy);
-            bc = _strip_bc_units(bc, uy, ux), extrap = NoExtrap(), search = search
-        )
-        a_mat = tw.a .* (uy / (ux * ux))
-        d_mat = tw.d .* (uy / ux)
-        extrap_p = _promote_extrap(extrap, eltype(y_mat))
-        return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, extrap_p, search)
-    end
-
-    # Allocate coefficient matrices (Dual when grid is Dual)
+    # Coefficient matrices: d order-1 (`_coeff_op`), a order-2 (`_coeff_op2`).
+    # Real grids collapse both witnesses; unit grids get per-order spaces.
     Tc = _promote_eltype(_coeff_op, eltype(x), Tv_out)
-    a_mat = Matrix{Tc}(undef, n_pts, n_ser)
+    Ta = _promote_eltype(_coeff_op2, eltype(x), Tv_out)
+    a_mat = Matrix{Ta}(undef, n_pts, n_ser)
     d_mat = Matrix{Tc}(undef, n_pts, n_ser)
 
-    # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility.
     # The wrapped axis `x` carries `h`/`inv_h` directly via `_get_h(x, i)`.
     bc_promoted = _normalize_bc(bc, first(y_mat))
-    _typed_zero = 0 * y_mat[1]
+    # Trailing a-row filler — an [Y/X²]-space zero via value witness.
+    _typed_zero = 0 * _coeff_op2(oneunit(eltype(x)), y_mat[1])
 
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser

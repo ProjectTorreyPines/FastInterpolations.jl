@@ -392,6 +392,22 @@ function _cubic_series_units(
     return sitp
 end
 
+# BC payloads carry derivative units (`Y/X`, `Y/X²`, `Y/X³`) — strip to match
+# the nondimensionalized twin; structural BCs pass through. Sole remaining
+# consumer is this file's Series strip twin (deleted with it).
+@inline _strip_bc_units(bc::Union{PolyFit, ZeroCurvBC, ZeroSlopeBC}, uy, ux) = bc
+@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.val / (uy / ux))
+@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.val / (uy / (ux * ux)))
+@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.val / (uy / (ux * ux * ux)))
+@inline _strip_bc_units(bc::BCPair, uy, ux) =
+    BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
+@noinline _strip_bc_units(bc::AbstractBC, uy, ux) = throw(
+    ArgumentError(
+        "BC type $(typeof(bc)) is not supported on a unit-carrying grid yet — " *
+            "strip units (e.g. `ustrip`) or use a Real grid"
+    )
+)
+
 # Per-series BC arrays strip element-wise; scalar BCs reuse the shared helper.
 @inline _strip_series_bc_units(bc::AbstractBC, uy, ux) = _strip_bc_units(bc, uy, ux)
 @inline _strip_series_bc_units(bc::AbstractVector, uy, ux) =

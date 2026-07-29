@@ -475,6 +475,110 @@ end
 end
 
 """
+    _phs_eval_coeffs_value_and_all_diag_deriv2(coeffs, phys_offsets, query, base_coords, ::Val{K}) 
+        -> (value, deriv2_xx, deriv2_yy, deriv2_zz)
+
+Compute polynomial value and ALL THREE diagonal second derivatives (∂²/∂x², ∂²/∂y², ∂²/∂z²)
+in a SINGLE loop pass through the stencil.
+
+This is 3× faster than calling _phs_eval_coeffs_value_and_deriv1_and_deriv2 three times,
+reducing the inner loop from 3×ns to 1×ns iterations.
+
+Returns:
+  (value, deriv2_xx, deriv2_yy, deriv2_zz)
+"""
+@inline function _phs_eval_coeffs_value_and_all_diag_deriv2(
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+    ) where {Tv, Tg, N, K}
+    ns = length(phys_offsets)
+    yv = zero(Tv)
+    yd2_xx = zero(Tv)
+    yd2_yy = zero(Tv)
+    yd2_zz = zero(Tv)
+
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
+    if K == 3
+        eps2 = eps(Tg)^2
+        # Single loop computing all diagonal second derivatives
+        @fastmath @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r = sqrt(r2)
+            r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
+            ci = coeffs[i]
+            ci_r = ci * r
+            ci_3r = 3 * ci_r
+            
+            # Value: ϕ(r) = r³
+            yv += ci_r * r2
+            
+            # Second derivatives for K=3: ∂²ϕ/∂x² = 3r + 9x²/r
+            factor_xx = xh[1] * xh[1] * r2_inv
+            factor_yy = xh[2] * xh[2] * r2_inv
+            yd2_xx += ci_3r * (one(Tg) + factor_xx)
+            yd2_yy += ci_3r * (one(Tg) + factor_yy)
+            
+            if N >= 3
+                factor_zz = xh[3] * xh[3] * r2_inv
+                yd2_zz += ci_3r * (one(Tg) + factor_zz)
+            end
+        end
+        # Polynomial contribution (constant for K=3, just offset)
+        poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
+        yv += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
+        yd2_xx += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(1), Val(1))
+        yd2_yy += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(2), Val(2))
+        if N >= 3
+            yd2_zz += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(3), Val(3))
+        end
+    else
+        eps_tg = eps(Tg)
+        # Single loop for general K
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r = sqrt(r2)
+            ci = coeffs[i]
+            r_inv = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+            r2_inv = r_inv * r_inv
+            
+            fp = _phs_phi_prime(r, Val{K}())
+            fpp = _phs_phi_dprime(r, Val{K}())
+            ci_fp_r_inv = ci * fp * r_inv
+            
+            # Value
+            yv += ci * _phs_phi(r, Val{K}())
+            
+            # Second derivatives: ∂²ϕ/∂x² = ϕ''(r) * (x/r)² + ϕ'(r)/r * (1 - (x/r)²)
+            factor_xx = xh[1] * xh[1] * r2_inv
+            factor_yy = xh[2] * xh[2] * r2_inv
+            yd2_xx += ci * fpp * factor_xx + ci_fp_r_inv * (one(Tg) - factor_xx)
+            yd2_yy += ci * fpp * factor_yy + ci_fp_r_inv * (one(Tg) - factor_yy)
+            
+            if N >= 3
+                factor_zz = xh[3] * xh[3] * r2_inv
+                yd2_zz += ci * fpp * factor_zz + ci_fp_r_inv * (one(Tg) - factor_zz)
+            end
+        end
+        # Polynomial contribution
+        poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
+        yv += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
+        yd2_xx += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(1), Val(1))
+        yd2_yy += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(2), Val(2))
+        if N >= 3
+            yd2_zz += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(3), Val(3))
+        end
+    end
+    
+    return yv, yd2_xx, yd2_yy, yd2_zz
+end
+
+"""
     _phs_eval_coeffs_value_and_two_deriv1(coeffs, phys_offsets, query, base_coords,
         ::Val{K}, ax1, ax2) -> (value, deriv1_ax1, deriv1_ax2)
 

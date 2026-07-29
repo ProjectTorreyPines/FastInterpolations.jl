@@ -170,7 +170,7 @@ val = itp(0.5)  # returns ComplexF64
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search; store = store)
     else
-        bc_pair = _normalize_bc(bc, first(x), first(y))
+        bc_pair = _normalize_bc(bc, x, y)
         return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search; store = store)
     end
 end

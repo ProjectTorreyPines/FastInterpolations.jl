@@ -197,7 +197,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
     end
-    bc_pair = _normalize_bc_solve(bc, x, first(_series_vectors(s)))
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     _cubic_oneshot_series_bcpair!(output, x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
     return output
 end
@@ -225,7 +225,7 @@ end
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
     end
-    bc_pair = _normalize_bc_solve(bc, x, first(_series_vectors(s)))
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     _cubic_oneshot_series_bcpair!(output, x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
     return output
 end
@@ -260,7 +260,7 @@ end
         return _cubic_oneshot_series_periodic_vec!(pool, outputs, x, s, xqs, bc, deriv, autocache, search)
     end
 
-    bc_pair = _normalize_bc_solve(bc, x, first(_series_vectors(s)))
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
     # Pre-compute lean op/extrap-aware anchors once (search Q times, not K×Q),

@@ -550,25 +550,20 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 # Needed when data type (e.g. MyDuck) doesn't support convert(MyDuck, Float64).
 @inline _normalize_bc(::ZeroCurvBC, sample) = (z = 0 * sample; BCPair(Deriv2(z), Deriv2(z)))
 @inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
-# Grid-aware duck-safe zeros (`(grid, value)` sample order): Deriv2/Deriv1
-# payload spaces are [Y/X²]/[Y/X] — a value-space zero (`0 * y`) would make the
-# RHS rule `bc.val * oneunit(Tg)` dimensionally wrong on unit grids. The zero
-# is a `0 *` value-witness (no `zero(::Type)`/`convert` — duck contract);
-# `oneunit(x1)` (never `x1`) keeps it finite for grids starting at 0.
-@inline _normalize_bc(::ZeroCurvBC, x1, y1) =
-    (z = 0 * _coeff_op2(oneunit(x1), y1); BCPair(Deriv2(z), Deriv2(z)))
-@inline _normalize_bc(::ZeroSlopeBC, x1, y1) =
-    (z = 0 * _coeff_op(oneunit(x1), y1); BCPair(Deriv1(z), Deriv1(z)))
+# Grid-aware duck-safe zeros — THE solve-side normalize (`(grid, value)` array
+# order): Deriv2/Deriv1 payload spaces are [Y/X²]/[Y/X] — a value-space zero
+# (`0 * y`) would make the RHS rule `bc.val * oneunit(Tg)` dimensionally wrong
+# on unit grids. The zero is a `0 *` value-witness (no `zero(::Type)`/`convert`
+# — duck-Tv contract); `oneunit(first(x))` (never `first(x)`) keeps it finite
+# for grids starting at 0. Samples are read INSIDE the zero-BC arms only —
+# shape-only BCs never touch the arrays (a caller-side `first(x)` costs a box
+# on some kwarg paths, so keep the reads here).
+@inline _normalize_bc(::ZeroCurvBC, x::AbstractArray, y::AbstractArray) =
+    (z = 0 * _coeff_op2(oneunit(first(x)), first(y)); BCPair(Deriv2(z), Deriv2(z)))
+@inline _normalize_bc(::ZeroSlopeBC, x::AbstractArray, y::AbstractArray) =
+    (z = 0 * _coeff_op(oneunit(first(x)), first(y)); BCPair(Deriv1(z), Deriv1(z)))
 # Shape-only fallback: other BC types carry user payloads verbatim.
-@inline _normalize_bc(bc::AbstractBC, _x1, _y1) = _normalize_bc(bc)
-
-# Vector-sample form for hot one-shot paths: grid/value samples are read ONLY
-# on the arms that need them (zero-BCs) — shape-only BCs never touch the
-# arrays, keeping the Real 0-alloc contract (a `first(x)` in the caller costs
-# a box on some kwarg paths).
-@inline _normalize_bc_solve(bc::AbstractBC, _x, _y) = _normalize_bc(bc)
-@inline _normalize_bc_solve(bc::ZeroCurvBC, x, y) = _normalize_bc(bc, first(x), first(y))
-@inline _normalize_bc_solve(bc::ZeroSlopeBC, x, y) = _normalize_bc(bc, first(x), first(y))
+@inline _normalize_bc(bc::AbstractBC, _x::AbstractArray, _y::AbstractArray) = _normalize_bc(bc)
 @inline _normalize_bc(bc::BCPair) = bc
 @inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
 @inline _normalize_bc(bc::NoBC) = bc
@@ -682,11 +677,11 @@ function _normalize_bc_array(
     return [_normalize_bc(bc) for bc in bcs]
 end
 
-# Sample-based (grid, value) variant for the SOLVE side: zero-BC payloads land
-# in their true derivative spaces (see the 3-arg `_normalize_bc`).
+# Grid-aware (grid, value) variant for the SOLVE side: zero-BC payloads land
+# in their true derivative spaces (see the array 3-arg `_normalize_bc`).
 function _normalize_bc_array(
         bcs::AbstractVector{<:AbstractBC},
-        x1, y1,
+        x::AbstractArray, y::AbstractArray,
         n_series::Int
     )
     length(bcs) == n_series || throw(
@@ -697,10 +692,10 @@ function _normalize_bc_array(
     for (i, bc) in enumerate(bcs)
         _is_periodic_bc(bc) && _throw_periodic_in_bc_array(i)
     end
-    return [_normalize_bc(bc, x1, y1) for bc in bcs]
+    return [_normalize_bc(bc, x, y) for bc in bcs]
 end
-@inline _normalize_bc_array(bcs::AbstractVector{<:BCPair}, x1, y1, n_series::Int) =
-    _normalize_bc_array(bcs, typeof(y1), n_series)
+@inline _normalize_bc_array(bcs::AbstractVector{<:BCPair}, ::AbstractArray, y::AbstractArray, n_series::Int) =
+    _normalize_bc_array(bcs, eltype(y), n_series)
 
 
 # ========================================

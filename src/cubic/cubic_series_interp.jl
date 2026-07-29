@@ -325,7 +325,7 @@ function cubic_interp(
     if bc isa AbstractVector
         # Per-series BC array: structural (cache-key) vs payload-space (solve)
         bc_cache_array = _normalize_bc_array(bc, Tg, n_ser)
-        bc_solve_array = _normalize_bc_array(bc, first(x), first(y_mat), n_ser)
+        bc_solve_array = _normalize_bc_array(bc, x, y_mat, n_ser)
         _solve_series_with_bc_array!(z_mat, y_mat, x, bc_cache_array, bc_solve_array, autocache)
         bc_representative = bc_cache_array[1]
         cache = _get_cubic_cache(x, bc_representative, _effective_autocache(autocache, eltype(x)))
@@ -333,7 +333,7 @@ function cubic_interp(
         # Uniform BC: structural form keys the cache; the grid-aware normalize
         # puts zero-BC payloads in their true derivative spaces (H9).
         bc_for_cache = _normalize_bc(bc)
-        bc_for_solve = _normalize_bc(bc, first(x), first(y_mat))
+        bc_for_solve = _normalize_bc(bc, x, y_mat)
         cache = _get_cubic_cache(x, bc_for_cache, _effective_autocache(autocache, eltype(x)))
         _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)
         bc_representative = bc_for_cache

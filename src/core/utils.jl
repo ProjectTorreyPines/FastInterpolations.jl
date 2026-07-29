@@ -602,15 +602,25 @@ ForwardDiff support is added via:
 # GridIdx <: Real: _extract_primal(g::GridIdx) returns g (identity fallback).
 
 """
+    _grid_bankable(::Type{Tg}) -> Bool
+
+Whether grid eltype `Tg` may participate in the autocache pool. Contract: the
+pool is keyed by linear `isequal` scans (never `hash`), so `isequal(a, b)` on
+two grids must imply interchangeable factorizations. ForwardDiff Duals compare
+primal AND partials (safe); Unitful compares across unit rescale, but banks
+are segregated by exact eltype so cross-unit hits cannot occur. A type whose
+`isequal` ignores factorization-relevant state must opt out with a `false`
+method (none known today — escape hatch).
+"""
+@inline _grid_bankable(::Type{Tg}) where {Tg} = true
+
+"""
     _effective_autocache(autocache, Tg) -> Bool
 
-Disable autocache for non-standard grid types (e.g. ForwardDiff.Dual).
-Enabled for `_PromotableValue` types (AbstractFloat, Integer, Rational) which
-have stable grid identity (cache hit rate > 0). Dual grids are ephemeral
-(created fresh each AD call), so autocache is disabled for them.
-Resolves at specialization time — zero runtime cost on the Float hot path.
+Resolve the user's `autocache` flag against `_grid_bankable(Tg)`.
+Folds at specialization time — zero runtime cost on the Float hot path.
 """
-@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: _PromotableValue)
+@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & _grid_bankable(Tg)
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """

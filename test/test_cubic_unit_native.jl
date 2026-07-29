@@ -149,6 +149,68 @@ end
     end
 end
 
+@testitem "cubic Series unit native: self-consistent cache + payload spaces + periodic" begin
+    using Unitful
+    const FI = FastInterpolations
+
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [1.0, 2.0, 0.5, 3.0, 2.5]
+    y2f = [0.5, 1.5, 2.0, 0.0, 1.0]
+    xu = xf .* u"s"
+    yw = yf .* u"W"
+    y2 = y2f .* u"W"
+
+    @testset "default BC: equivalence + native factorization on the cache" begin
+        sitp = cubic_interp(xu, Series(yw, y2))
+        ref = cubic_interp(xf, Series(yf, y2f))
+        v = sitp(2.2u"s")
+        vr = ref(2.2)
+        @test v[1] === vr[1] * u"W"
+        @test v[2] === vr[2] * u"W"
+        @test eltype(sitp.z) === typeof(1.0u"W/s^2")
+        # The cache must be self-consistent: a unit axis carries a unit-typed
+        # factorization (the twin paired a Float64 thomas with a unit axis and
+        # forbade reuse — that lie ends here).
+        @test eltype(sitp.cache.thomas.du) === typeof(1.0u"s")
+        @test eltype(sitp.cache.thomas.inv_d) === typeof(inv(1.0u"s"))
+    end
+
+    @testset "ZeroCurvBC: payload zero lives in [Y/X²]" begin
+        sitp = cubic_interp(xu, Series(yw, y2); bc = ZeroCurvBC())
+        ref = cubic_interp(xf, Series(yf, y2f); bc = ZeroCurvBC())
+        @test sitp(0.35u"s")[1] === ref(0.35)[1] * u"W"
+        @test sitp.bc.left.val === 0.0u"W/s^2"
+    end
+
+    @testset "per-series BC array (unit payloads)" begin
+        bcs = [
+            BCPair(Deriv1(0.7u"W/s"), Deriv1(0.7u"W/s")),
+            BCPair(Deriv2(-0.3u"W/s^2"), Deriv2(-0.3u"W/s^2")),
+        ]
+        bcs_f = [
+            BCPair(Deriv1(0.7), Deriv1(0.7)),
+            BCPair(Deriv2(-0.3), Deriv2(-0.3)),
+        ]
+        sitp = cubic_interp(xu, Series(yw, y2); bc = bcs)
+        ref = cubic_interp(xf, Series(yf, y2f); bc = bcs_f)
+        v = sitp(2.2u"s")
+        vr = ref(2.2)
+        @test v[1] === vr[1] * u"W"
+        @test v[2] === vr[2] * u"W"
+    end
+
+    @testset "PeriodicBC Series (new capability — twin rejected this)" begin
+        ywp = [1.0, 2.0, 0.5, 3.0, 1.0] .* u"W"
+        y2p = [0.5, 1.5, 2.0, 0.0, 0.5] .* u"W"
+        sitp = cubic_interp(xu, Series(ywp, y2p); bc = PeriodicBC())
+        ref = cubic_interp(xf, Series([1.0, 2.0, 0.5, 3.0, 1.0], [0.5, 1.5, 2.0, 0.0, 0.5]); bc = PeriodicBC())
+        v = sitp(2.2u"s")
+        vr = ref(2.2)
+        @test v[1] === vr[1] * u"W"
+        @test v[2] === vr[2] * u"W"
+    end
+end
+
 @testitem "cubic unit native: periodic S-M build + solve" begin
     using Unitful
     const FI = FastInterpolations

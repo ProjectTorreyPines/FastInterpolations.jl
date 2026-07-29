@@ -372,9 +372,12 @@ end
         @test F.du === t.du                    # stored by reference, unchanged
         @test bitsame(F.dl, l_r)
         @test bitsame(F.inv_d, inv_r)
-        # inputs are read-only now
-        fresh = mk(n)
-        @test bitsame(t.dl, fresh.dl) && bitsame(t.d, fresh.d)
+        # Real path: witness spaces equal the input eltypes → the donated inputs
+        # ARE the storage (old in-place layout — zero extra allocation, ns-parity).
+        @test F.dl === t.dl
+        @test F.inv_d === t.d
+        t3 = mk(n)
+        @test (@allocated FI.thomas_factorize(t3.dl, t3.d, t3.du)) == 0
 
         # nopiv: alias form ≡ old in-place, bit-for-bit
         b_ref = ref_nopiv!(copy(t.b), l_r, du_r, inv_r)
@@ -418,10 +421,13 @@ end
     dl = [(1.0 + 0.1 * cos(i)) * u"s" for i in 1:(n - 1)]
     du = [(1.0 + 0.1 * sin(2i)) * u"s" for i in 1:(n - 1)]
 
+    dl0, d0 = copy(dl), copy(d)
     F = FI.thomas_factorize(dl, d, du)
     @test eltype(F.dl) === Float64                    # L multipliers: dimensionless
     @test eltype(F.inv_d) === typeof(inv(1.0u"s"))    # 1/X
     @test F.du === du                                 # X, by reference
+    # unit path: witness spaces differ → fresh outputs, donated inputs untouched
+    @test dl == dl0 && d == d0
 
     # value-preservation: identical mantissas to the ustrip'd Real solve
     Fr = FI.thomas_factorize(ustrip.(u"s", dl), ustrip.(u"s", d), ustrip.(u"s", du))
@@ -456,6 +462,10 @@ end
     F = FI.thomas_factorize(dl, d, du)
     @test eltype(F.dl) <: Dual
     @test eltype(F.inv_d) <: Dual
+    # Dual is autocache-OFF (ephemeral grids) → factorize runs on EVERY build;
+    # the reuse-storage arm must cover it too (inv(Dual) is the same Dual type).
+    @test F.dl === dl
+    @test F.inv_d === d
 
     b = Dual.([sin(3i) for i in 1:n], 1.0)
     x = similar(b)

@@ -955,6 +955,19 @@ Algorithm:
         for nb_ci in CartesianIndices(ranges)
             nb_idx = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
+            
+            # L∞ early termination: Skip if neighbor is clearly outside blend radius
+            # This avoids expensive sqrt for ~30-50% of neighbors
+            l_inf_dist = zero(Tg)
+            @inbounds for dim in 1:N
+                Δ = abs(Tg(query[dim]) - nb_coords[dim])
+                l_inf_dist = max(l_inf_dist, Δ)
+                # Early exit from L∞ computation if already beyond blend radius
+                l_inf_dist > blend_a && break
+            end
+            l_inf_dist > blend_a && continue
+            
+            # Compute full Euclidean distance (only for neighbors passing L∞ filter)
             d2 = zero(Tg)
             @inbounds for dim in 1:N
                 Δ = Tg(query[dim]) - nb_coords[dim]
@@ -1175,6 +1188,17 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
         @fastmath for nb_ci in CartesianIndices(ranges)
             nb_idx = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
+            
+            # L∞ early termination: Skip if neighbor is clearly outside blend radius
+            l_inf_dist = zero(Tg)
+            @inbounds for dim in 1:N
+                Δ = abs(Tg(query[dim]) - nb_coords[dim])
+                l_inf_dist = max(l_inf_dist, Δ)
+                l_inf_dist > blend_a && break
+            end
+            l_inf_dist > blend_a && continue
+            
+            # Compute full Euclidean distance (only for neighbors passing L∞ filter)
             d2 = zero(Tg)
             @inbounds for dim in 1:N
                 Δ = Tg(query[dim]) - nb_coords[dim]
@@ -1468,6 +1492,17 @@ end
     
     @fastmath for nb_ci in CartesianIndices(ranges)
         nb_coords = _phs_base_coords(itp, Tuple(nb_ci))
+        
+        # L∞ early termination: Skip if neighbor is clearly outside blend radius
+        l_inf_dist = zero(Tg)
+        @inbounds for dim in 1:N
+            Δ = abs(Tg(query[dim]) - nb_coords[dim])
+            l_inf_dist = max(l_inf_dist, Δ)
+            l_inf_dist > blend_a && break
+        end
+        l_inf_dist > blend_a && continue
+        
+        # Compute full Euclidean distance (only for neighbors passing L∞ filter)
         d2 = zero(Tg)
         @inbounds @simd for dim in 1:N
             Δ = Tg(query[dim]) - nb_coords[dim]

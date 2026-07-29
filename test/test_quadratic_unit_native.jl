@@ -38,6 +38,37 @@
     end
 end
 
+@testitem "quadratic unit one-shot ≡ persistent (fork-free contract)" begin
+    using Unitful
+
+    xu = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    yw = [1.0, 2.0, 0.5, 3.0, 2.5] .* u"W"
+    y2 = [0.5, 1.5, 2.0, 0.0, 1.0] .* u"W"
+    q = 2.2u"s"
+    qv = [0.35, 2.2, 4.1] .* u"s"
+
+    for (nm, bc) in (
+            ("default", Left(QuadraticFit())),
+            ("Right(Deriv2)", Right(Deriv2(-0.3u"W/s^2"))),
+            ("MinCurvFit", MinCurvFit()),
+        )
+        @testset "$nm" begin
+            itp = quadratic_interp(xu, yw; bc = bc)
+            @test quadratic_interp(xu, yw, q; bc = bc) === itp(q)
+            vv = quadratic_interp(xu, yw, qv; bc = bc)
+            pv = itp(qv)
+            @test all(i -> vv[i] === pv[i], eachindex(pv))
+        end
+    end
+
+    @testset "Series one-shot" begin
+        sitp = quadratic_interp(xu, Series(yw, y2))
+        sv = quadratic_interp(xu, Series(yw, y2), q)
+        sp = sitp(q)
+        @test all(i -> sv[i] === sp[i], eachindex(sp))
+    end
+end
+
 @testitem "quadratic unit: surface + Series equivalence (pre/post twin deletion)" begin
     using Unitful
     const FI = FastInterpolations

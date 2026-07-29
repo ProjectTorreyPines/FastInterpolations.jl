@@ -149,6 +149,50 @@ end
     end
 end
 
+@testitem "cubic unit one-shot ≡ persistent (fork-free contract)" begin
+    using Unitful
+    const FI = FastInterpolations
+
+    # One-shot entry points must produce BIT-identical results to the
+    # persistent build on unit grids — first via the reroute (pre-P6), then
+    # natively through the pooled pipeline (post-P6). The pins survive the swap.
+    xu = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    yw = [1.0, 2.0, 0.5, 3.0, 2.5] .* u"W"
+    y2 = [0.5, 1.5, 2.0, 0.0, 1.0] .* u"W"
+    q = 2.2u"s"
+    qv = [0.35, 2.2, 4.1] .* u"s"
+
+    for (nm, bc) in (
+            ("CubicFit", CubicFit()),
+            ("Deriv2", Deriv2(-0.3u"W/s^2")),
+            ("ZeroCurvBC", ZeroCurvBC()),
+        )
+        @testset "$nm" begin
+            itp = cubic_interp(xu, yw; bc = bc)
+            @test cubic_interp(xu, yw, q; bc = bc) === itp(q)
+            vv = cubic_interp(xu, yw, qv; bc = bc)
+            pv = itp(qv)
+            @test all(i -> vv[i] === pv[i], eachindex(pv))
+            out = similar(pv)
+            cubic_interp!(out, xu, yw, qv; bc = bc)
+            @test all(i -> out[i] === pv[i], eachindex(pv))
+        end
+    end
+
+    @testset "PeriodicBC one-shot" begin
+        ywp = [1.0, 2.0, 0.5, 3.0, 1.0] .* u"W"
+        itp = cubic_interp(xu, ywp; bc = PeriodicBC())
+        @test cubic_interp(xu, ywp, q; bc = PeriodicBC()) === itp(q)
+    end
+
+    @testset "Series one-shot" begin
+        sitp = cubic_interp(xu, Series(yw, y2))
+        sv = cubic_interp(xu, Series(yw, y2), q)
+        sp = sitp(q)
+        @test all(i -> sv[i] === sp[i], eachindex(sp))
+    end
+end
+
 @testitem "cubic Series unit native: self-consistent cache + payload spaces + periodic" begin
     using Unitful
     const FI = FastInterpolations

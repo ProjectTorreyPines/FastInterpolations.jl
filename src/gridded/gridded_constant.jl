@@ -74,11 +74,10 @@ end
     carrier = Expr(:call, :*, ones_...)
     value = :(data[$(sels...)] * $carrier)
     if !(ops <: NTuple{N, EvalValue})
-        deriv_oneunit = Expr(
-            :call, :*,
-            [:(_deriv_oneunit(oneunit(eltype(grids[$d])), ops[$d])) for d in 1:N]...
-        )
-        value = :($value * 0 * $deriv_oneunit)
+        # Canonical fold (`_nd_deriv_scale`); the sample tuple is spelled out
+        # literally — a closure/comprehension in GENERATED code is impure.
+        samples = Expr(:tuple, [:(oneunit(eltype(grids[$d]))) for d in 1:N]...)
+        value = :($value * 0 * _nd_deriv_scale($samples, ops))
     end
     body = :(out[$(js...)] = $value)
     for d in 1:N   # d = 1 built first → innermost loop (stride-1 writes)

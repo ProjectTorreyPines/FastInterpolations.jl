@@ -86,19 +86,15 @@ end
     ::NTuple{N, EvalValue}, ::Val{N}
 ) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls)
 
-# `* 0` zeros the value (NaN-preserving); the per-axis `_constant_nd_deriv_scale` then
+# `* 0` zeros the value (NaN-preserving); the per-axis `_nd_deriv_scale` then
 # carries the grid⁻ᴺ units so the result lives in `value/∏ gridᵈ^{orderᵈ}` space — else a
 # same-unit deriv batch's concrete buffer rejects the value-unit zero (DimensionError).
+# `hs[d]` carries axis d's grid unit — the canonical `_nd_deriv_scale` fold
+# lands the zero in `value/∏ gridᵈ^{orderᵈ}` space.
 @inline _constant_nd_evaluate(
     data, intervals, hs, sides, q_eval, Ls,
     ops::NTuple{N, AbstractEvalOp}, ::Val{N}
-) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls) * 0 * _constant_nd_deriv_scale(hs, ops)
-
-# Per-axis grid⁻ᴺ unit scale, folded across the axes. The single-axis factor is
-# the shared `_deriv_oneunit` (core/utils.jl); `hs[d]` carries axis d's grid unit.
-@inline _constant_nd_deriv_scale(::Tuple{}, ::Tuple{}) = true
-@inline _constant_nd_deriv_scale(hs::Tuple, ops::Tuple) =
-    _deriv_oneunit(first(hs), first(ops)) * _constant_nd_deriv_scale(Base.tail(hs), Base.tail(ops))
+) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls) * 0 * _nd_deriv_scale(hs, ops)
 
 # ========================================
 # Derivative Check

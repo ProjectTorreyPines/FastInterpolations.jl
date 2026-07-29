@@ -142,7 +142,7 @@ end
     ]
     # Gradient component i is ∂f/∂xᵢ — scale the value-space zero by `inv(gridᵢ unit)`
     # so a unit-grid FillExtrap OOB returns `value/gridᵢ` (identity on Real grids).
-    zero_tuple = [:(0 * zref * inv(oneunit(eltype(itp.grids[$i])))) for i in 1:N]
+    zero_tuple = [:(0 * zref * _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1))) for i in 1:N]
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
@@ -240,7 +240,7 @@ end
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _sample_data(itp)
             @inbounds for i in 1:$N
-                G[i] = 0 * zref * inv(oneunit(eltype(itp.grids[i])))
+                G[i] = 0 * zref * _deriv_oneunit(oneunit(eltype(itp.grids[i])), DerivOp(1))
             end
             return G
         end
@@ -330,7 +330,7 @@ end
     ]
     # Gradient component i is ∂f/∂xᵢ — scale the value-space zero by `inv(gridᵢ unit)`
     # so a unit-grid FillExtrap OOB returns `value/gridᵢ` (identity on Real grids).
-    zero_tuple = [:(0 * zref * inv(oneunit(eltype(itp.grids[$i])))) for i in 1:N]
+    zero_tuple = [:(0 * zref * _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1))) for i in 1:N]
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
@@ -656,7 +656,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            return 0 * _sample_data(itp) * inv(oneunit(eltype(itp.grids[1])))^2
+            return 0 * _sample_data(itp) * _deriv_oneunit(oneunit(eltype(itp.grids[1])), DerivOp(2))
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
         return +($(deriv_calls...))

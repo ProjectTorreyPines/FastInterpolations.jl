@@ -561,6 +561,14 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
     (z = 0 * _coeff_op(oneunit(x1), y1); BCPair(Deriv1(z), Deriv1(z)))
 # Shape-only fallback: other BC types carry user payloads verbatim.
 @inline _normalize_bc(bc::AbstractBC, _x1, _y1) = _normalize_bc(bc)
+
+# Vector-sample form for hot one-shot paths: grid/value samples are read ONLY
+# on the arms that need them (zero-BCs) — shape-only BCs never touch the
+# arrays, keeping the Real 0-alloc contract (a `first(x)` in the caller costs
+# a box on some kwarg paths).
+@inline _normalize_bc_solve(bc::AbstractBC, _x, _y) = _normalize_bc(bc)
+@inline _normalize_bc_solve(bc::ZeroCurvBC, x, y) = _normalize_bc(bc, first(x), first(y))
+@inline _normalize_bc_solve(bc::ZeroSlopeBC, x, y) = _normalize_bc(bc, first(x), first(y))
 @inline _normalize_bc(bc::BCPair) = bc
 @inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
 @inline _normalize_bc(bc::NoBC) = bc

@@ -248,9 +248,6 @@ In-place cubic spline interpolation with optional automatic caching.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
-    Tg <: Real || return cubic_interp(
-        x, y; bc = bc, extrap = extrap, search = search
-    )(output, x_query; deriv = deriv, hint = hint)
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis, so the spline
     # cache builds (and memoises — `_CachedRange` is isbits, objectid-deterministic)
     # at the value width instead of the blind Float64.
@@ -262,7 +259,7 @@ In-place cubic spline interpolation with optional automatic caching.
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
     end
 
-    bc_pair = _normalize_bc(bc, first(y))
+    bc_pair = _normalize_bc_solve(bc, x, y)
     return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, deriv, searcher)
 end
 
@@ -299,7 +296,9 @@ function cubic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: Number, Tv, Tq <: Number}
-    Tr = _promote_eltype(_interp_op, eltype(cache.x), Tv, Tq)
+    Tr = _deriv_eltype(
+        _promote_eltype(_interp_op, eltype(cache.x), Tv, Tq), eltype(cache.x), deriv
+    )
     output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
@@ -343,10 +342,12 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
-    Tg <: Real || return cubic_interp(
-        x, y; bc = bc, extrap = extrap, search = search
-    )(x_query; deriv = deriv, hint = hint)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Output space is deriv-aware: value space folded by grid⁻ⁿ (`_deriv_eltype`
+    # — Real grids: identity). The reroute era hid this behind the persistent
+    # build's own allocation.
+    Tr = _deriv_eltype(
+        _promote_eltype(_interp_op, Tg, Tv, Tq), _promote_grid_float(Tg, Tv), deriv
+    )
     output = _alloc_query_output(Tr, x_query)
     cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search, hint)
     return output
@@ -372,11 +373,6 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
-    # Unit-carrying grids route through the persistent strip→solve→reattach
-    # build — the direct pooled Thomas below runs in unit space and throws.
-    Tg <: Real || return cubic_interp(
-        x, y; bc = bc, extrap = extrap, search = search
-    )(xq; deriv = deriv, hint = hint)
     # Value-matched Tg (see the in-place form above): Ranges resolve to the value
     # width; raw Vectors pass through (identity-keyed cache — legacy width there).
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
@@ -386,7 +382,7 @@ function cubic_interp(
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end
 
-    bc_pair = _normalize_bc(bc, first(y))
+    bc_pair = _normalize_bc_solve(bc, x, y)
     return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, deriv, searcher)
 end
 

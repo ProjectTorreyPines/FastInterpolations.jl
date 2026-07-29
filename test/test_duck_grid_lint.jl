@@ -118,7 +118,6 @@
         "core/utils.jl" => 6,
         "cubic/cubic_adjoint.jl" => 1,
         "cubic/cubic_anchor.jl" => 4,
-        "cubic/cubic_oneshot.jl" => 3,
         # cubic series + one-shot: eval sigs relaxed to Number for unit-grid cubic
         # Series (build nondimensionalizes like the scalar path) — one-shot was 5,
         # now 0 → key dropped; interp was 4, now 1 = the `Tg <: Real ||` units-branch
@@ -134,7 +133,6 @@
         "linear/nd/linear_nd_adjoint.jl" => 1,
         "quadratic/nd/quadratic_nd_adjoint.jl" => 1,
         "quadratic/quadratic_anchor.jl" => 8,
-        "quadratic/quadratic_oneshot.jl" => 2,
         # quadratic series + one-shot: eval sigs relaxed to Number (Codex parity;
         # eval reaches a documented solver-storage limit, but the SIG isn't the
         # blocker) — were 4 + 4, now 0 → keys dropped.
@@ -181,8 +179,10 @@ end
     # Reject-guards (`<: Real || throw(...)`) are exempt: throwing an
     # actionable error for a not-yet-native combo is the endorsed idiom, not a
     # parallel solve path (e.g. the periodic-units guard until Phase 3).
+    # P2–P6: every reroute fork is gone — the solver families are fork-free
+    # forever (reject-guards with `throw` remain exempt).
     fork_res = (r"<: Real \|\|", r"if !\([A-Za-z_][A-Za-z0-9_]* <: Real\)")
-    expected_forks = 11   # persistent-path forks all gone (P2/P4/P5); 11 = one-shot reroutes (P6)
+    expected_forks = 0
 
     counts, forks = let counts = Dict(k => 0 for k in keys(expected_tokens)), forks = 0
         for (root, _, files) in walkdir(src_dir), f in files

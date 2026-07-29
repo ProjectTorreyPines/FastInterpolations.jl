@@ -550,6 +550,17 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 # Needed when data type (e.g. MyDuck) doesn't support convert(MyDuck, Float64).
 @inline _normalize_bc(::ZeroCurvBC, sample) = (z = 0 * sample; BCPair(Deriv2(z), Deriv2(z)))
 @inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
+# Grid-aware duck-safe zeros (`(grid, value)` sample order): Deriv2/Deriv1
+# payload spaces are [Y/X²]/[Y/X] — a value-space zero (`0 * y`) would make the
+# RHS rule `bc.val * oneunit(Tg)` dimensionally wrong on unit grids. The zero
+# is a `0 *` value-witness (no `zero(::Type)`/`convert` — duck contract);
+# `oneunit(x1)` (never `x1`) keeps it finite for grids starting at 0.
+@inline _normalize_bc(::ZeroCurvBC, x1, y1) =
+    (z = 0 * _coeff_op2(oneunit(x1), y1); BCPair(Deriv2(z), Deriv2(z)))
+@inline _normalize_bc(::ZeroSlopeBC, x1, y1) =
+    (z = 0 * _coeff_op(oneunit(x1), y1); BCPair(Deriv1(z), Deriv1(z)))
+# Shape-only fallback: other BC types carry user payloads verbatim.
+@inline _normalize_bc(bc::AbstractBC, _x1, _y1) = _normalize_bc(bc)
 @inline _normalize_bc(bc::BCPair) = bc
 @inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
 @inline _normalize_bc(bc::NoBC) = bc

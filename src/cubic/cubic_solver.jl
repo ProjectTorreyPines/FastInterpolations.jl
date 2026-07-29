@@ -17,10 +17,13 @@
 # grid is the single source of truth for cell widths.
 
 # First row - Deriv2 (second derivative specified): z[1] = bc.val
+# Row entries live in GRID space ([X], matching the h-based interior rows), so
+# the identity row is `oneunit` (grid-space 1), never `one` (dimensionless).
+# Real grids: oneunit ≡ 1.0 — bit-identical.
 @inline function _set_first_row!(
         d_diag::AbstractVector{Tg}, du::AbstractVector{Tg}, ::Deriv2, ::AbstractVector{Tg}
     ) where {Tg}
-    d_diag[1] = one(Tg)
+    d_diag[1] = oneunit(Tg)
     du[1] = zero(Tg)
     return nothing
 end
@@ -40,7 +43,7 @@ end
         dl::AbstractVector{Tg}, d_diag::AbstractVector{Tg}, ::Deriv2, ::AbstractVector{Tg}
     ) where {Tg}
     dl[end] = zero(Tg)
-    d_diag[end] = one(Tg)
+    d_diag[end] = oneunit(Tg)
     return nothing
 end
 
@@ -57,22 +60,22 @@ end
 end
 
 # First row - Deriv3 (third derivative specified): (z[2] - z[1]) / h[1] = bc.val
-# Rearranged: -z[1] + z[2] = h[1] * val
+# Rearranged and grid-space scaled: -X·z[1] + X·z[2] = X·h[1]·val (X = oneunit)
 @inline function _set_first_row!(
         d_diag::AbstractVector{Tg}, du::AbstractVector{Tg}, ::Deriv3, ::AbstractVector{Tg}
     ) where {Tg}
-    d_diag[1] = -one(Tg)
-    du[1] = one(Tg)
+    d_diag[1] = -oneunit(Tg)
+    du[1] = oneunit(Tg)
     return nothing
 end
 
 # Last row - Deriv3 (third derivative specified): (z[n+1] - z[n]) / h[n] = bc.val
-# Rearranged: -z[n] + z[n+1] = h[n] * val
+# Rearranged and grid-space scaled: -X·z[n] + X·z[n+1] = X·h[n]·val
 @inline function _set_last_row!(
         dl::AbstractVector{Tg}, d_diag::AbstractVector{Tg}, ::Deriv3, ::AbstractVector{Tg}
     ) where {Tg}
-    dl[end] = -one(Tg)
-    d_diag[end] = one(Tg)
+    dl[end] = -oneunit(Tg)
+    d_diag[end] = oneunit(Tg)
     return nothing
 end
 
@@ -114,6 +117,15 @@ The seam-cell positivity check that previously lived here is now enforced
 by the `_ExclusivePeriodicAxis` constructor.
 """
 function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
+    # Unit-carrying grids: the S-M build still seeds dimensionless `q` into
+    # grid-space storage (native support is a follow-up) — reject with the
+    # public message contract, never a hostile-write DimensionError.
+    T <: Real || throw(
+        ArgumentError(
+            "cubic PeriodicBC on a unit-carrying grid is not supported yet — " *
+                "strip units (e.g. `ustrip`) or use a Real grid"
+        )
+    )
     cache_x = _cache_axis(_convert_copy(x, T), bc)
     n = length(cache_x) - 1   # n_cells (uniform across :inclusive / :exclusive)
 
@@ -241,27 +253,33 @@ end
 # spacing directly. PolyFit{D} BCs use `x` + `y` for endpoint derivative
 # estimation; other BC types ignore `x`.
 
-# First element - Deriv2: d[1] = bc.val (second derivative value)
+# First element - Deriv2: oneunit(Tg)·z[1] = d[1] with payload val ∈ [Y/X²] —
+# the grid-space row scale enters the RHS as `* oneunit(Tg)` ([Y/X], matching
+# the interior rows). Payloads are never pre-converted (H9): Real ×1.0 is exact.
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}
     ) where {Tg}
-    d[1] = convert(eltype(d), bc.val)
+    d[1] = bc.val * oneunit(Tg)
     return nothing
 end
 
 # First element - Deriv1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
+# The diff lifts into VALUE space (`_value_space_eltype`, wrap-safe for narrow
+# eltypes); the 1/X dimension enters via `inv_h`. `bc.val` ∈ [Y/X] = RHS space,
+# so the same-space convert is legal for units.
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv1, y::AbstractVector, x::AbstractVector{Tg}
     ) where {Tg}
-    d[1] = 6 * (_fielddiff(eltype(d), y[2], y[1]) * _get_inv_h(x, 1) - convert(eltype(d), bc.val))
+    Tc = _value_space_eltype(Tg, eltype(y))
+    d[1] = 6 * (_fielddiff(Tc, y[2], y[1]) * _get_inv_h(x, 1) - convert(eltype(d), bc.val))
     return nothing
 end
 
-# Last element - Deriv2: d[end] = bc.val (second derivative value)
+# Last element - Deriv2: same grid-space scaling as the first row
 @inline function _compute_rhs_last!(
         d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}
     ) where {Tg}
-    d[end] = convert(eltype(d), bc.val)
+    d[end] = bc.val * oneunit(Tg)
     return nothing
 end
 
@@ -270,24 +288,26 @@ end
         d::AbstractVector, bc::Deriv1, y::AbstractVector, x::AbstractVector{Tg}
     ) where {Tg}
     n = length(y) - 1
-    d[end] = 6 * (convert(eltype(d), bc.val) - _fielddiff(eltype(d), y[end], y[end - 1]) * _get_inv_h(x, n))
+    Tc = _value_space_eltype(Tg, eltype(y))
+    d[end] = 6 * (convert(eltype(d), bc.val) - _fielddiff(Tc, y[end], y[end - 1]) * _get_inv_h(x, n))
     return nothing
 end
 
-# First element - Deriv3: d[1] = h[1] * bc.val (from -z[1] + z[2] = h[1] * val)
+# First element - Deriv3: d[1] = h[1]·val·oneunit(Tg) — the grid-space row
+# scale (see `_set_first_row!` Deriv3) lands the [Y/X³] payload in [Y/X].
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv3, ::AbstractVector, x::AbstractVector{Tg}
     ) where {Tg}
-    d[1] = _get_h(x, 1) * convert(eltype(d), bc.val)
+    d[1] = _get_h(x, 1) * bc.val * oneunit(Tg)
     return nothing
 end
 
-# Last element - Deriv3: d[end] = h[n] * bc.val (from -z[n] + z[n+1] = h[n] * val)
+# Last element - Deriv3: d[end] = h[n]·val·oneunit(Tg)
 @inline function _compute_rhs_last!(
         d::AbstractVector, bc::Deriv3, ::AbstractVector, x::AbstractVector{Tg}
     ) where {Tg}
     n = length(d) - 1
-    d[end] = _get_h(x, n) * convert(eltype(d), bc.val)
+    d[end] = _get_h(x, n) * bc.val * oneunit(Tg)
     return nothing
 end
 
@@ -322,7 +342,10 @@ derivative estimation.
     ) where {Tg, L <: PointBC, R <: PointBC}
     n = length(y) - 1
     _compute_rhs_first!(d, bc_pair.left, y, x)
-    Tc = eltype(d)   # coefficient field — loop-invariant, matches compute_rhs_periodic!
+    # Diffs lift into VALUE space (loop-invariant): the coefficient dimension
+    # [Y/X] enters via `inv_h`, never by converting y into it. Real grids:
+    # value space == eltype(d) — the historic fast path, bit-identical.
+    Tc = _value_space_eltype(Tg, eltype(y))
     @inbounds for i in 2:n
         d[i] = 6 * (_fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(x, i) - _fielddiff(Tc, y[i], y[i - 1]) * _get_inv_h(x, i - 1))
     end
@@ -456,8 +479,39 @@ compatibility (callers pass `cache.bc` explicitly or a fresh BC for one-shot).
         y::AbstractVector,
         bc_pair::BCPair{L, R}
     ) where {Tg, X, F, L <: PointBC, R <: PointBC}
+    # RHS lives in [Y/X] (`_coeff_op`); the solve maps it to [Y/X²] (`out_z`).
+    Td = _promote_eltype(_coeff_op, eltype(cache.x), eltype(y))
+    return _solve_bcpair_rhs!(out_z, cache, y, bc_pair, Td)
+end
+
+# RHS space == out_z space (Real/Dual/…): the RHS shares the output buffer —
+# bit- and alloc-identical to the historic in-place solve. Storage selection by
+# dispatch (`_thomas_storage` idiom), folds at specialization time.
+@inline function _solve_bcpair_rhs!(
+        out_z::AbstractVector{Td},
+        cache::CubicSplineCache,
+        y::AbstractVector,
+        bc_pair::BCPair,
+        ::Type{Td}
+    ) where {Td}
     compute_rhs!(out_z, y, cache.x, bc_pair)
     _ldiv_tridiagonal_nopiv!(out_z, out_z, cache.thomas)
+    return out_z
+end
+
+# Distinct RHS space (unit grids): pooled [Y/X] scratch; the backward sweep
+# writes the [Y/X²] solution into `out_z` (b consumed as scratch — see
+# `_ldiv_tridiagonal_nopiv!` alias contract).
+@inline @with_pool pool function _solve_bcpair_rhs!(
+        out_z::AbstractVector,
+        cache::CubicSplineCache,
+        y::AbstractVector,
+        bc_pair::BCPair,
+        ::Type{Td}
+    ) where {Td}
+    d = acquire!(pool, Td, length(out_z))
+    compute_rhs!(d, y, cache.x, bc_pair)
+    _ldiv_tridiagonal_nopiv!(out_z, d, cache.thomas)
     return out_z
 end
 

@@ -176,9 +176,12 @@ end
         "_strip_series_bc_units" => 3,
         "_strip_bc_units" => 15,
     )
-    # `Tg <: Real || return …` / `if !(Tg <: Real)` reroute forks, counted only
+    # `Tg <: Real || return …` / `if !(Tg <: Real)` REROUTE forks, counted only
     # inside the solver family trees (cubic/, quadratic/) — `utils.jl`'s
     # promotion arm and adjoint gating live elsewhere and are legitimate.
+    # Reject-guards (`<: Real || throw(...)`) are exempt: throwing an
+    # actionable error for a not-yet-native combo is the endorsed idiom, not a
+    # parallel solve path (e.g. the periodic-units guard until Phase 3).
     fork_res = (r"<: Real \|\|", r"if !\([A-Za-z_][A-Za-z0-9_]* <: Real\)")
     expected_forks = 15
 
@@ -193,7 +196,7 @@ end
                     occursin(k, line) && (counts[k] += 1)
                 end
                 if in_family && (occursin(fork_res[1], line) || occursin(fork_res[2], line))
-                    forks += 1
+                    occursin("throw", line) || (forks += 1)   # reject-guard exemption
                 end
             end
         end

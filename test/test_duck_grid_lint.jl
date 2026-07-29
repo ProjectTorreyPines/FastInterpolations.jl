@@ -123,7 +123,6 @@
         # Series (build nondimensionalizes like the scalar path) — one-shot was 5,
         # now 0 → key dropped; interp was 4, now 1 = the `Tg <: Real ||` units-branch
         # idiom itself (allowlist class 3b).
-        "cubic/cubic_series_interp.jl" => 1,
         "cubic/nd/cubic_nd_adjoint.jl" => 1,
         # derivative_view.jl: in-place view query bounds relaxed to Number (Codex
         # #4) — was 2, now 0 → key dropped.
@@ -168,12 +167,13 @@ end
 @testitem "Duck grid: strip-twin ratchet — mention counts must only decrease" begin
     src_dir = dirname(pathof(FastInterpolations))
 
+    # P2/P4/P5: every strip-twin family is gone — these ratchet at ZERO forever.
     expected_tokens = Dict(
-        "_cubic_interp_units" => 0,      # P2: cubic scalar twin deleted
-        "_cubic_series_units" => 2,
-        "_quadratic_interp_units" => 0,  # P4: quadratic scalar twin deleted
-        "_strip_series_bc_units" => 3,
-        "_strip_bc_units" => 9,          # P4: defs beside their last consumer (cubic Series twin)
+        "_cubic_interp_units" => 0,
+        "_cubic_series_units" => 0,
+        "_quadratic_interp_units" => 0,
+        "_strip_series_bc_units" => 0,
+        "_strip_bc_units" => 0,
     )
     # `Tg <: Real || return …` / `if !(Tg <: Real)` REROUTE forks, counted only
     # inside the solver family trees (cubic/, quadratic/) — `utils.jl`'s
@@ -182,7 +182,7 @@ end
     # actionable error for a not-yet-native combo is the endorsed idiom, not a
     # parallel solve path (e.g. the periodic-units guard until Phase 3).
     fork_res = (r"<: Real \|\|", r"if !\([A-Za-z_][A-Za-z0-9_]* <: Real\)")
-    expected_forks = 12   # P2: cubic surface fork gone; P4: quadratic surface + Series forks gone
+    expected_forks = 11   # persistent-path forks all gone (P2/P4/P5); 11 = one-shot reroutes (P6)
 
     counts, forks = let counts = Dict(k => 0 for k in keys(expected_tokens)), forks = 0
         for (root, _, files) in walkdir(src_dir), f in files

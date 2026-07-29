@@ -312,12 +312,6 @@ function cubic_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
-    # Non-Real (unit-carrying) grids: strip→solve→reattach twin (the batch
-    # Series solve still stores mixed unit spaces through shared buffers).
-    Tg <: Real || return _cubic_series_units(
-        x, y_mat, bc, extrap, n_ser, autocache, precompute_transpose, search
-    )
-
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
         return _build_series_periodic(x, y_mat, bc, n_pts, n_ser, autocache, precompute_transpose, search)
@@ -329,16 +323,17 @@ function cubic_interp(
     z_mat = Matrix{Tz}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
-        # Per-series BC array: Tg-typed for cache matrix, Tv-typed for RHS
+        # Per-series BC array: structural (cache-key) vs payload-space (solve)
         bc_cache_array = _normalize_bc_array(bc, Tg, n_ser)
-        bc_solve_array = _normalize_bc_array(bc, Tv_out, n_ser)
+        bc_solve_array = _normalize_bc_array(bc, first(x), first(y_mat), n_ser)
         _solve_series_with_bc_array!(z_mat, y_mat, x, bc_cache_array, bc_solve_array, autocache)
         bc_representative = bc_cache_array[1]
         cache = _get_cubic_cache(x, bc_representative, _effective_autocache(autocache, eltype(x)))
     else
-        # Uniform BC: Tg-typed for cache matrix, Tv-typed for RHS
+        # Uniform BC: structural form keys the cache; the grid-aware normalize
+        # puts zero-BC payloads in their true derivative spaces (H9).
         bc_for_cache = _normalize_bc(bc)
-        bc_for_solve = _normalize_bc(bc, first(y_mat))
+        bc_for_solve = _normalize_bc(bc, first(x), first(y_mat))
         cache = _get_cubic_cache(x, bc_for_cache, _effective_autocache(autocache, eltype(x)))
         _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)
         bc_representative = bc_for_cache
@@ -353,65 +348,6 @@ function cubic_interp(
 
     return sitp
 end
-
-# ── Non-Real (unit-carrying) grids: nondimensionalized solve ──
-# Series strip twin: the batch solve routes every series through shared
-# buffers, so solve on a oneunit-stripped twin — division by `oneunit` is
-# exact — and reattach `z`'s order-2 units (`Y/X²`). The ORIGINAL unit axis
-# serves eval/search.
-function _cubic_series_units(
-        x, y_mat, bc, extrap, n_ser, autocache, precompute_transpose, search
-    )
-    (bc isa AbstractBC && _is_periodic_bc(bc)) && throw(
-        ArgumentError(
-            "cubic PeriodicBC on a unit-carrying grid is not supported yet — " *
-                "strip units (e.g. `ustrip`) or use a Real grid"
-        )
-    )
-    ux = oneunit(eltype(x))
-    uy = _carrier_oneunit(eltype(y_mat))
-    tw = cubic_interp(
-        x ./ ux, Series(y_mat ./ uy);
-        bc = _strip_series_bc_units(bc, uy, ux), extrap = NoExtrap(),
-        autocache = autocache, precompute_transpose = false, search = search
-    )
-    z_mat = tw.z .* (uy / (ux * ux))
-    xc = _cache_axis(_convert_copy(x, eltype(x)), NoBC())
-    bc_u = bc isa AbstractBC ? _normalize_bc(bc, first(y_mat)) :
-        _normalize_bc_array(bc, eltype(y_mat), n_ser)[1]
-    # NOTE: `thomas` is the STRIPPED twin's factorization paired with a unit axis
-    # — unused by eval, but do not feed this cache back into a unit-data rebuild.
-    cache = CubicSplineCache(xc, bc_u, tw.cache.thomas, nothing)
-    extrap_p = _promote_extrap(extrap, eltype(y_mat))
-    sitp = CubicSeriesInterpolant(cache, bc_u, y_mat, z_mat, extrap_p, search)
-
-    if precompute_transpose
-        _ensure_point_layout!(sitp)
-    end
-
-    return sitp
-end
-
-# BC payloads carry derivative units (`Y/X`, `Y/X²`, `Y/X³`) — strip to match
-# the nondimensionalized twin; structural BCs pass through. Sole remaining
-# consumer is this file's Series strip twin (deleted with it).
-@inline _strip_bc_units(bc::Union{PolyFit, ZeroCurvBC, ZeroSlopeBC}, uy, ux) = bc
-@inline _strip_bc_units(bc::Deriv1, uy, ux) = Deriv1(bc.val / (uy / ux))
-@inline _strip_bc_units(bc::Deriv2, uy, ux) = Deriv2(bc.val / (uy / (ux * ux)))
-@inline _strip_bc_units(bc::Deriv3, uy, ux) = Deriv3(bc.val / (uy / (ux * ux * ux)))
-@inline _strip_bc_units(bc::BCPair, uy, ux) =
-    BCPair(_strip_bc_units(bc.left, uy, ux), _strip_bc_units(bc.right, uy, ux))
-@noinline _strip_bc_units(bc::AbstractBC, uy, ux) = throw(
-    ArgumentError(
-        "BC type $(typeof(bc)) is not supported on a unit-carrying grid yet — " *
-            "strip units (e.g. `ustrip`) or use a Real grid"
-    )
-)
-
-# Per-series BC arrays strip element-wise; scalar BCs reuse the shared helper.
-@inline _strip_series_bc_units(bc::AbstractBC, uy, ux) = _strip_bc_units(bc, uy, ux)
-@inline _strip_series_bc_units(bc::AbstractVector, uy, ux) =
-    [_strip_bc_units(b, uy, ux) for b in bc]
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
 

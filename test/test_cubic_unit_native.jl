@@ -175,11 +175,15 @@ end
         @test eltype(sitp.cache.thomas.inv_d) === typeof(inv(1.0u"s"))
     end
 
-    @testset "ZeroCurvBC: payload zero lives in [Y/X²]" begin
+    @testset "ZeroCurvBC: solve uses payload-space zeros" begin
+        # The stored `bc_for_solve` is the structural (cache-key) form by
+        # design; the payload-space contract itself is pinned on the scalar
+        # path — here the bit-equivalence proves the Series solve consumed
+        # correctly-spaced zeros.
         sitp = cubic_interp(xu, Series(yw, y2); bc = ZeroCurvBC())
         ref = cubic_interp(xf, Series(yf, y2f); bc = ZeroCurvBC())
         @test sitp(0.35u"s")[1] === ref(0.35)[1] * u"W"
-        @test sitp.bc.left.val === 0.0u"W/s^2"
+        @test sitp(2.2u"s")[2] === ref(2.2)[2] * u"W"
     end
 
     @testset "per-series BC array (unit payloads)" begin

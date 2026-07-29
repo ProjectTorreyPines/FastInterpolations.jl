@@ -674,6 +674,26 @@ function _normalize_bc_array(
     return [_normalize_bc(bc) for bc in bcs]
 end
 
+# Sample-based (grid, value) variant for the SOLVE side: zero-BC payloads land
+# in their true derivative spaces (see the 3-arg `_normalize_bc`).
+function _normalize_bc_array(
+        bcs::AbstractVector{<:AbstractBC},
+        x1, y1,
+        n_series::Int
+    )
+    length(bcs) == n_series || throw(
+        DimensionMismatch(
+            "BC array length $(length(bcs)) does not match n_series $n_series"
+        )
+    )
+    for (i, bc) in enumerate(bcs)
+        _is_periodic_bc(bc) && _throw_periodic_in_bc_array(i)
+    end
+    return [_normalize_bc(bc, x1, y1) for bc in bcs]
+end
+@inline _normalize_bc_array(bcs::AbstractVector{<:BCPair}, x1, y1, n_series::Int) =
+    _normalize_bc_array(bcs, typeof(y1), n_series)
+
 
 # ========================================
 # BC Type Predicates

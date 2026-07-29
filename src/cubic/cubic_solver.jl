@@ -117,15 +117,6 @@ The seam-cell positivity check that previously lived here is now enforced
 by the `_ExclusivePeriodicAxis` constructor.
 """
 function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
-    # Unit-carrying grids: the S-M build still seeds dimensionless `q` into
-    # grid-space storage (native support is a follow-up) — reject with the
-    # public message contract, never a hostile-write DimensionError.
-    T <: Real || throw(
-        ArgumentError(
-            "cubic PeriodicBC on a unit-carrying grid is not supported yet — " *
-                "strip units (e.g. `ustrip`) or use a Real grid"
-        )
-    )
     cache_x = _cache_axis(_convert_copy(x, T), bc)
     n = length(cache_x) - 1   # n_cells (uniform across :inclusive / :exclusive)
 
@@ -165,12 +156,18 @@ function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
 
     thomas = thomas_factorize(dl, d_diag, du)
 
-    # Pre-compute q = A'⁻¹ · u (u = [1, 0, …, 0, 1]ᵀ).
-    q = Vector{T}(undef, n)
-    fill!(q, zero(T))
-    q[1] = one(T)
-    q[n] = one(T)
-    _ldiv_tridiagonal_nopiv!(q, q, thomas)
+    # Pre-compute q = A'⁻¹ · u (u = [1, 0, …, 0, 1]ᵀ). u is DIMENSIONLESS
+    # structure (the L-multiplier space); q lives in [1/X] (the inv_d space).
+    # Real grids collapse the two — u shares q's storage, reproducing the
+    # historic single-buffer in-place solve (`_thomas_storage` selector).
+    Tq = _promote_eltype(_inv_op, T)
+    Tu = _promote_eltype(_thomas_l_op, T, T)
+    q = Vector{Tq}(undef, n)
+    u = _thomas_storage(q, Tu)
+    fill!(u, zero(Tu))
+    u[1] = one(Tu)
+    u[n] = one(Tu)
+    _ldiv_tridiagonal_nopiv!(q, u, thomas)
 
     # Persist resolved-period bc on the cache so display / cache-pool comparison
     # / `_with_resolved_period(itp.bc, cache.bc.period)` work without a separate
@@ -378,7 +375,8 @@ Interior rows (2 .. n-1) reference only real (non-seam) cells.
 
     # Seam-touching endpoint rows go through the wrapper for cyclic indexing
     # (`y[n+1]` = y[1]) and seam-cell width (`_get_inv_h(x, n)`).
-    Tc = eltype(d)
+    # Diffs lift into VALUE space; the [Y/X] dimension enters via `inv_h`.
+    Tc = _value_space_eltype(Tg, eltype(y))
     @inbounds d[1] = 6 * _fielddiff(Tc, y[2], y[1]) * _get_inv_h(x, 1) - 6 * _fielddiff(Tc, y[1], y[n]) * _get_inv_h(x, n)
     @inbounds d[n] = 6 * _fielddiff(Tc, y[n + 1], y[n]) * _get_inv_h(x, n) - 6 * _fielddiff(Tc, y[n], y[n - 1]) * _get_inv_h(x, n - 1)
 
@@ -419,18 +417,23 @@ eval can read `z[n+1]` at the closed-cycle endpoint.
     q = cache.q
     n = length(q)   # n_cells
 
+    # y_temp is the [Y/X] RHS; the solve writes A'⁻¹d into z_workspace[1..n]
+    # ([Y/X²]) so no buffer crosses unit spaces (y_temp is consumed as the
+    # forward-sweep scratch — ldiv alias contract). Real grids: identical ops,
+    # different destination name only.
     compute_rhs_periodic!(y_temp, y, cache.x)
-    _ldiv_tridiagonal_nopiv!(y_temp, y_temp, cache.thomas)
+    _ldiv_tridiagonal_nopiv!(z_workspace, y_temp, cache.thomas)
 
     α = _get_h(cache.x, n)   # seam-cell width (last real cell or virtual seam)
 
-    vTy = α * (y_temp[1] + y_temp[n])
-    vTq = α * (q[1] + q[n])
+    vTy = α * (z_workspace[1] + z_workspace[n])   # [X]·[Y/X²] = [Y/X]
+    vTq = α * (q[1] + q[n])                        # dimensionless
 
     denom = one(Tg) + vTq
     # Defensive check: unreachable under valid inputs (denom ≥ √3 for SPD systems),
     # but guards against corrupted data (NaN/Inf from invalid grid spacing).
-    tol = sqrt(eps(Tg))
+    # denom is dimensionless — the tol must be too (unit eps would not compare).
+    tol = sqrt(eps(_dimensionless_type(Tg)))
     if !isfinite(denom) || abs(denom) < tol
         throw(
             DomainError(
@@ -441,10 +444,10 @@ eval can read `z[n+1]` at the closed-cycle endpoint.
             )
         )
     end
-    factor = vTy * inv(denom)
+    factor = vTy * inv(denom)   # [Y/X]
 
     @inbounds for i in 1:n
-        z_workspace[i] = y_temp[i] - factor * q[i]
+        z_workspace[i] = z_workspace[i] - factor * q[i]   # [Y/X²] − [Y/X]·[1/X]
     end
 
     # Mirror seam: every PeriodicBC variant (:inclusive / :exclusive / :extended)
@@ -522,7 +525,9 @@ end
         ::PeriodicBC   # API consistency with BCPair version (cache.bc is the source of truth)
     ) where {Tz, Tg, X, F}
     n = length(cache.q)   # n_cells
-    y_temp = acquire!(pool, Tz, n)
+    # RHS scratch in [Y/X] (`_coeff_op`); Real grids: Td == Tz, same acquire.
+    Td = _promote_eltype(_coeff_op, eltype(cache.x), eltype(y))
+    y_temp = acquire!(pool, Td, n)
     _solve_cubic_system_periodic!(out_z, y_temp, cache, y)
     return out_z
 end

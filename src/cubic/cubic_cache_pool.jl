@@ -108,8 +108,8 @@ end
 Cache entry for periodic BC (uses PeriodicData).
 
 # Type Parameters
-- `T`: grid eltype (constructed for `T <: AbstractFloat` only until the
-  Sherman-Morrison `q` witness lands — see `_get_periodic_bank`)
+- `T`: bankable grid eltype; the Sherman-Morrison `q` lives in the `_inv_op`
+  space (`Vector{T}` for Real, `[1/X]` for unit grids)
 - `X`: Grid type (Vector{T} or StepRangeLen)
 - `E`: Endpoint variant (`:inclusive`, `:exclusive`, or `:extended`) — encoded
   so the bank registry holds *separate* banks per variant. The cache content
@@ -126,7 +126,7 @@ Cache entry for periodic BC (uses PeriodicData).
 # Mutation Safety
 See `CacheEntry` documentation for details on mutation safety pattern.
 """
-mutable struct PeriodicCacheEntry{T, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, <:ThomasFactorization, <:PeriodicBC, Vector{T}}} <: AbstractCacheEntry{T, X}
+mutable struct PeriodicCacheEntry{T, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, <:ThomasFactorization, <:PeriodicBC, <:AbstractVector}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::C
@@ -399,13 +399,12 @@ that were promoted from `:exclusive` at build time.
 Without partitioning on `C`, a cache built from `check=false` BC would fail to
 fit into a bank typed for `check=true`.
 """
-# NOTE: periodic banks stay `T <: AbstractFloat` until the Sherman-Morrison
-# `q` witness lands (unit periodic builds are guarded in `_build_periodic_cache`).
-@inline function _get_periodic_bank(::Type{X}, ::Val{E}, ::Val{C}) where {T <: AbstractFloat, X <: AbstractVector{T}, E, C}
+@inline function _get_periodic_bank(::Type{X}, ::Val{E}, ::Val{C}) where {T, X <: AbstractVector{T}, E, C}
     Xc = _cached_axis_type(X, T, Val(E))
     # `E` ∈ {:inclusive, :exclusive, :extended} — each gets its own bank.
+    # PeriodicBC's period param carries the grid unit; `q` is `_inv_op`-typed.
     bc = PeriodicBC{E, T, C}
-    Cc = CubicSplineCache{T, Xc, _bank_factorization_type(T), bc, Vector{T}}
+    Cc = CubicSplineCache{T, Xc, _bank_factorization_type(T), bc, Vector{_promote_eltype(_inv_op, T)}}
     EntryType = PeriodicCacheEntry{T, X, E, Cc}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
@@ -519,7 +518,7 @@ end
 # (not optional `Nothing`) because cache content is BC-form-dependent: cycle
 # length, period, and seam-cell width all differ between `:inclusive` and
 # `:exclusive`. The entry's E type-param matches `bc`'s E by dispatch.
-@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector{T}, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, E}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector{T}, bc::PeriodicBC{E}) where {T, X, E}
     return _build_periodic_cache(x, bc)
 end
 
@@ -882,10 +881,29 @@ end
     return _lookup_or_insert!(bank, x, bc)
 end
 
-# Duck-typed grids (Dual, etc.): build fresh, no caching.
-@inline function _get_periodic_cache_impl(x::AbstractVector, bc::PeriodicBC)
-    return _build_periodic_cache(_to_float(x, _cache_float_type(eltype(x))), bc)
+# Duck-typed grids (unit-carrying, Dual, …): same trait-gated exact-eltype
+# banking as the derivative pool.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC) where {T}
+    if _grid_bankable(T)
+        bank = _get_periodic_bank(Vector{T}, bc)
+        return _lookup_or_insert!(bank, x, bc)
+    else
+        return _build_periodic_cache(_to_float(x, _cache_float_type(T)), bc)
+    end
 end
+
+@inline function _get_periodic_cache_impl(x::_CachedRange{T, Tinv}, bc::PeriodicBC) where {T, Tinv}
+    if _grid_bankable(T)
+        bank = _get_periodic_bank(typeof(x), bc)
+        return _lookup_or_insert!(bank, x, bc)
+    else
+        return _build_periodic_cache(_to_float(x, _cache_float_type(T)), bc)
+    end
+end
+
+# Duck raw ranges: normalize to the wrapped axis first (defensive).
+@inline _get_periodic_cache_impl(x::AbstractRange{T}, bc::PeriodicBC) where {T} =
+    _get_periodic_cache_impl(_resolve_axis(x), bc)
 
 # ---- Explicit target float `Tg` (data-aware bank) ----
 # Same contract as the derivative impl: Integer/Rational route to `Vector{Tg}`;

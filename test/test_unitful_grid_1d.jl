@@ -395,27 +395,19 @@ end
     end
 end
 
-@testitem "Unitful 1D: cubic PeriodicBC rejection is friendly (review pin F7)" begin
+@testitem "Unitful 1D: cubic PeriodicBC native S-M (was rejection pin F7)" begin
     using Unitful
 
-    # Native unit builds reject PeriodicBC inside `_build_periodic_cache` (the
-    # S-M q-seed write is the remaining hostile site) — pin the ERROR QUALITY,
-    # not just that it throws: message must name the feature and the workaround.
-    # Closed cycle (y[1] == y[end]) so the endpoint check upstream passes and
-    # the pin exercises the builder guard itself.
+    # The strip-twin era rejected PeriodicBC on unit grids; the native build
+    # supports it (u dimensionless, q in [1/X]). Public-API sanity here — the
+    # internal bit pins live in test_cubic_unit_native.jl.
     xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
     yw = [1.0, 2.0, 4.0, 1.0] .* u"W"
-    err = try
-        cubic_interp(xs, yw; bc = PeriodicBC())
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    msg = sprint(showerror, err)
-    @test occursin("PeriodicBC", msg)
-    @test occursin("unit-carrying", msg)
-    @test occursin("ustrip", msg)   # actionable workaround named
+    itp = cubic_interp(xs, yw; bc = PeriodicBC())
+    ref = cubic_interp([0.0, 1.0, 2.5, 3.0], [1.0, 2.0, 4.0, 1.0]; bc = PeriodicBC())
+    @test itp(1.0u"s") === 2.0u"W"                    # node hit
+    @test ustrip(u"W", itp(1.7u"s")) === ref(1.7)     # stripped bit parity
+    @test itp(4.2u"s") ≈ itp(1.2u"s")                 # wrap (period 3s)
 end
 
 @testitem "Unitful 1D: batch eval across families (review pin F8)" begin

@@ -178,8 +178,8 @@ end
     @testset "exclusive: explicit unit period" begin
         xe = [0.0, 1.0, 2.5, 3.0] .* u"s"
         ye = [1.0, 2.0, 0.5, 3.0] .* u"W"
-        itp_u = cubic_interp(xe, ye; bc = PeriodicBC(period = 4.5u"s"), autocache = false)
-        ref = cubic_interp([0.0, 1.0, 2.5, 3.0], [1.0, 2.0, 0.5, 3.0]; bc = PeriodicBC(period = 4.5), autocache = false)
+        itp_u = cubic_interp(xe, ye; bc = PeriodicBC(endpoint = :exclusive, period = 4.5u"s"), autocache = false)
+        ref = cubic_interp([0.0, 1.0, 2.5, 3.0], [1.0, 2.0, 0.5, 3.0]; bc = PeriodicBC(endpoint = :exclusive, period = 4.5), autocache = false)
         @test itp_u(2.2u"s") === ref(2.2) * u"W"
         @test itp_u(4.0u"s") === ref(4.0) * u"W"   # seam cell
     end

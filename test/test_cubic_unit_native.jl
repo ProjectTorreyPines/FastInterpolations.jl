@@ -149,24 +149,45 @@ end
     end
 end
 
-@testitem "cubic unit native: periodic guard lives in the builder" begin
+@testitem "cubic unit native: periodic S-M build + solve" begin
     using Unitful
     const FI = FastInterpolations
 
-    # Phase 2 relocates the friendly PeriodicBC-on-units rejection from the
-    # twin into `_build_periodic_cache` (Phase 3 replaces it with native
-    # support). Message contract matches the public F7 pin: name the feature
-    # and the workaround — never a raw DimensionError from a hostile write.
-    xu = [0.0, 1.0, 2.5, 4.0] .* u"s"
-    err = try
-        FI._build_periodic_cache(xu, FI.PeriodicBC())
-        nothing
-    catch e
-        e
+    # Sherman-Morrison is dimensionally clean end-to-end: u is the
+    # DIMENSIONLESS structural vector [1,0,…,1], q = A'⁻¹u lives in [1/X]
+    # (the inv_d space), vᵀq is dimensionless, and the correction
+    # z − (vᵀy/(1+vᵀq))·q stays in [Y/X²]. Real grids collapse u and q to one
+    # eltype — the historic single-buffer in-place build.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [1.0, 2.0, 0.5, 3.0, 1.0]          # closed cycle
+    xu = xf .* u"s"
+    yw = yf .* u"W"
+
+    @testset "inclusive: bit parity + witness spaces" begin
+        itp_u = cubic_interp(xu, yw; bc = PeriodicBC(), autocache = false)
+        ref = cubic_interp(xf, yf; bc = PeriodicBC(), autocache = false)
+
+        @test eltype(itp_u.cache.q) === typeof(inv(1.0u"s"))
+        @test eltype(itp_u.cache.thomas.dl) === Float64
+        @test eltype(itp_u.cache.thomas.inv_d) === typeof(inv(1.0u"s"))
+        @test all(i -> ustrip(u"W/s^2", itp_u.z[i]) === ref.z[i], eachindex(ref.z))
+        @test itp_u(2.2u"s") === ref(2.2) * u"W"
+        @test itp_u(6.0u"s") === ref(6.0) * u"W"   # wrap extrapolation
     end
-    @test err isa ArgumentError
-    msg = sprint(showerror, err)
-    @test occursin("PeriodicBC", msg)
-    @test occursin("unit-carrying", msg)
-    @test occursin("ustrip", msg)
+
+    @testset "exclusive: explicit unit period" begin
+        xe = [0.0, 1.0, 2.5, 3.0] .* u"s"
+        ye = [1.0, 2.0, 0.5, 3.0] .* u"W"
+        itp_u = cubic_interp(xe, ye; bc = PeriodicBC(period = 4.5u"s"), autocache = false)
+        ref = cubic_interp([0.0, 1.0, 2.5, 3.0], [1.0, 2.0, 0.5, 3.0]; bc = PeriodicBC(period = 4.5), autocache = false)
+        @test itp_u(2.2u"s") === ref(2.2) * u"W"
+        @test itp_u(4.0u"s") === ref(4.0) * u"W"   # seam cell
+    end
+
+    @testset "periodic bank: unit grids hit" begin
+        FI.clear_cubic_cache!()
+        i1 = cubic_interp(xu, yw; bc = PeriodicBC())
+        i2 = cubic_interp(xu, yw; bc = PeriodicBC())
+        @test i2.cache === i1.cache
+    end
 end

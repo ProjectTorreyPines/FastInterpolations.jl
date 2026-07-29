@@ -172,27 +172,30 @@ end
 end
 
 # ----------------------------------------
-# Mixed-type _compute_deriv1 for Complex value support
-# f::NTuple{N,Tv} values (can be Complex)
-# inv_h::Tg inverse grid spacing (always real)
-# Returns Tc = _promote_eltype(_coeff_op, Tg, Tv)
+# Mixed-type _compute_deriv1 (Complex / unit / narrow value support)
+# f::NTuple{N,Tv} values; inv_h::Tg is the INVERSE spacing (1/X space).
+# The stencil lift target is the VALUE-space field (`_value_space_eltype`:
+# wrap-free for narrow eltypes, ratio-shaped so 1/X in the width slot still
+# cancels) — feeding `Tg` (= 1/X) into a spacing-shaped witness like
+# `_coeff_op` mints h·y-typed garbage on unit grids. The trailing `* inv_h`
+# lands the result in coefficient space [Y/X].
 # ----------------------------------------
 
 # PolyFit{1} (LinearFit) - 2 points, O(h) - Mixed type
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    Tc = _value_space_eltype(Tg, Tv)
     return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    Tc = _value_space_eltype(Tg, Tv)
     return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²) - Mixed type
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: -(3, -4, 1) / 2
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    Tc = _value_space_eltype(Tg, Tv)
     fp = _convert_stencil(Tc, f)
     coeff = -inv_h / 2
     return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
@@ -200,7 +203,7 @@ end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (1, -4, 3) / 2
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    Tc = _value_space_eltype(Tg, Tv)
     fp = _convert_stencil(Tc, f)
     coeff = inv_h / 2
     return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
@@ -209,7 +212,7 @@ end
 # PolyFit{3} (CubicFit) - 4 points, O(h³) - Mixed type
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-11, 18, -9, 2) / 6
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    Tc = _value_space_eltype(Tg, Tv)
     fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
     return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
@@ -217,7 +220,7 @@ end
 
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-2, 9, -18, 11) / 6
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    Tc = _value_space_eltype(Tg, Tv)
     fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
     return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff

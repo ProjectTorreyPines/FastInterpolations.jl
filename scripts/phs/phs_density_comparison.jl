@@ -545,48 +545,82 @@ const _gz = zeros(N_path)
 # which can account for millions of "allocations" in @time output. These warm-up
 # calls force compilation and stencil-cache filling so that the @time measurements
 # below reflect steady-state (allocation-minimal) execution.
+# Must warm up the exact same code patterns that will be timed, including
+# the aggregation operations (sqrt, abs), to ensure proper JIT compilation.
 print("  Warming up PHS (JIT + stencil cache) ... ")
 flush(stdout)
+
 itp_phs(ρ_phs, queries)                                    # value → compile + cache fill
-itp_phs(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_phs(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_phs(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_phs(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_phs(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_phs(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+
+# Warm up gradient magnitude with aggregation
+begin
+    itp_phs(_gx, queries; deriv = (D1, D0, D0))
+    itp_phs(_gy, queries; deriv = (D0, D1, D0))
+    itp_phs(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_phs = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
+
+# Warm up Laplacian magnitude with aggregation
+begin
+    itp_phs(_gx, queries; deriv = (D2, D0, D0))
+    itp_phs(_gy, queries; deriv = (D0, D2, D0))
+    itp_phs(_gz, queries; deriv = (D0, D0, D2))
+    @. ∇²ρ_phs = abs(_gx + _gy + _gz)
+end
+
 println("done.")
 
 # Warm up other interpolants for fair comparison
+# Must warm up the exact same code patterns that will be timed, including
+# the aggregation operations (sqrt, abs), to ensure proper JIT compilation.
 print("  Warming up other interpolants (JIT + stencil cache) ... ")
 flush(stdout)
-itp_nearest(ρ_nearest, queries)                                    # value → compile + cache fill
-itp_linear(ρ_linear, queries)                                    # value → compile + cache fill
-itp_cubic(ρ_cubic, queries)                                    # value → compile + cache fill
-itp_cardinal(ρ_cardinal, queries)                                    # value → compile + cache fill
-itp_nearest(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_nearest(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_nearest(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_nearest(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_nearest(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_nearest(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
-itp_linear(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_linear(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_linear(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_linear(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_linear(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_linear(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
-itp_cubic(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_cubic(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_cubic(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_cubic(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_cubic(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_cubic(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
-itp_cardinal(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_cardinal(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_cardinal(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_cardinal(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_cardinal(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_cardinal(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+
+# Warm up value evaluations
+itp_nearest(ρ_nearest, queries)
+itp_linear(ρ_linear, queries)
+itp_cubic(ρ_cubic, queries)
+itp_cardinal(ρ_cardinal, queries)
+
+# Warm up gradient magnitude (including aggregation by sqrt)
+# Mimic the exact code structure used in timing measurements
+begin
+    itp_linear(_gx, queries; deriv = (D1, D0, D0))
+    itp_linear(_gy, queries; deriv = (D0, D1, D0))
+    itp_linear(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_linear = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
+
+begin
+    itp_cubic(_gx, queries; deriv = (D1, D0, D0))
+    itp_cubic(_gy, queries; deriv = (D0, D1, D0))
+    itp_cubic(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_cubic = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
+
+begin
+    itp_cardinal(_gx, queries; deriv = (D1, D0, D0))
+    itp_cardinal(_gy, queries; deriv = (D0, D1, D0))
+    itp_cardinal(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_cardinal = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
+
+# Warm up Laplacian magnitude (including aggregation by abs)
+# Mimic the exact code structure used in timing measurements
+begin
+    itp_cubic(_gx, queries; deriv = (D2, D0, D0))
+    itp_cubic(_gy, queries; deriv = (D0, D2, D0))
+    itp_cubic(_gz, queries; deriv = (D0, D0, D2))
+    @. ∇²ρ_cubic = abs(_gx + _gy + _gz)
+end
+
+begin
+    itp_cardinal(_gx, queries; deriv = (D2, D0, D0))
+    itp_cardinal(_gy, queries; deriv = (D0, D2, D0))
+    itp_cardinal(_gz, queries; deriv = (D0, D0, D2))
+    @. ∇²ρ_cardinal = abs(_gx + _gy + _gz)
+end
+
 println("done.")
 
 # ── density ρ ──────────────────────────────────────────────────────────────────

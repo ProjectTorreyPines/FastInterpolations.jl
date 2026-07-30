@@ -33,7 +33,7 @@ println("Grid: $(size(rho)), ρ ∈ [$(minimum(rho)), $(maximum(rho))]")
 
 # Load CSV query points
 # Load CSV query points
-raw = readdlm(CSV_PATH, ',', skipstart=1)
+raw = readdlm(CSV_PATH, ',', skipstart = 1)
 qx = Float64.(raw[:, 2])  # x_bohr
 qy = Float64.(raw[:, 3])  # y_bohr
 qz = Float64.(raw[:, 4])  # z_bohr
@@ -42,8 +42,8 @@ query_points = [(qx[i], qy[i], qz[i]) for i in 1:length(qx)]
 println("Building PHS interpolant...")
 phs_itp = FastInterpolations.phs_interp(
     grids, rho;
-    stencil_size=8,
-    degree=3
+    stencil_size = 8,
+    degree = 3
 )
 
 println("\n" * "="^60)
@@ -63,7 +63,7 @@ Profile.clear()
 end
 
 println("\nTop functions by sample count:")
-Profile.print(format=:flat, maxdepth=30, mincount=20)
+Profile.print(format = :flat, maxdepth = 30, mincount = 20)
 
 println("\n" * "="^60)
 println("PROFILING: LAPLACIAN (|∇²ρ|) EVALUATION")
@@ -77,20 +77,18 @@ D1 = FastInterpolations.DerivOp{1}()
 D2 = FastInterpolations.DerivOp{2}()
 
 # Warmup
-phs_itp(_gx, (qx, qy, qz); deriv=(D2, D0, D0))
-phs_itp(_gy, (qx, qy, qz); deriv=(D0, D2, D0))
-phs_itp(_gz, (qx, qy, qz); deriv=(D0, D0, D2))
+phs_itp(_gx, (qx, qy, qz); deriv = (D2, D0, D0))
+phs_itp(_gy, (qx, qy, qz); deriv = (D0, D2, D0))
+phs_itp(_gz, (qx, qy, qz); deriv = (D0, D0, D2))
 
 Profile.clear()
 @profile for _ in 1:PROFILE_REPS
-    phs_itp(_gx, (qx, qy, qz); deriv=(D2, D0, D0))
-    phs_itp(_gy, (qx, qy, qz); deriv=(D0, D2, D0))
-    phs_itp(_gz, (qx, qy, qz); deriv=(D0, D0, D2))
+    phs_itp(_gx, (qx, qy, qz); deriv = (D2, D0, D0))
+    phs_itp(_gy, (qx, qy, qz); deriv = (D0, D2, D0))
+    phs_itp(_gz, (qx, qy, qz); deriv = (D0, D0, D2))
 end
 
 println("\nTop functions by sample count:")
-Profile.print(format=:flat, maxdepth=30, mincount=20)
+Profile.print(format = :flat, maxdepth = 30, mincount = 20)
 
 println("\nProfiler run complete.")
-
-

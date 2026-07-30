@@ -15,13 +15,13 @@ using Printf
 
 # Simple test case - 3D for fused API compatibility
 println("Setting up 3D test data...")
-x = collect(range(0, 10, length=10))
-y = collect(range(0, 10, length=10))
-z = collect(range(0, 10, length=10))
+x = collect(range(0, 10, length = 10))
+y = collect(range(0, 10, length = 10))
+z = collect(range(0, 10, length = 10))
 data = randn(10, 10, 10)
 
 # Build PHS interpolant
-itp = FastInterpolations.phs_interp((x, y, z), data; stencil_size=8, degree=3)
+itp = FastInterpolations.phs_interp((x, y, z), data; stencil_size = 8, degree = 3)
 
 # Create query points
 N_queries = 100
@@ -47,19 +47,19 @@ println("BENCHMARK: HESSIAN DIAGONAL EVALUATION SPEEDUP")
 println("="^70)
 
 # Warmup
-itp(Gxx_sep, queries; deriv=(D2, D0, D0))
-itp(Gyy_sep, queries; deriv=(D0, D2, D0))
-itp(Gzz_sep, queries; deriv=(D0, D0, D2))
+itp(Gxx_sep, queries; deriv = (D2, D0, D0))
+itp(Gyy_sep, queries; deriv = (D0, D2, D0))
+itp(Gzz_sep, queries; deriv = (D0, D0, D2))
 phs_itp_hessian_diag!(itp, Gxx_fused, Gyy_fused, Gzz_fused, queries)
 
 println("\n1️⃣  TRADITIONAL: Three Separate Calls")
 println(repeat("-", 70))
 time_sep = @elapsed for _ in 1:10
-    itp(Gxx_sep, queries; deriv=(D2, D0, D0))
-    itp(Gyy_sep, queries; deriv=(D0, D2, D0))
-    itp(Gzz_sep, queries; deriv=(D0, D0, D2))
+    itp(Gxx_sep, queries; deriv = (D2, D0, D0))
+    itp(Gyy_sep, queries; deriv = (D0, D2, D0))
+    itp(Gzz_sep, queries; deriv = (D0, D0, D2))
 end
-time_sep_per_point = (time_sep / 10 / N_queries) * 1e6
+time_sep_per_point = (time_sep / 10 / N_queries) * 1.0e6
 @printf "Time for 10 runs (100 points): %.2f ms\n" (time_sep / 10 * 1000)
 @printf "Per-point time:                %.2f μs\n" time_sep_per_point
 
@@ -68,7 +68,7 @@ println(repeat("-", 70))
 time_fused = @elapsed for _ in 1:10
     phs_itp_hessian_diag!(itp, Gxx_fused, Gyy_fused, Gzz_fused, queries)
 end
-time_fused_per_point = (time_fused / 10 / N_queries) * 1e6
+time_fused_per_point = (time_fused / 10 / N_queries) * 1.0e6
 @printf "Time for 10 runs (100 points): %.2f ms\n" (time_fused / 10 * 1000)
 @printf "Per-point time:                %.2f μs\n" time_fused_per_point
 

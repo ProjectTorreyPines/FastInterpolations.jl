@@ -513,16 +513,16 @@ Returns:
             ci = coeffs[i]
             ci_r = ci * r
             ci_3r = 3 * ci_r
-            
+
             # Value: ϕ(r) = r³
             yv += ci_r * r2
-            
+
             # Second derivatives for K=3: ∂²ϕ/∂x² = 3r + 9x²/r
             factor_xx = xh[1] * xh[1] * r2_inv
             factor_yy = xh[2] * xh[2] * r2_inv
             yd2_xx += ci_3r * (one(Tg) + factor_xx)
             yd2_yy += ci_3r * (one(Tg) + factor_yy)
-            
+
             if N >= 3
                 factor_zz = xh[3] * xh[3] * r2_inv
                 yd2_zz += ci_3r * (one(Tg) + factor_zz)
@@ -546,20 +546,20 @@ Returns:
             ci = coeffs[i]
             r_inv = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
             r2_inv = r_inv * r_inv
-            
+
             fp = _phs_phi_prime(r, Val{K}())
             fpp = _phs_phi_dprime(r, Val{K}())
             ci_fp_r_inv = ci * fp * r_inv
-            
+
             # Value
             yv += ci * _phs_phi(r, Val{K}())
-            
+
             # Second derivatives: ∂²ϕ/∂x² = ϕ''(r) * (x/r)² + ϕ'(r)/r * (1 - (x/r)²)
             factor_xx = xh[1] * xh[1] * r2_inv
             factor_yy = xh[2] * xh[2] * r2_inv
             yd2_xx += ci * fpp * factor_xx + ci_fp_r_inv * (one(Tg) - factor_xx)
             yd2_yy += ci * fpp * factor_yy + ci_fp_r_inv * (one(Tg) - factor_yy)
-            
+
             if N >= 3
                 factor_zz = xh[3] * xh[3] * r2_inv
                 yd2_zz += ci * fpp * factor_zz + ci_fp_r_inv * (one(Tg) - factor_zz)
@@ -574,7 +574,7 @@ Returns:
             yd2_zz += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(3), Val(3))
         end
     end
-    
+
     return yv, yd2_xx, yd2_yy, yd2_zz
 end
 
@@ -955,7 +955,7 @@ Algorithm:
         for nb_ci in CartesianIndices(ranges)
             nb_idx = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
-            
+
             # L∞ early termination: Skip if neighbor is clearly outside blend radius
             # This avoids expensive sqrt for ~30-50% of neighbors
             l_inf_dist = zero(Tg)
@@ -966,7 +966,7 @@ Algorithm:
                 l_inf_dist > blend_a && break
             end
             l_inf_dist > blend_a && continue
-            
+
             # Compute full Euclidean distance (only for neighbors passing L∞ filter)
             d2 = zero(Tg)
             @inbounds for dim in 1:N
@@ -1188,7 +1188,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
         @fastmath for nb_ci in CartesianIndices(ranges)
             nb_idx = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
-            
+
             # L∞ early termination: Skip if neighbor is clearly outside blend radius
             l_inf_dist = zero(Tg)
             @inbounds for dim in 1:N
@@ -1197,7 +1197,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 l_inf_dist > blend_a && break
             end
             l_inf_dist > blend_a && continue
-            
+
             # Compute full Euclidean distance (only for neighbors passing L∞ filter)
             d2 = zero(Tg)
             @inbounds for dim in 1:N
@@ -1482,17 +1482,17 @@ end
     # Blend termination optimization: collect nodes, sort by weight, process top nodes
     # Typical result: only 5-7 nodes needed (vs 27 total) to capture 90%+ accuracy
     # Pre-allocate buffer from pool to avoid per-query heap allocations
-    
+
     # Pre-allocate buffer for node data (reusable across threads via pool)
     blend_node_buffer = acquire!(pool, Tuple{CartesianIndex{N}, Tg, Tg, Tg}, 27)
-    
+
     # First pass: collect all nodes with their weights and derivatives
     n_nodes = 0
     total_weight = zero(Tg)
-    
+
     @fastmath for nb_ci in CartesianIndices(ranges)
         nb_coords = _phs_base_coords(itp, Tuple(nb_ci))
-        
+
         # L∞ early termination: Skip if neighbor is clearly outside blend radius
         l_inf_dist = zero(Tg)
         @inbounds for dim in 1:N
@@ -1501,7 +1501,7 @@ end
             l_inf_dist > blend_a && break
         end
         l_inf_dist > blend_a && continue
-        
+
         # Compute full Euclidean distance (only for neighbors passing L∞ filter)
         d2 = zero(Tg)
         @inbounds @simd for dim in 1:N
@@ -1510,39 +1510,41 @@ end
         end
         d_dist = sqrt(d2)
         w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
-        
+
         if w > eps(Tg)
             n_nodes += 1
             blend_node_buffer[n_nodes] = (nb_ci, w, wp, wpp)
             total_weight += w
         end
     end
-    
+
     # Partial sort: find top ~7 nodes by weight (or fewer if n_nodes < 7)
     # partialsort! rearranges so that the first k elements are the largest
     n_to_process = min(7, n_nodes)
     if n_nodes > 0
-        partialsort!(@view(blend_node_buffer[1:n_nodes]), 1:n_to_process, 
-                     by=x -> x[2], rev=true)
+        partialsort!(
+            @view(blend_node_buffer[1:n_nodes]), 1:n_to_process,
+            by = x -> x[2], rev = true
+        )
     end
-    
+
     # Second pass: process top nodes in weight order with early termination
     weight_threshold = Tg(0.9)
     weight_target = weight_threshold * total_weight
     accumulated_weight = zero(Tg)
-    
+
     @fastmath for i in 1:n_to_process
         nb_ci, w, wp, wpp = blend_node_buffer[i]
         nb_idx = Tuple(nb_ci)
         nb_coords = _phs_base_coords(itp, nb_idx)
-        
+
         accumulated_weight += w
-        
+
         # Early termination: if we've accumulated 90% of the weight, we can stop
         if accumulated_weight > weight_target && i > 3
             break
         end
-        
+
         # Recompute distance (needed for weight derivatives used in stencil evaluation)
         d2 = zero(Tg)
         @inbounds @simd for dim in 1:N

@@ -17,9 +17,11 @@ grids = (x_grid, y_grid, z_grid)
 # Build PHS with log-density transform
 using FastInterpolations: PromolecularRef
 pmr = PromolecularRef()
-itp_phs = phs_interp(grids, rho_3d;
-    stencil_size=8, degree=3, blend_factor=1.0,
-    reference_interp=pmr)
+itp_phs = phs_interp(
+    grids, rho_3d;
+    stencil_size = 8, degree = 3, blend_factor = 1.0,
+    reference_interp = pmr
+)
 
 # Generate test queries (subset for faster analysis)
 qx = range(x_grid[1], x_grid[end], 100)
@@ -42,7 +44,9 @@ println("\n=== PERFORMANCE ANALYSIS ===\n")
 
 # Baseline single component
 println("Single component (∂²ρ/∂x²), 10 runs:")
-t1 = @time for _ in 1:10; itp_phs(gxx, queries; deriv = (D2, D0, D0)); end
+t1 = @time for _ in 1:10
+    itp_phs(gxx, queries; deriv = (D2, D0, D0))
+end
 time_per_component = t1 / 10
 
 # Three components (Laplacian)
@@ -55,13 +59,13 @@ end
 time_total_lap = t3 / 10
 
 println("\n=== SUMMARY ===")
-@printf "Per-component time: %.6f ms (%d queries)\n" 1000*time_per_component N
-@printf "Total Laplacian time: %.6f ms\n" 1000*time_total_lap
-@printf "Effective 3× speedup target: %.6f ms\n" 1000*time_per_component
+@printf "Per-component time: %.6f ms (%d queries)\n" 1000 * time_per_component N
+@printf "Total Laplacian time: %.6f ms\n" 1000 * time_total_lap
+@printf "Effective 3× speedup target: %.6f ms\n" 1000 * time_per_component
 
 overhead = (time_total_lap - time_per_component) / time_per_component
-@printf "Overhead between calls: %.1f%% (%.6f ms)\n" 100*overhead 1000*(time_total_lap-time_per_component)
+@printf "Overhead between calls: %.1f%% (%.6f ms)\n" 100 * overhead 1000 * (time_total_lap - time_per_component)
 
 # Analyze speedup potential
 speedup_if_combined = time_total_lap / time_per_component
-@printf "\nIf combined into single call: %.2f× speedup needed to save %.6f ms\n" 3.0 1000*(time_total_lap - time_per_component/3)
+@printf "\nIf combined into single call: %.2f× speedup needed to save %.6f ms\n" 3.0 1000 * (time_total_lap - time_per_component / 3)

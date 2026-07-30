@@ -39,7 +39,7 @@ rho = Float64.(pkl["variables"]["density_scf"])
 println("Grid: $(size(rho)), ρ ∈ [$(minimum(rho)), $(maximum(rho))]")
 
 # Load CSV query points
-raw = readdlm(CSV_PATH, ',', skipstart=1)
+raw = readdlm(CSV_PATH, ',', skipstart = 1)
 qx = Float64.(raw[:, 2])  # x_bohr
 qy = Float64.(raw[:, 3])  # y_bohr
 qz = Float64.(raw[:, 4])  # z_bohr
@@ -47,8 +47,8 @@ qz = Float64.(raw[:, 4])  # z_bohr
 println("Building PHS interpolant...")
 phs_itp = FastInterpolations.phs_interp(
     grids, rho;
-    stencil_size=8,
-    degree=3
+    stencil_size = 8,
+    degree = 3
 )
 
 D0 = FastInterpolations.DerivOp{0}()
@@ -67,7 +67,7 @@ Profile.clear()
 end
 
 println("\nHotspots (top 15):")
-Profile.print(format=:flat, maxdepth=20, mincount=10)
+Profile.print(format = :flat, maxdepth = 20, mincount = 10)
 
 println("\n" * "="^70)
 println("PROFILING 2: LAPLACIAN - OLD APPROACH (3 separate calls)")
@@ -78,19 +78,19 @@ _gy_old = zeros(length(qx))
 _gz_old = zeros(length(qx))
 
 # Warmup
-phs_itp(_gx_old, (qx, qy, qz); deriv=(D2, D0, D0))
-phs_itp(_gy_old, (qx, qy, qz); deriv=(D0, D2, D0))
-phs_itp(_gz_old, (qx, qy, qz); deriv=(D0, D0, D2))
+phs_itp(_gx_old, (qx, qy, qz); deriv = (D2, D0, D0))
+phs_itp(_gy_old, (qx, qy, qz); deriv = (D0, D2, D0))
+phs_itp(_gz_old, (qx, qy, qz); deriv = (D0, D0, D2))
 
 Profile.clear()
 @profile for _ in 1:PROFILE_REPS
-    phs_itp(_gx_old, (qx, qy, qz); deriv=(D2, D0, D0))
-    phs_itp(_gy_old, (qx, qy, qz); deriv=(D0, D2, D0))
-    phs_itp(_gz_old, (qx, qy, qz); deriv=(D0, D0, D2))
+    phs_itp(_gx_old, (qx, qy, qz); deriv = (D2, D0, D0))
+    phs_itp(_gy_old, (qx, qy, qz); deriv = (D0, D2, D0))
+    phs_itp(_gz_old, (qx, qy, qz); deriv = (D0, D0, D2))
 end
 
 println("\nHotspots (top 15):")
-Profile.print(format=:flat, maxdepth=20, mincount=30)
+Profile.print(format = :flat, maxdepth = 20, mincount = 30)
 
 println("\n" * "="^70)
 println("PROFILING 3: LAPLACIAN - NEW APPROACH (fused single call)")
@@ -109,7 +109,7 @@ Profile.clear()
 end
 
 println("\nHotspots (top 15):")
-Profile.print(format=:flat, maxdepth=20, mincount=30)
+Profile.print(format = :flat, maxdepth = 20, mincount = 30)
 
 # Verify correctness
 println("\n" * "="^70)

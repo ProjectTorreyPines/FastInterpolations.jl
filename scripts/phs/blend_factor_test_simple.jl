@@ -10,7 +10,7 @@ y = range(0, 10, 40)
 z = range(0, 10, 40)
 
 # Smooth synthetic function: exp(-r²/20)
-data = [exp(-((xi-5)^2 + (yi-5)^2 + (zi-5)^2) / 20.0) for xi in x, yi in y, zi in z]
+data = [exp(-((xi - 5)^2 + (yi - 5)^2 + (zi - 5)^2) / 20.0) for xi in x, yi in y, zi in z]
 
 # Generate test queries - line cut
 test_queries = [
@@ -19,7 +19,7 @@ test_queries = [
 
 # Compute reference values
 function reference(x, y, z)
-    return exp(-((x-5)^2 + (y-5)^2 + (z-5)^2) / 20.0)
+    return exp(-((x - 5)^2 + (y - 5)^2 + (z - 5)^2) / 20.0)
 end
 
 ref_values = [reference(q...) for q in test_queries]
@@ -38,20 +38,20 @@ results = Dict{Float64, Any}()
 for bf in blend_factors
     @printf "Testing blend_factor = %.1f ... " bf
     flush(stdout)
-    
+
     # Build interpolant
-    time_build = @elapsed itp = phs_interp((x, y, z), data; stencil_size=8, degree=3, blend_factor=bf)
-    
+    time_build = @elapsed itp = phs_interp((x, y, z), data; stencil_size = 8, degree = 3, blend_factor = bf)
+
     # Evaluate on test points
     out = Vector{Float64}(undef, length(test_queries))
     time_eval = @elapsed itp(out, test_queries)
-    
+
     # Compute errors
     errors = abs.(out .- ref_values)
-    rel_errors = errors ./ (abs.(ref_values) .+ 1e-16)
-    
+    rel_errors = errors ./ (abs.(ref_values) .+ 1.0e-16)
+
     blend_nodes = prod(2 .* itp.blend_r_idx .+ 1)
-    
+
     results[bf] = (
         time_build = time_build,
         time_eval = time_eval,
@@ -59,10 +59,10 @@ for bf in blend_factors
         mean_error = mean(errors),
         max_rel_error = maximum(rel_errors),
         mean_rel_error = mean(rel_errors),
-        blend_nodes = blend_nodes
+        blend_nodes = blend_nodes,
     )
-    
-    @printf "%.3fms eval, %d nodes, max_rel_err=%.2e\n" time_eval*1000 blend_nodes results[bf].max_rel_error
+
+    @printf "%.3fms eval, %d nodes, max_rel_err=%.2e\n" time_eval * 1000 blend_nodes results[bf].max_rel_error
 end
 
 # Print summary
@@ -72,7 +72,7 @@ println("="^80)
 
 # ASCII table (for terminal viewing)
 println("\nFactor | Nodes | Build(ms) | Eval(ms) | Max Rel Err | Speedup | Rel.Err")
-println("-" ^ 80)
+println("-"^80)
 
 baseline_time = results[2.0].time_eval
 baseline_err = results[2.0].max_rel_error
@@ -83,12 +83,12 @@ for bf in blend_factors
     if speedup >= 1.1
         speedup_str = @sprintf("%.2f×", speedup)
     elseif speedup < 1.0
-        speedup_str = @sprintf("%.2f×↓", 1/speedup)
+        speedup_str = @sprintf("%.2f×↓", 1 / speedup)
     else
         speedup_str = "baseline"
     end
     err_ratio = r.max_rel_error / baseline_err
-    @printf "%6.1f | %5d | %9.2f | %8.3f | %11.2e | %7s | %8.2f×\n" bf r.blend_nodes r.time_build*1000 r.time_eval*1000 r.max_rel_error speedup_str err_ratio
+    @printf "%6.1f | %5d | %9.2f | %8.3f | %11.2e | %7s | %8.2f×\n" bf r.blend_nodes r.time_build * 1000 r.time_eval * 1000 r.max_rel_error speedup_str err_ratio
 end
 
 # Markdown table
@@ -104,12 +104,12 @@ for bf in blend_factors
     if speedup >= 1.1
         speedup_str = @sprintf("%.2f×", speedup)
     elseif speedup < 1.0
-        speedup_str = @sprintf("%.2f×↓", 1/speedup)
+        speedup_str = @sprintf("%.2f×↓", 1 / speedup)
     else
         speedup_str = "baseline"
     end
     err_ratio = r.max_rel_error / baseline_err
-    @printf "| %.1f | %d | %.2f | %.3f | %.2e | %s | %.2f× |\n" bf r.blend_nodes r.time_build*1000 r.time_eval*1000 r.max_rel_error speedup_str err_ratio
+    @printf "| %.1f | %d | %.2f | %.3f | %.2e | %s | %.2f× |\n" bf r.blend_nodes r.time_build * 1000 r.time_eval * 1000 r.max_rel_error speedup_str err_ratio
 end
 println()
 println("\nRecommendation:")

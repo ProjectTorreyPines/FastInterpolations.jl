@@ -37,7 +37,7 @@ grids = (x_grid, y_grid, z_grid)
 @printf "Grid: %d×%d×%d, ρ ∈ [%.2e, %.2e] a.u.\n" length(x_grid) length(y_grid) length(z_grid) minimum(rho) maximum(rho)
 
 # Load CSV query points
-raw = readdlm(CSV_PATH, ',', skipstart=1)
+raw = readdlm(CSV_PATH, ',', skipstart = 1)
 qx = Float64.(raw[:, 2])  # x_bohr
 qy = Float64.(raw[:, 3])  # y_bohr
 qz = Float64.(raw[:, 4])  # z_bohr
@@ -46,8 +46,8 @@ qz = Float64.(raw[:, 4])  # z_bohr
 println("Building PHS interpolant...")
 phs_itp = FastInterpolations.phs_interp(
     grids, rho;
-    stencil_size=8,
-    degree=3
+    stencil_size = 8,
+    degree = 3
 )
 
 # Pre-allocate result arrays
@@ -61,9 +61,9 @@ D0 = FastInterpolations.DerivOp{0}()
 D2 = FastInterpolations.DerivOp{2}()
 
 # Warmup
-phs_itp(_gx, queries; deriv=(D2, D0, D0))
-phs_itp(_gy, queries; deriv=(D0, D2, D0))
-phs_itp(_gz, queries; deriv=(D0, D0, D2))
+phs_itp(_gx, queries; deriv = (D2, D0, D0))
+phs_itp(_gy, queries; deriv = (D0, D2, D0))
+phs_itp(_gz, queries; deriv = (D0, D0, D2))
 
 println("\n" * "="^70)
 println("BENCHMARK: HESSIAN DIAGONAL EVALUATION")
@@ -72,11 +72,11 @@ println("="^70)
 println("\n1️⃣  CURRENT APPROACH: Three Separate Calls")
 println("-" * 70)
 time_three = @elapsed for _ in 1:5
-    phs_itp(_gx, queries; deriv=(D2, D0, D0))
-    phs_itp(_gy, queries; deriv=(D0, D2, D0))
-    phs_itp(_gz, queries; deriv=(D0, D0, D2))
+    phs_itp(_gx, queries; deriv = (D2, D0, D0))
+    phs_itp(_gy, queries; deriv = (D0, D2, D0))
+    phs_itp(_gz, queries; deriv = (D0, D0, D2))
 end
-time_three_per_point = (time_three / 5 / N) * 1e6
+time_three_per_point = (time_three / 5 / N) * 1.0e6
 @printf "@time result (5 runs, 1000 points each):\n"
 @printf "  Total time:    %.1f ms\n" (time_three / 5 * 1000)
 @printf "  Per-point:     %.2f μs\n" time_three_per_point
@@ -95,12 +95,12 @@ time_fused = @elapsed for _ in 1:5
         # In a fused implementation, we'd call:
         # G, Gx, Gy, Gxx, Gyy, Gzz = phs_itp_hessian_fused(phs_itp, (x, y, z))
         # For now, simulate by calling internal function three times per point
-        _gx[i] = phs_itp(x, y, z; deriv=(D2, D0, D0))
-        _gy[i] = phs_itp(x, y, z; deriv=(D0, D2, D0))
-        _gz[i] = phs_itp(x, y, z; deriv=(D0, D0, D2))
+        _gx[i] = phs_itp(x, y, z; deriv = (D2, D0, D0))
+        _gy[i] = phs_itp(x, y, z; deriv = (D0, D2, D0))
+        _gz[i] = phs_itp(x, y, z; deriv = (D0, D0, D2))
     end
 end
-time_fused_per_point = (time_fused / 5 / N) * 1e6
+time_fused_per_point = (time_fused / 5 / N) * 1.0e6
 @printf "@time result (5 runs, 1000 points each, point-by-point):\n"
 @printf "  Total time:    %.1f ms\n" (time_fused / 5 * 1000)
 @printf "  Per-point:     %.2f μs\n" time_fused_per_point
@@ -133,11 +133,11 @@ println("✅ Expected speedup: $(speedup_factor_estimate)×")
 println()
 @printf "📈 Current time per point: %.2f μs\n" time_three_per_point
 @printf "   Expected fused time:   %.2f μs\n" (time_three_per_point / speedup_factor_estimate)
-@printf "   Per-query savings:     %.2f μs\n" (time_three_per_point * (1 - 1/speedup_factor_estimate))
+@printf "   Per-query savings:     %.2f μs\n" (time_three_per_point * (1 - 1 / speedup_factor_estimate))
 println()
 println("For typical 1000-point queries:")
 @printf "   Current:    %.1f ms\n" (time_three / 5 * 1000)
 @printf "   Expected:   %.1f ms\n" (time_three / 5 / speedup_factor_estimate * 1000)
-@printf "   Savings:    %.1f ms per evaluation\n" (time_three / 5 * (1 - 1/speedup_factor_estimate) * 1000)
+@printf "   Savings:    %.1f ms per evaluation\n" (time_three / 5 * (1 - 1 / speedup_factor_estimate) * 1000)
 
 println("\n" * "="^70)

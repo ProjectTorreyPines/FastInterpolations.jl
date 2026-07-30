@@ -9,7 +9,7 @@ function benchmark_blend_weight_exp_based()
     a = 1.0
     a3 = a^3
     times = Float64[]
-    
+
     for trial in 1:5
         t = @elapsed begin
             for _ in 1:1_000_000
@@ -28,7 +28,7 @@ function benchmark_blend_weight_derivs()
     a = 1.0
     a3 = a^3
     times = Float64[]
-    
+
     for trial in 1:5
         t = @elapsed begin
             for _ in 1:1_000_000
@@ -54,7 +54,7 @@ function benchmark_polynomial_approx()
     # Just multiply-add operations
     a = 1.0
     times = Float64[]
-    
+
     for trial in 1:5
         t = @elapsed begin
             for _ in 1:1_000_000
@@ -64,7 +64,7 @@ function benchmark_polynomial_approx()
                 ξ3 = ξ2 * ξ
 
                 # Pure polynomial: c0 + c1*ξ + c2*ξ² + c3*ξ³ + c4*ξ⁴ + c5*ξ⁵
-                w = 0.979 + 0.852*ξ - 7.55*ξ2 + 23.66*ξ3 - 33.17*ξ2*ξ2 + 15.20*ξ2*ξ3
+                w = 0.979 + 0.852 * ξ - 7.55 * ξ2 + 23.66 * ξ3 - 33.17 * ξ2 * ξ2 + 15.2 * ξ2 * ξ3
             end
         end
         push!(times, t)
@@ -75,12 +75,12 @@ end
 function benchmark_distance_calc()
     # What we're comparing against - distance calculation in blend loop
     times = Float64[]
-    
+
     for trial in 1:5
         t = @elapsed begin
             for _ in 1:1_000_000
                 Δx, Δy, Δz = rand(), rand(), rand()
-                d2 = Δx*Δx + Δy*Δy + Δz*Δz
+                d2 = Δx * Δx + Δy * Δy + Δz * Δz
                 d = sqrt(d2)
             end
         end
@@ -89,9 +89,9 @@ function benchmark_distance_calc()
     return median(times)
 end
 
-println("=" ^ 80)
+println("="^80)
 println("BLEND WEIGHT COMPUTATION COST ANALYSIS")
-println("=" ^ 80)
+println("="^80)
 println()
 
 t_exp = benchmark_blend_weight_exp_based()
@@ -100,10 +100,10 @@ t_poly = benchmark_polynomial_approx()
 t_dist = benchmark_distance_calc()
 
 @printf "Time per operation (1M iterations):\n"
-@printf "  Distance calculation (3D):           %.6f ms\n" 1000*t_dist
-@printf "  Blend weight (exp only):             %.6f ms\n" 1000*t_exp
-@printf "  Blend weight + derivatives (exp):    %.6f ms\n" 1000*t_derivs
-@printf "  Polynomial approximation (no exp):   %.6f ms\n" 1000*t_poly
+@printf "  Distance calculation (3D):           %.6f ms\n" 1000 * t_dist
+@printf "  Blend weight (exp only):             %.6f ms\n" 1000 * t_exp
+@printf "  Blend weight + derivatives (exp):    %.6f ms\n" 1000 * t_derivs
+@printf "  Polynomial approximation (no exp):   %.6f ms\n" 1000 * t_poly
 @printf "\n"
 
 speedup = t_derivs / t_poly
@@ -111,7 +111,7 @@ savings = t_derivs - t_poly
 
 @printf "Potential speedup from polynomial:\n"
 @printf "  Factor: %.2f× \n" speedup
-@printf "  Time saved per M iterations: %.6f ms\n" 1000*savings
+@printf "  Time saved per M iterations: %.6f ms\n" 1000 * savings
 @printf "\n"
 
 # Estimate impact on overall Laplacian evaluation
@@ -124,6 +124,6 @@ time_saved_total = (t_derivs - t_poly) * total_blend_calls
 @printf "Impact on Laplacian evaluation:\n"
 @printf "  Queries: %d, Neighbors/query: %d\n" queries neighbors_per_query
 @printf "  Total blend calls: %d\n" total_blend_calls
-@printf "  Total time saved: %.6f ms\n" 1000*time_saved_total
+@printf "  Total time saved: %.6f ms\n" 1000 * time_saved_total
 @printf "  Current Laplacian time: ~8.0 ms\n"
-@printf "  Speedup: %.1f%%\n" 100*time_saved_total/0.008
+@printf "  Speedup: %.1f%%\n" 100 * time_saved_total / 0.008

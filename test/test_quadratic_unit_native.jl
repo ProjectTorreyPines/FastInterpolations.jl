@@ -49,6 +49,7 @@ end
 
     for (nm, bc) in (
             ("default", Left(QuadraticFit())),
+            ("Left(Deriv1)", Left(Deriv1(0.4u"W/s"))),
             ("Right(Deriv2)", Right(Deriv2(-0.3u"W/s^2"))),
             ("MinCurvFit", MinCurvFit()),
         )

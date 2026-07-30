@@ -57,6 +57,60 @@ end
     @test eltype(icm.cache.x) === typeof(1.0u"cm")
 end
 
+@testitem "cache bank: periodic pool mirrors the derivative pins (Range + cross-unit)" begin
+    using Unitful
+    const FI = FastInterpolations
+
+    # The periodic pool is a separate bank family (own key path, own entry
+    # type carrying the S-M `q` slot) — mirror the derivative-bank pins so a
+    # widening regression can't hide there.
+
+    @testset "Range grid (_CachedRange periodic bank)" begin
+        FI.clear_cubic_cache!()
+        yr = [1.0, 2.0, 0.5, 3.0, 2.5, 1.0, 4.0, 2.0, 3.5, 0.5] .* u"W"
+        bc = PeriodicBC(endpoint = :exclusive)   # period inferred from the range
+        p1 = cubic_interp(1.0u"s":1.0u"s":10.0u"s", yr; bc = bc)
+        p2 = cubic_interp(1.0u"s":1.0u"s":10.0u"s", yr; bc = bc)
+        # :exclusive extension is step-preserving, so the banked axis is the
+        # wrapped range — this pins the _CachedRange periodic duck arm.
+        @test p1.cache.x isa FI._CachedRange
+        @test p2.cache === p1.cache
+    end
+
+    @testset "cross-unit isolation (m vs cm)" begin
+        FI.clear_cubic_cache!()
+        y = [1.0, 2.0, 0.5, 1.0] .* u"W"            # closed cycle (inclusive)
+        xm = [0.0, 1.0, 2.0, 3.0] .* u"m"
+        xcm = [0.0, 100.0, 200.0, 300.0] .* u"cm"   # same physical values
+        @test isequal(xm, xcm)                       # the trap is real…
+        pm = cubic_interp(xm, y; bc = PeriodicBC())
+        pcm = cubic_interp(xcm, y; bc = PeriodicBC())
+        @test pm.cache !== pcm.cache                 # …and never taken
+        @test eltype(pm.cache.x) === typeof(1.0u"m")
+        @test eltype(pcm.cache.x) === typeof(1.0u"cm")
+    end
+end
+
+@testitem "cache bank: _grid_bankable open default + opt-out demotion wiring" begin
+    const FI = FastInterpolations
+
+    # Open trait: an unknown grid eltype banks unless it opts out. This pin
+    # fails if the pool ever reverts to a whitelist (`_PromotableValue`-era).
+    struct _SomeDuckGrid end
+    @test FI._grid_bankable(_SomeDuckGrid)
+    @test FI._effective_autocache(true, _SomeDuckGrid)
+
+    # Escape-hatch wiring: a false trait demotes `autocache` at the surface.
+    # Composed with the existing `autocache=false` fresh-build coverage this
+    # is the whole opt-out contract — no opt-outs ship, so a test-local type
+    # pins the wiring without ever building a cache.
+    struct _UnbankableGrid end
+    FI._grid_bankable(::Type{_UnbankableGrid}) = false
+    @test !FI._effective_autocache(true, _UnbankableGrid)
+    @test !FI._effective_autocache(false, _UnbankableGrid)
+    @test FI._effective_autocache(true, Float64)     # Real default untouched
+end
+
 @testitem "cache bank: Dual grids bank by full isequal (primal + partials)" begin
     using ForwardDiff
     using ForwardDiff: Dual

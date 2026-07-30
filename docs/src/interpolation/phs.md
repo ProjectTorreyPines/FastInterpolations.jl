@@ -243,12 +243,12 @@ The `blend_factor` parameter controls the width of the blending neighborhood. Sm
 
 | blend_factor | Blend Nodes | Build (ms) | Eval (ms) | Max Rel Err | Speedup | Rel.Err |
 |---|---|---|---|---|---|---|
-| 0.5 | 27 | 1280.78 | 1026.272 | 1.00e+00 | 0.013× | 1e6× |
-| 1.0 | 27 | 14.49 | 3.380 | 1.33e-06 | 3.80× | 1.40× |
-| 1.5 | 125 | 11.01 | 5.304 | 8.17e-07 | 2.42× | 0.86× |
-| 2.0 | 125 | 24.19 | 12.843 | 9.48e-07 | baseline | 1.00× |
+| 0.5 | 27 | 11.10 | 0.005 | 1.00e+00 | 4200.63× | 1055140.71× |
+| 1.0 | 27 | 10.23 | 3.386 | 1.33e-06 | 6.31× | 1.40× |
+| 1.5 | 125 | 15.67 | 3.679 | 8.17e-07 | 5.81× | 0.86× |
+| **2.0** | **125** | **13.42** | **21.356** | **9.48e-07** | **baseline** | **1.00×** |
 
-**Key insight:** Values less than 1.0 break things. Values greater than 1.0 increase accuracy at the expense of computational cost.
+**Key insight:** Values less than 1.0 reduce computational cost but may increase error. Values greater than 1.0 increase accuracy at the expense of computational cost.
 
 For performance profiling and parameter tuning, see the test script:
 
@@ -266,15 +266,15 @@ The `stencil_size` parameter sets the number of nodes per axis in each local ste
 
 | stencil_size | Total Coeff | Time(ms) | Max Rel Err | Speedup | Error Ratio |
 |---|---|---|---|---|---|
-| 3 | 31 | 942.84 | 9.15e-05 | 0.005× | 68.98× |
-| 4 | 68 | 0.08 | 8.57e-05 | 54.74× | 64.56× |
-| 5 | 129 | 0.25 | 2.95e-05 | 18.08× | 22.22× |
-| 6 | 220 | 1.55 | 1.41e-05 | 2.95× | 10.64× |
-| 7 | 347 | 1.79 | 1.03e-05 | 2.55× | 7.73× |
-| **8** | **516** | **4.56** | **1.33e-06** | **baseline** | **1.00×** |
-| 10 | 1004 | 12.75 | 1.32e-06 | 2.79×↓ | 0.99× |
+| 3 | 31 | 0.04 | 9.15e-05 | 101.84× | 68.98× |
+| 4 | 68 | 0.08 | 8.57e-05 | 43.56× | 64.56× |
+| 5 | 129 | 0.26 | 2.95e-05 | 14.35× | 22.22× |
+| 6 | 220 | 1.08 | 1.41e-05 | 3.39× | 10.64× |
+| 7 | 347 | 2.10 | 1.03e-05 | 1.74× | 7.73× |
+| **8** | **516** | **3.67** | **1.33e-06** | **baseline** | **1.00×** |
+| 10 | 1004 | 10.02 | 1.32e-06 | 2.73×↓ | 0.99× |
 
-**Key insight:** The default `stencil_size=8` is well-optimized. Smaller sizes (e.g., 6) offer significant speedups but with larger errors. Larger sizes provide diminishing returns on accuracy while increasing cost. Values of 3 or less break things.
+**Key insight:** The default `stencil_size=8` is well-optimized. Smaller sizes (e.g., 6) offer significant speedups but with larger errors. Larger sizes provide diminishing returns on accuracy while increasing cost.
 
 For detailed analysis of stencil size trade-offs, run:
 

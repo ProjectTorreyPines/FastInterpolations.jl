@@ -35,6 +35,11 @@ println()
 stencil_sizes = [3, 4, 5, 6, 7, 8, 10]
 results = Dict{Int, Any}()
 
+# Warm up
+itp = phs_interp((x, y, z), data; stencil_size = 8, degree = 3, blend_factor = 1.0)
+out = Vector{Float64}(undef, length(test_queries))
+itp(out, test_queries)
+
 for ss in stencil_sizes
     @printf "Testing stencil_size = %d ... " ss
     flush(stdout)

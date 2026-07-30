@@ -35,6 +35,11 @@ println()
 blend_factors = [0.5, 1.0, 1.5, 2.0]
 results = Dict{Float64, Any}()
 
+# Warm up
+itp = phs_interp((x, y, z), data; stencil_size = 8, degree = 3, blend_factor = 1.0)
+out = Vector{Float64}(undef, length(test_queries))
+itp(out, test_queries)
+
 for bf in blend_factors
     @printf "Testing blend_factor = %.1f ... " bf
     flush(stdout)

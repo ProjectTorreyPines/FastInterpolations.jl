@@ -1006,3 +1006,35 @@ end
         @test iu(1.5u"s") ≈ ir(1.5) * u"W"
     end
 end
+
+@testitem "PolyFit{D>=4} endpoint fits survive unit grids (twin-era regression)" begin
+    using Unitful
+
+    # The twin era stripped units before the generic barycentric kernels, so
+    # PolyFit{4}+ worked; the native-unit route hit grid-typed intermediate
+    # buffers (β lives in X^(1-N)) and a same-type-only uniform kernel.
+    xu = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    xru = range(0.0u"s", 4.5u"s", length = 5)
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yu = [1.0, 2.0, 0.5, 3.0, 2.5] .* u"W"
+    yf = [1.0, 2.0, 0.5, 3.0, 2.5]
+
+    @testset "cubic PolyFit{4}: vector + range grids" begin
+        @test cubic_interp(xu, yu; bc = PolyFit{4}())(2.2u"s") ≈
+            cubic_interp(xf, yf; bc = PolyFit{4}())(2.2) * u"W" rtol = 1.0e-12
+        @test cubic_interp(xru, yu; bc = PolyFit{4}())(2.2u"s") ≈
+            cubic_interp(range(0.0, 4.5, length = 5), yf; bc = PolyFit{4}())(2.2) * u"W" rtol = 1.0e-12
+    end
+    @testset "quadratic Left(PolyFit{4})" begin
+        @test quadratic_interp(xu, yu; bc = Left(PolyFit{4}()))(2.2u"s") ≈
+            quadratic_interp(xf, yf; bc = Left(PolyFit{4}()))(2.2) * u"W" rtol = 1.0e-12
+    end
+    @testset "cubic PolyFit{5} (6 points)" begin
+        x6u = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] .* u"s"
+        x6f = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+        y6u = [1.0, 2.0, 0.5, 3.0, 2.5, 1.0] .* u"W"
+        y6f = [1.0, 2.0, 0.5, 3.0, 2.5, 1.0]
+        @test cubic_interp(x6u, y6u; bc = PolyFit{5}())(2.2u"s") ≈
+            cubic_interp(x6f, y6f; bc = PolyFit{5}())(2.2) * u"W" rtol = 1.0e-12
+    end
+end

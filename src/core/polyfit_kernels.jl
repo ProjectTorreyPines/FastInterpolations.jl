@@ -231,6 +231,8 @@ end
 @inline @with_pool pool function _compute_deriv1(
         pf::PolyFit{D}, side::AbstractSide, f::NTuple{N, T}, inv_h::T
     ) where {D, N, T}
+    # Unit-carrying T (type-folded branch): delegate to the reference-node body.
+    T === typeof(one(inv_h)) || return _compute_deriv1_refnodes(pf, side, f, inv_h)
     # Compute coefficients on reference grid t = 0, 1, ..., D
     coeffs = acquire!(pool, T, N)
     β = acquire!(pool, T, N)
@@ -244,6 +246,26 @@ end
     end
     return s
 end
+
+# Generic D > 3, mixed carriers (unit grids / Complex / narrow values). The
+# barycentric intermediates are unit-heterogeneous (β ∈ X^(1-N)), so compute the
+# coefficients on the EXACT dimensionless reference nodes t = 0..D (the uniform
+# stencil in units of h) with the carrier of `one(inv_h)`; each `cᵢ·inv_h` then
+# lands the weighted sum in coefficient space [Y/X].
+@inline function _compute_deriv1_refnodes(
+        pf::PolyFit{D}, side::AbstractSide, f::NTuple{N}, inv_h
+    ) where {D, N}
+    T1 = typeof(one(inv_h))
+    ct = _compute_deriv1_coeffs(pf, side, ntuple(i -> T1(i - 1), Val(N)))
+    s = 0 * (f[1] * inv_h)
+    @inbounds for i in 1:N
+        s = muladd(ct[i] * inv_h, f[i], s)
+    end
+    return s
+end
+
+@inline _compute_deriv1(pf::PolyFit{D}, side::AbstractSide, f::NTuple{N, Tv}, inv_h::Tg) where {D, N, Tv, Tg} =
+    _compute_deriv1_refnodes(pf, side, f, inv_h)
 
 
 # ----------------------------------------
@@ -327,10 +349,21 @@ end
 @inline @with_pool pool function _compute_deriv1_coeffs(
         pf::PolyFit{D}, side::Union{LeftSide, RightSide}, x::NTuple{N, T}
     ) where {D, N, T}
-    c = acquire!(pool, T, N)
-    β = acquire!(pool, T, N)
-    _compute_deriv1_coeffs!(c, β, pf, side, x)
-    return ntuple(i -> @inbounds(c[i]), Val(N))
+    if T === typeof(one(x[1]))
+        c = acquire!(pool, T, N)
+        β = acquire!(pool, T, N)
+        _compute_deriv1_coeffs!(c, β, pf, side, x)
+        return ntuple(i -> @inbounds(c[i]), Val(N))
+    else
+        # Unit-carrying x (type-folded branch): the β workspace is
+        # unit-heterogeneous (X^(1-N)), so run the same kernels on the EXACT
+        # dimensionless reparameterization t = (xᵢ−x₁)·inv(x₂−x₁); the chain
+        # rule dP/dx = (dP/dt)·(dt/dx) restores every coefficient to [1/X].
+        inv_href = inv(x[2] - x[1])
+        t = ntuple(i -> (x[i] - x[1]) * inv_href, Val(N))
+        ct = _compute_deriv1_coeffs(pf, side, t)
+        return ntuple(i -> ct[i] * inv_href, Val(N))
+    end
 end
 
 

@@ -18,22 +18,14 @@
 # ========================================
 # Shared-element-type guards (uniform-eltype outputs)
 # ========================================
-# `gradient` returns a Tuple, so its per-axis components may carry different
-# units (`K/s`, `K/m`) — nothing has to agree. `hessian` (a Matrix), `laplacian`
-# (a sum) and `gradient!` (the caller's Vector) each need ONE element type for
-# every component. On a mixed-unit grid the components differ per axis, so the
-# promotion lands on an abstract `Quantity` — which has no `zero`/`oneunit`, so
-# `det`, `zeros` and `similar` fail downstream even if we handed it back.
-#
-# The in-place forms are the exception: whether ONE type exists is a property of
-# the caller's BUFFER, not of the grid. A `Vector{Any}` (or an abstract-`Quantity`
-# store) holds `K/s` beside `K/m` fine and the generic kernels already fill it —
-# so they check `T <: eltype(store)` too and only refuse a buffer that genuinely
-# cannot hold the components.
-#
-# The decision is purely type-level (grid eltypes × value eltype × store eltype),
-# so the check constant-folds away on Real and same-unit grids. Without it the
-# user meets a raw `DimensionError` from inside the kernel.
+# Every component of `gradient` (Tuple) and `hessian` (Matrix with the
+# components' promoted eltype — abstract for mixed-unit axes, each entry still
+# concretely typed) exists, so both return values. Only two cases guard:
+# `laplacian` must ADD `∂²f/∂xᵢ²` across axes — dimensionally undefined when
+# the axes' units differ — and the in-place forms refuse a store whose eltype
+# genuinely cannot hold the components (`T <: eltype(store)`; `Vector{Any}` or
+# an abstract-`Quantity` store is accepted). The decision is purely type-level,
+# so the checks constant-fold away on Real and same-unit grids.
 
 # ∂²f/∂xᵢ∂xⱼ eltype: the `_deriv1_op` witness folded once per axis (never `h^-2`,
 # which is type-unstable for units). `i == j` is the same expression twice.
@@ -72,17 +64,6 @@ end
                 "abstract `$T` (typical for mixed-unit axes). $alternative"
         )
     )
-end
-
-@inline function _check_nd_hessian_eltype(::Type{Tv}, grids::Tuple) where {Tv}
-    T = _nd_hessian_eltype(Tv, grids)
-    isconcretetype(T) || _throw_nd_component_eltype(
-        "hessian",
-        "Query the components you need individually, e.g. " *
-            "`itp(query...; deriv = DerivOp(2, 0))`.",
-        T,
-    )
-    return nothing
 end
 
 @inline function _check_nd_laplacian_eltype(::Type{Tv}, grids::Tuple) where {Tv}
@@ -449,21 +430,33 @@ end
         )
     end
 
+    # OOB (FillExtrap) zeros per element: `zero(zref)` (sign-free, NaN-free —
+    # matches the old `fill!(zero(Tq))` on concrete eltypes) scaled into each
+    # entry's own `[value]/[gridᵢ·gridⱼ]` space. Also serves abstract-eltype
+    # stores, where `zero(eltype(H))` has no method.
+    oob_stmts = [
+        :(
+                H[$i, $j] = zero(zref) *
+                _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1)) *
+                _deriv_oneunit(oneunit(eltype(itp.grids[$j])), DerivOp(1))
+            )
+            for i in 1:N for j in 1:N
+    ]
+
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        # Hessian entries are 2nd derivatives (value/grid²) — fold the `_deriv1_op` witness
-        # twice via `_deriv_eltype`, the same type-level machinery the one-shot deriv paths
-        # use. Pure `Base.promote_op`, so it needs neither `oneunit(Tv)` (value duck types
-        # like colorants define `Real*T` but not `one`) nor `oneunit(Tg)`, stays concrete,
-        # and is type-stable for units (one `inv(h)` per order, never `h^-2`). The old
-        # `promote_type(coord, grid, value)` went abstract on unit grids, so `zero(Tq)` threw.
-        Tq = _deriv_eltype($Tv, $Tg, DerivOp{2}())
+        # Container eltype = the promotion of every component (`_nd_hessian_eltype`,
+        # the same witness the store guard consults): concrete for Real/same-unit
+        # grids, the tightest abstract `Quantity` supertype for mixed-unit axes —
+        # each entry still carries its own concrete units.
+        Tq = _nd_hessian_eltype($Tv, itp.grids)
         H = Matrix{Tq}(undef, $N, $N)
         policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            fill!(H, zero(Tq))
+            zref = _sample_data(itp)
+            $(oob_stmts...)
             return H
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
@@ -479,7 +472,11 @@ end
 
 Compute the Hessian matrix (matrix of second partial derivatives) at `query`.
 
-Returns an `N×N` matrix where `H[i,j] = ∂²f/∂xᵢ∂xⱼ`.
+Returns an `N×N` matrix where `H[i,j] = ∂²f/∂xᵢ∂xⱼ`. On mixed-unit grids the
+entries carry per-element units (`value/gridᵢ·gridⱼ`), so the matrix eltype is
+their tightest common supertype (an abstract `Quantity`) — element access is
+unit-correct, while whole-matrix linear algebra (`det`, `eigen`, `\\`) does not
+apply to a dimensionally heterogeneous matrix.
 
 # Performance
 ~9x faster than `ForwardDiff.hessian` by using analytical derivatives.
@@ -502,7 +499,6 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
         query::Tuple{Vararg{Number, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    _check_nd_hessian_eltype(Tv, itp.grids)
     return _hessian_generic(itp, query, hint)
 end
 
@@ -556,6 +552,17 @@ end
         )
     end
 
+    # Same per-element OOB zeros as the allocating form — `zero(eltype(H))` has
+    # no method for abstract-eltype stores (`Matrix{Any}`), which are accepted.
+    oob_stmts = [
+        :(
+                H[$i, $j] = zero(zref) *
+                _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1)) *
+                _deriv_oneunit(oneunit(eltype(itp.grids[$j])), DerivOp(1))
+            )
+            for i in 1:N for j in 1:N
+    ]
+
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
         @boundscheck size(H) == ($N, $N) || throw(
@@ -567,7 +574,8 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            fill!(H, zero(eltype(H)))
+            zref = _sample_data(itp)
+            $(oob_stmts...)
             return H
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)

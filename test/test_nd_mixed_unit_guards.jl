@@ -1,17 +1,13 @@
 # ========================================
-# ND vector calculus on mixed-unit grids: explicit guards
+# ND vector calculus on mixed-unit grids: values where they exist, guards where not
 # ========================================
-# `gradient` returns a Tuple, so per-axis components may carry different units
-# (`K/s`, `K/m`) and it works. The three APIs that need ONE shared element type
-# cannot: `hessian` (Matrix), `laplacian` (a sum), `gradient!` (a user Vector).
-# Their component units differ per axis, so the promotion collapses to an
-# abstract `Quantity` with no `zero`/`oneunit`.
-#
-# Without a guard the user meets a raw `DimensionError` from deep inside the
-# kernel. These pin an `ArgumentError` naming the API and the workaround, in the
-# same style as the hetero-ND unit guard.
+# `gradient` (Tuple) and `hessian` (Matrix with the components' promoted —
+# possibly abstract — eltype) return VALUES: every component exists, only a
+# shared concrete type may not. `laplacian` stays guarded (its terms must be
+# ADDED across axes — dimensionally undefined for mixed units), and the
+# in-place forms refuse only a store that genuinely cannot hold the components.
 
-@testitem "ND mixed-unit: hessian/laplacian/gradient! refuse with an explanation" begin
+@testitem "ND mixed-unit: hessian returns the abstract-eltype matrix; laplacian/gradient! guard" begin
     using Unitful
 
     xs = (0.0:1.0:4.0)u"s"
@@ -19,18 +15,31 @@
     V = [Float64(i + j) for i in 1:5, j in 1:4]u"K"
     itp = linear_interp((xs, ym), V)
 
-    @testset "hessian" begin
-        e = try
-            hessian(itp, 1.5u"s", 1.5u"m")
-            nothing
-        catch err
-            err
-        end
-        @test e isa ArgumentError
-        msg = sprint(showerror, e)
-        @test occursin("hessian", msg)
-        @test occursin("not supported", msg)
-        @test occursin("deriv", msg)            # names the per-component workaround
+    @testset "hessian: per-element units, values ≡ component deriv queries" begin
+        H = hessian(itp, 1.5u"s", 1.5u"m")
+        @test !isconcretetype(eltype(H))
+        @test eltype(H) <: Quantity{Float64}
+        @test unit(H[1, 1]) === u"K" / u"s"^2
+        @test unit(H[2, 2]) === u"K" / u"m"^2
+        @test H[1, 2] === itp((1.5u"s", 1.5u"m"); deriv = (DerivOp(1), DerivOp(1)))
+        @test H[2, 1] === H[1, 2]
+        # Vector-query form agrees.
+        Hv = hessian(itp, [1.5u"s", 1.5u"m"])
+        @test all(i -> Hv[i] === H[i], eachindex(H))
+    end
+
+    @testset "hessian: FillExtrap OOB zeros carry per-element units" begin
+        itp_f = linear_interp((xs, ym), V; extrap = FillExtrap(0.0u"K"))
+        Ho = hessian(itp_f, 9.0u"s", 1.5u"m")
+        @test unit(Ho[1, 1]) === u"K" / u"s"^2
+        @test unit(Ho[1, 2]) === u"K" / (u"s" * u"m")
+        @test all(iszero, Ho)
+        # In-place with an Any store takes the same per-element OOB path
+        # (was: fill!(H, zero(Any)) → MethodError).
+        Ha = Matrix{Any}(undef, 2, 2)
+        hessian!(Ha, itp_f, 9.0u"s", 1.5u"m")
+        @test unit(Ha[2, 2]) === u"K" / u"m"^2
+        @test all(iszero, Ha)
     end
 
     @testset "laplacian" begin
@@ -61,8 +70,7 @@
         @test occursin("gradient", msg)         # points at the Tuple-returning form
     end
 
-    # Vector-query and splatted entries route through the same guard.
-    @test_throws ArgumentError hessian(itp, [1.5u"s", 1.5u"m"])
+    # Vector-query and splatted entries route through the same guards.
     @test_throws ArgumentError laplacian(itp, (1.5u"s", 1.5u"m"))
     @test_throws ArgumentError gradient!(Vector{typeof(1.0u"K/s")}(undef, 2), itp, [1.5u"s", 1.5u"m"])
 end

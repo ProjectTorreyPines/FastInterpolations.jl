@@ -254,8 +254,12 @@ end
         ref = cubic_interp(xf, Series([1.0, 2.0, 0.5, 3.0, 1.0], [0.5, 1.5, 2.0, 0.0, 0.5]); bc = PeriodicBC())
         v = sitp(2.2u"s")
         vr = ref(2.2)
-        @test v[1] === vr[1] * u"W"
-        @test v[2] === vr[2] * u"W"
+        # `===` is flag-fragile here: the z solve is bit-identical to the Real
+        # twin, but under default flags (`check-bounds=auto`, unlike Pkg.test's
+        # `=yes`) the @inbounds Series eval kernel vectorizes differently for
+        # unit vs Real carriers — a few-ULP, data-dependent jitter.
+        @test v[1] ≈ vr[1] * u"W" rtol = 1.0e-14
+        @test v[2] ≈ vr[2] * u"W" rtol = 1.0e-14
     end
 end
 
@@ -299,5 +303,45 @@ end
         i1 = cubic_interp(xu, yw; bc = PeriodicBC())
         i2 = cubic_interp(xu, yw; bc = PeriodicBC())
         @test i2.cache === i1.cache
+    end
+end
+
+@testitem "cubic unit native: structural Real-zero BC payloads rehydrate (cache + BCPair)" begin
+    using Unitful
+
+    xu = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    yw = [1.0, 2.0, 0.5, 3.0, 2.5] .* u"W"
+    q = 2.2u"s"
+
+    @testset "cache-then-values: marker BCs (placeholder zeros)" begin
+        # CubicSplineCache stores structural Deriv2(0.0)/Deriv1(0.0) — no values
+        # exist at cache-build time. The solve must rehydrate the zero into its
+        # payload space; pin bit-parity against the one-step build.
+        for (bc, ref) in (
+                (ZeroCurvBC(), cubic_interp(xu, yw; bc = ZeroCurvBC())),
+                (ZeroSlopeBC(), cubic_interp(xu, yw; bc = ZeroSlopeBC())),
+            )
+            cache = CubicSplineCache(xu; bc = bc)
+            itp = cubic_interp(cache, yw)
+            @test itp(q) === ref(q)
+        end
+    end
+
+    @testset "main path: BCPair with structural Real zeros" begin
+        ref = cubic_interp(xu, yw; bc = ZeroCurvBC())
+        itp = cubic_interp(xu, yw; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
+        @test itp(q) === ref(q)
+    end
+
+    @testset "nonzero unitless payload stays rejected (actionable error)" begin
+        # 0 is the only unit-unambiguous Real payload; 0.3 has no inferable unit.
+        @test_throws ArgumentError cubic_interp(xu, yw; bc = BCPair(Deriv2(0.3), Deriv2(0.3)))
+    end
+
+    @testset "embeddable carriers unaffected (Real payload + Complex values)" begin
+        yc = complex.([1.0, 2.0, 0.5, 3.0, 2.5], [0.5, -1.0, 0.0, 1.0, -0.5])
+        xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+        itp = cubic_interp(xf, yc; bc = BCPair(Deriv2(0.3), Deriv2(-0.1)))
+        @test itp(2.2) isa ComplexF64
     end
 end

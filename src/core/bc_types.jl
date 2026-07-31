@@ -562,6 +562,33 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
     (z = 0 * _coeff_op2(oneunit(first(x)), first(y)); BCPair(Deriv2(z), Deriv2(z)))
 @inline _normalize_bc(::ZeroSlopeBC, x::AbstractArray, y::AbstractArray) =
     (z = 0 * _coeff_op(oneunit(first(x)), first(y)); BCPair(Deriv1(z), Deriv1(z)))
+# BCPair (grid-aware): rehydrate STRUCTURAL Real payloads. Cache-then-values
+# builds (`cubic_interp(cache, y)`) and structural BCPairs carry `Deriv2(0.0)`
+# placeholders; zero is the one Real with no unit ambiguity, so it promotes
+# into its derivative space [Y/Xⁿ]. A NONZERO Real payload beside unit-carrying
+# spaces has no inferable unit → actionable error. Embeddable value carriers
+# (Complex/Dual y) keep the verbatim late-convert path.
+@inline _normalize_bc(bc::BCPair, x::AbstractArray, y::AbstractArray) =
+    BCPair(_rehydrate_pointbc(bc.left, x, y), _rehydrate_pointbc(bc.right, x, y))
+@inline _rehydrate_pointbc(bc::Deriv1, x, y) =
+    Deriv1(_payload_val(bc.val, oneunit(first(y)) * _deriv_oneunit(oneunit(first(x)), DerivOp(1))))
+@inline _rehydrate_pointbc(bc::Deriv2, x, y) =
+    Deriv2(_payload_val(bc.val, oneunit(first(y)) * _deriv_oneunit(oneunit(first(x)), DerivOp(2))))
+@inline _rehydrate_pointbc(bc::Deriv3, x, y) =
+    Deriv3(_payload_val(bc.val, oneunit(first(y)) * _deriv_oneunit(oneunit(first(x)), DerivOp(3))))
+@inline _rehydrate_pointbc(bc::PointBC, _x, _y) = bc              # PolyFit{D}: payload-free
+@inline _payload_val(v::Real, pw::Real) = v                       # Real solve: verbatim
+@inline function _payload_val(v::Real, pw)
+    one(pw) * v isa typeof(pw) && return v                        # Complex/Dual y: late-convert
+    iszero(v) && return 0 * pw                                    # structural zero → payload space
+    throw(
+        ArgumentError(
+            "unitless BC payload `$v` with unit-carrying data — pass the payload " *
+                "in its derivative space, e.g. `Deriv2(κ)` with `κ::Quantity` in [value]/[grid]²"
+        )
+    )
+end
+@inline _payload_val(v, pw) = v                                   # typed payload: RHS rules own the space
 # Shape-only fallback: other BC types carry user payloads verbatim.
 @inline _normalize_bc(bc::AbstractBC, _x::AbstractArray, _y::AbstractArray) = _normalize_bc(bc)
 @inline _normalize_bc(bc::BCPair) = bc

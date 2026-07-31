@@ -220,7 +220,10 @@ so the pool memory can be safely reused after this function returns.
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
-    _solve_system!(tmp_z, cache, y, cache.bc)
+    # Rehydrate structural placeholder payloads (the cache stores value-free
+    # zeros — no values existed at cache-build time; see `_normalize_bc(BCPair,…)`).
+    bc_solve = cache.bc isa PeriodicBC ? cache.bc : _normalize_bc(cache.bc, cache.x, y)
+    _solve_system!(tmp_z, cache, y, bc_solve)
 
     if cache.bc isa PeriodicBC
         _check_periodic_endpoints(y)
@@ -228,10 +231,9 @@ so the pool memory can be safely reused after this function returns.
         return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search; store = store)
     end
 
-    # cache.bc is BCPair - use it directly.
     # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, cache.x, Tv)
-    return CubicInterpolant(cache, y, tmp_z, cache.bc, extrap_p, search; store = store)
+    return CubicInterpolant(cache, y, tmp_z, bc_solve, extrap_p, search; store = store)
 end
 
 

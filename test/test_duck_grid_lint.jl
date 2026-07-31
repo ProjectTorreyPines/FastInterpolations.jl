@@ -155,8 +155,8 @@ end
 # `_strip_*_units` helpers, `<: Real` reroute forks in the solver families) is
 # banned; the counts below ratchet DOWN to zero as the duck-thomas phases
 # delete each site, and any INCREASE is a regression. Exact-name matching only:
-# `_check_nd_hessian_units`, `_strip_periodic_bc`, `_strip_wrap_extrap` are
-# legitimate names a broad pattern would false-positive on.
+# `_strip_periodic_bc`, `_strip_wrap_extrap` are legitimate names a broad
+# pattern would false-positive on.
 #
 # Phase schedule (update counts consciously at each phase commit):
 #   P2 cubic scalar twin → P3 periodic → P4 quadratic scalar+Series twins

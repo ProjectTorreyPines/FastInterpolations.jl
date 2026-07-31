@@ -247,11 +247,9 @@ end
     return s
 end
 
-# Generic D > 3, mixed carriers (unit grids / Complex / narrow values). The
-# barycentric intermediates are unit-heterogeneous (β ∈ X^(1-N)), so compute the
-# coefficients on the EXACT dimensionless reference nodes t = 0..D (the uniform
-# stencil in units of h) with the carrier of `one(inv_h)`; each `cᵢ·inv_h` then
-# lands the weighted sum in coefficient space [Y/X].
+# Generic D > 3, mixed carriers: barycentric intermediates are unit-
+# heterogeneous (β ∈ X^(1-N)), so compute coefficients on the dimensionless
+# reference nodes t = 0..D and land each `cᵢ·inv_h` term in [Y/X].
 @inline function _compute_deriv1_refnodes(
         pf::PolyFit{D}, side::AbstractSide, f::NTuple{N}, inv_h
     ) where {D, N}
@@ -355,10 +353,8 @@ end
         _compute_deriv1_coeffs!(c, β, pf, side, x)
         return ntuple(i -> @inbounds(c[i]), Val(N))
     else
-        # Unit-carrying x (type-folded branch): the β workspace is
-        # unit-heterogeneous (X^(1-N)), so run the same kernels on the EXACT
-        # dimensionless reparameterization t = (xᵢ−x₁)·inv(x₂−x₁); the chain
-        # rule dP/dx = (dP/dt)·(dt/dx) restores every coefficient to [1/X].
+        # Unit-carrying x: same kernels on the exact reparameterization
+        # t = (xᵢ−x₁)·inv(x₂−x₁); dP/dx = (dP/dt)·(dt/dx) restores [1/X].
         inv_href = inv(x[2] - x[1])
         t = ntuple(i -> (x[i] - x[1]) * inv_href, Val(N))
         ct = _compute_deriv1_coeffs(pf, side, t)

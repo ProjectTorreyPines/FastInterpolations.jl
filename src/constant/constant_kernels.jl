@@ -65,16 +65,11 @@ dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates
     return selected * one(dL)
 end
 
-# N-th derivative of a degree-0 (constant) interpolant is zero for N ≥ 1, but lives in
-# `[value]/[grid]ᴺ` space. The unit scale comes from the GRID spacing `h`
-# (`_deriv_oneunit(h, op)`), matching the OOB branch and the ND grid⁻ᴺ pins — a
-# query in different (compatible) units must not change the return type at the
-# domain boundary. `* one(dL)` retains the query carrier (Dual partials shape),
-# and `0 * y_left` keeps the zero, duck-typing, and NaN propagation. The zero
-# VALUE is unchanged; its eltype is `typeof(y / gridᴺ)` — for an all-Int Real
-# grid that floats to Float64 (Int/Int → Float), which is the dimensionally
-# correct derivative type, NOT a Real-path regression (`Constant` keeps the
-# primal Int; only the derivative floats).
+# N-th derivative of degree-0 is zero for N ≥ 1, in `[value]/[grid]ᴺ` space.
+# The unit scale comes from the GRID spacing (`_deriv_oneunit(h, op)`, matching
+# the OOB branch) so query units can't flip the return type at the boundary;
+# `* one(dL)` keeps the query carrier, `0 * y_left` keeps zero/duck/NaN
+# semantics. Int grids float the derivative (Int/Int → Float) — correct, not a regression.
 """
     _constant_kernel(::EvalDeriv1, y_left, y_right, h, dL, side)
 

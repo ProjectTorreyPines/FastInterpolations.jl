@@ -220,8 +220,7 @@ so the pool memory can be safely reused after this function returns.
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
-    # Rehydrate structural placeholder payloads (the cache stores value-free
-    # zeros — no values existed at cache-build time; see `_normalize_bc(BCPair,…)`).
+    # Rehydrate structural placeholder payloads (cache stores value-free zeros).
     bc_solve = cache.bc isa PeriodicBC ? cache.bc : _normalize_bc(cache.bc, cache.x, y)
     _solve_system!(tmp_z, cache, y, bc_solve)
 

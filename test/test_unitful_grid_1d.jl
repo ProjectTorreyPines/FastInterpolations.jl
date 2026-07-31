@@ -1038,3 +1038,36 @@ end
             cubic_interp(x6f, y6f; bc = PolyFit{5}())(2.2) * u"W" rtol = 1.0e-12
     end
 end
+
+@testitem "Unitful 1D: constant deriv zeros scale from the GRID unit (in-domain ≡ OOB)" begin
+    using Unitful
+
+    # hr grid + s queries: the in-domain kernel scaled its zero from the query
+    # offset (→ W/s) while OOB used the grid axis (→ W/hr) — the return type
+    # flipped across the domain boundary. The grid axis is canonical (matches
+    # linear/cubic deriv spaces and the ND grid⁻ᴺ pins).
+    xh = [0.0, 1.0, 2.0, 3.0] .* u"hr"
+    yW = [1.0, 2.0, 3.0, 4.0] .* u"W"
+    itp = constant_interp(xh, yW; extrap = ClampExtrap())
+    q_in = 3600.0u"s"      # = 1 hr, in-domain
+    q_oob = -3600.0u"s"
+
+    for (nm, op, U) in (
+            ("deriv1", DerivOp(1), u"W/hr"),
+            ("deriv2", DerivOp(2), u"W/hr^2"),
+            ("deriv4", DerivOp(4), u"W/hr^4"),
+        )
+        @testset "$nm" begin
+            din = itp(q_in; deriv = op)
+            doob = itp(q_oob; deriv = op)
+            @test unit(din) === Unitful.unit(1.0 * U)
+            @test typeof(din) === typeof(doob)   # no boundary type flip
+            @test iszero(din)
+        end
+    end
+
+    @testset "one-shot mirrors the persistent kernel" begin
+        v = constant_interp(xh, yW, q_in; deriv = DerivOp(1), extrap = ClampExtrap())
+        @test unit(v) === Unitful.unit(1.0u"W/hr")
+    end
+end

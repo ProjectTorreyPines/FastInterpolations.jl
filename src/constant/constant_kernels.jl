@@ -66,20 +66,22 @@ dL may be Real, Unitful.Quantity, or ForwardDiff.Dual — its carrier propagates
 end
 
 # N-th derivative of a degree-0 (constant) interpolant is zero for N ≥ 1, but lives in
-# `[value]/[grid]ᴺ` space: the `inv(oneunit(dL))ᴺ` factor carries the grid⁻ᴺ units so a
-# unit-grid deriv batch's buffer (`_deriv_eltype`) accepts the value (else DimensionError),
-# while `0 * y_left` keeps the zero, duck-typing, and NaN propagation. The zero VALUE is
-# unchanged; its eltype is `typeof(y / gridᴺ)` — for an all-Int Real grid that floats to
-# Float64 (Int/Int → Float), which is the dimensionally correct derivative type, NOT a
-# Real-path regression (`Constant` keeps the primal Int; only the derivative floats). A
-# literal exponent stays type-stable for Unitful.
+# `[value]/[grid]ᴺ` space. The unit scale comes from the GRID spacing `h`
+# (`_deriv_oneunit(h, op)`), matching the OOB branch and the ND grid⁻ᴺ pins — a
+# query in different (compatible) units must not change the return type at the
+# domain boundary. `* one(dL)` retains the query carrier (Dual partials shape),
+# and `0 * y_left` keeps the zero, duck-typing, and NaN propagation. The zero
+# VALUE is unchanged; its eltype is `typeof(y / gridᴺ)` — for an all-Int Real
+# grid that floats to Float64 (Int/Int → Float), which is the dimensionally
+# correct derivative type, NOT a Real-path regression (`Constant` keeps the
+# primal Int; only the derivative floats).
 """
     _constant_kernel(::EvalDeriv1, y_left, y_right, h, dL, side)
 
 First derivative of constant interpolation — zero, in `value/grid` units.
 """
-@inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
-    return 0 * y_left * inv(oneunit(dL))
+@inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, h::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
+    return 0 * y_left * _deriv_oneunit(h, DerivOp(1)) * one(dL)
 end
 
 """
@@ -87,8 +89,8 @@ end
 
 Second derivative of constant interpolation — zero, in `value/grid²` units.
 """
-@inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
-    return 0 * y_left * inv(oneunit(dL))^2
+@inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, h::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
+    return 0 * y_left * _deriv_oneunit(h, DerivOp(2)) * one(dL)
 end
 
 """
@@ -96,15 +98,15 @@ end
 
 Third derivative of constant interpolation — zero, in `value/grid³` units.
 """
-@inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
-    return 0 * y_left * inv(oneunit(dL))^3
+@inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, h::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td}
+    return 0 * y_left * _deriv_oneunit(h, DerivOp(3)) * one(dL)
 end
 
-# Generic fallback (N ≥ 4): `Base.literal_pow` keeps `inv(oneunit(dL))ᴺ` type-stable for
-# unit grids even when N is a type parameter (a plain `^N` there infers an abstract unit).
+# Generic fallback (N ≥ 4): `_deriv_oneunit` uses `Base.literal_pow` so the grid⁻ᴺ
+# factor stays type-stable for unit grids even when N is a type parameter.
 """Generic fallback: N-th derivative of degree-0 (constant) is zero for N ≥ 1."""
-@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {N, Tv, Tg, Td}
-    return 0 * y_left * Base.literal_pow(^, inv(oneunit(dL)), Val(N))
+@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, h::Tg, dL::Td, ::AbstractSide) where {N, Tv, Tg, Td}
+    return 0 * y_left * _deriv_oneunit(h, DerivOp(N)) * one(dL)
 end
 
 # ========================================

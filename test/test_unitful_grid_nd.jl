@@ -539,6 +539,84 @@ end
     end
 end
 
+@testitem "Unitful ND: one-shot solver families mirror the persistent build (P5b)" begin
+    using Unitful
+
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    x = xf .* u"s"
+    y = yf .* u"m"
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    q = (2.2u"s", 1.3u"m")
+    qs = [(2.2u"s", 1.3u"m"), (0.4u"s", 3.1u"m")]
+    d10 = (DerivOp(1), DerivOp(0))
+    d01 = (DerivOp(0), DerivOp(1))
+
+    # The persistent interpolant is the reference — its unit forward path is pinned above.
+    ref = cubic_interp((x, y), F)
+
+    @testset "cubic scalar one-shot (AutoCoeffs → pool + explicit PreCompute)" begin
+        @test cubic_interp((x, y), F, q) ≈ ref(q) rtol = 1.0e-14
+        @test cubic_interp((x, y), F, q; coeffs = PreCompute()) ≈ ref(q) rtol = 1.0e-14
+        r10 = cubic_interp((x, y), F, q; deriv = d10)
+        @test unit(r10) === u"W/s"
+        @test r10 ≈ ref(q; deriv = d10) rtol = 1.0e-13
+        r11 = cubic_interp((x, y), F, q; deriv = (DerivOp(1), DerivOp(1)))
+        @test unit(r11) === u"W" / (u"s" * u"m")
+        @test r11 ≈ ref(q; deriv = (DerivOp(1), DerivOp(1))) rtol = 1.0e-13
+    end
+
+    @testset "cubic batch one-shot: op-aware output eltype + in-place" begin
+        out = cubic_interp((x, y), F, qs)
+        @test eltype(out) === typeof(ref(q))
+        @test out[1] ≈ ref(qs[1]) rtol = 1.0e-14
+        @test out[2] ≈ ref(qs[2]) rtol = 1.0e-14
+        outd = cubic_interp((x, y), F, qs; deriv = d10)
+        @test eltype(outd) === typeof(ref(q; deriv = d10))
+        @test outd[2] ≈ ref(qs[2]; deriv = d10) rtol = 1.0e-13
+        buf = Vector{typeof(ref(q))}(undef, 2)
+        cubic_interp!(buf, (x, y), F, qs)
+        @test buf[2] ≈ ref(qs[2]) rtol = 1.0e-14
+    end
+
+    @testset "quadratic scalar + batch one-shot" begin
+        refq = quadratic_interp((x, y), F)
+        @test quadratic_interp((x, y), F, q) ≈ refq(q) rtol = 1.0e-14
+        @test quadratic_interp((x, y), F, q; coeffs = PreCompute()) ≈ refq(q) rtol = 1.0e-14
+        rq = quadratic_interp((x, y), F, q; deriv = d01)
+        @test unit(rq) === u"W/m"
+        @test rq ≈ refq(q; deriv = d01) rtol = 1.0e-13
+        outq = quadratic_interp((x, y), F, qs)
+        @test eltype(outq) === typeof(refq(q))
+        @test outq[1] ≈ refq(qs[1]) rtol = 1.0e-14
+        outqd = quadratic_interp((x, y), F, qs; deriv = d01)
+        @test eltype(outqd) === typeof(refq(q; deriv = d01))
+        @test outqd[2] ≈ refq(qs[2]; deriv = d01) rtol = 1.0e-13
+    end
+
+    @testset "same-unit axes (concrete Tg) + unit Range axis" begin
+        ys = yf .* u"s"
+        Fs = [(xi + 2.0 * yj) * u"W" for xi in xf, yj in yf]
+        qsame = (2.2u"s", 1.3u"s")
+        @test cubic_interp((x, ys), Fs, qsame) ≈ cubic_interp((x, ys), Fs)(qsame) rtol = 1.0e-14
+        @test quadratic_interp((x, ys), Fs, qsame) ≈
+            quadratic_interp((x, ys), Fs)(qsame) rtol = 1.0e-14
+        xr = (0.0:1.0:4.0) * u"s"   # unit StepRangeLen → pooled _CachedRange arm
+        Fr = [(xi + 2.0 * yj) * u"W" for xi in 0.0:1.0:4.0, yj in yf]
+        @test cubic_interp((xr, y), Fr, q) ≈ cubic_interp((xr, y), Fr)(q) rtol = 1.0e-14
+    end
+
+    @testset "exclusive periodic unit axis through the pooled one-shot" begin
+        xpf = [0.0, 1.0, 2.0, 3.0]
+        xp = xpf .* u"s"
+        Fp = [(sin(2π * xi / 4.0) + 2.0 * yj) * u"W" for xi in xpf, yj in yf]
+        bcs = (PeriodicBC(endpoint = :exclusive, period = 4.0u"s"), ZeroCurvBC())
+        refp = cubic_interp((xp, y), Fp; bc = bcs)
+        @test cubic_interp((xp, y), Fp, (3.7u"s", 1.3u"m"); bc = bcs, coeffs = PreCompute()) ≈
+            refp((3.7u"s", 1.3u"m")) rtol = 1.0e-14
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 
@@ -639,11 +717,10 @@ end
 @testitem "Unitful ND: one-shot builders reject unit grids with a friendly error (review pin F17)" begin
     using Unitful
 
-    # The persistent 2-arg builders gate unit-carrying solver/hetero ND grids with an
-    # actionable ArgumentError (`_check_nd_solver_grid` / `_check_nd_hetero_grid`). The
-    # one-shot 3-arg entries skipped the guard and fell into deep, non-actionable errors
-    # (`TypeError: Quantity … is not a valid key`, `MethodError: _collapse_dims(::Type{Quantity…})`).
-    # Both paths fail (unit ND solver/hetero builds are unsupported); this pins error *quality*.
+    # Hetero ND one-shots (pchip/akima/cardinal) gate unit-carrying grids with an
+    # actionable ArgumentError (`_check_nd_hetero_grid`) instead of deep, non-actionable
+    # errors (`TypeError: Quantity … is not a valid key`). Cubic/quadratic one-shots
+    # reparameterize and are pinned in the P5b mirror testitem above.
     xs = collect(1.0:5.0) .* u"s"
     ys = collect(1.0:5.0) .* u"m"
     data = [Float64(i + j) for i in 1:5, j in 1:5] .* u"W"
@@ -652,8 +729,6 @@ end
 
     # (name, scalar one-shot, batch one-shot)
     fams = [
-        ("cubic", () -> cubic_interp((xs, ys), data, qsc), () -> cubic_interp((xs, ys), data, qb)),
-        ("quadratic", () -> quadratic_interp((xs, ys), data, qsc), () -> quadratic_interp((xs, ys), data, qb)),
         ("pchip", () -> pchip_interp((xs, ys), data, qsc), () -> pchip_interp((xs, ys), data, qb)),
         ("akima", () -> akima_interp((xs, ys), data, qsc), () -> akima_interp((xs, ys), data, qb)),
         ("cardinal", () -> cardinal_interp((xs, ys), data, qsc), () -> cardinal_interp((xs, ys), data, qb)),
@@ -681,12 +756,13 @@ end
 
     @testset "solver families (Cubic/Quadratic): persistent + one-shot" begin
         # Solver persistents admit unit axes since the scaled-store build; the
-        # concrete-Tg dispatch pins flip to build-success. One-shot mirrors
-        # stay gated until their phase.
+        # concrete-Tg dispatch pins flip to build-success, and the one-shot
+        # mirrors (P5b) now agree with the persistent reference.
         @test cubic_interp((xs, xs2), data) isa CubicInterpolantND
         @test quadratic_interp((xs, xs2), data) isa QuadraticInterpolantND
-        @test_throws ArgumentError cubic_interp((xs, xs2), data, q)
-        @test_throws ArgumentError quadratic_interp((xs, xs2), data, q)
+        @test cubic_interp((xs, xs2), data, q) ≈ cubic_interp((xs, xs2), data)(q) rtol = 1.0e-14
+        @test quadratic_interp((xs, xs2), data, q) ≈
+            quadratic_interp((xs, xs2), data)(q) rtol = 1.0e-14
     end
 
     @testset "hetero families (PCHIP): persistent + one-shot" begin

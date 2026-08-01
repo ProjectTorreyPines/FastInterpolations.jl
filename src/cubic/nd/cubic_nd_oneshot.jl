@@ -15,6 +15,10 @@
 One-shot ND cubic interpolation at a single point.
 Zero-allocation after warmup: uses pool-based partials instead of constructing an Interpolant.
 
+Non-Real (unit-carrying) axes mirror the persistent scaled-store build: the solve runs
+on dimensionless axis twins and the result is restored to grid⁻ᵏ units. The zero-alloc
+contract is the Real-axis path's; the unit arm allocates its per-call twins.
+
 # Keywords
 - `deriv`: `DerivOp` or `NTuple{N,DerivOp}` for mixed partials
 - `bc`, `extrap`, `search`, `coeffs`: Same as the Interpolant constructor form
@@ -39,14 +43,21 @@ function cubic_interp(
     # Scalar one-shot: raw grids — a stable grid id lets `_get_cubic_cache` memoise
     # (a per-call copy would miss every time + alloc). `Tg` is value-matched (Int/OneTo grid +
     # Float32 data → Float32), so the OnTheFly eval + witness `Tr` agree. Batch keeps eager-convert.
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    Tv_p = _promote_eltype(_coeff_op2, Tg, Tv)
+    Tg_raw = _promote_grid_eltype(grids)
+    Tg = _promote_grid_float(Tg_raw, Tv)
+    # Non-Real axes: `Tg` is a unit type (abstract tag on mixed axes) no witness may
+    # run on — the fill/extrap space is the value space, mirroring the persistent
+    # entry (`_resolve_extrap(…, Tv)` after `_nd_promote_grids`).
+    Tv_p = Tg_raw <: Real ? _promote_eltype(_coeff_op2, Tg, Tv) : _value_type(Tv, Tg_raw)
     _validate_nd_grids(grids, data)
-    # PreCompute/OnTheFly ND cubic solve does not support unit-carrying grids —
-    # match the persistent builder's actionable error instead of a deep MethodError.
-    _check_nd_solver_grid(_promote_grid_eltype(grids))
-    Tq = promote_type(typeof.(query)...)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Reparameterizable axes only (Real or unit-carrying) — the persistent builder's gate.
+    _check_nd_reparam_grid(grids)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    # `ops` folds into the witness BEFORE the assertion (linear canonical): a derivative
+    # query lands in value/coordᴺ — identity on Real grids and on `DerivOp{0}`.
+    Tr = _deriv_eltype_nd(
+        _nd_value_eltype(_interp_op, Tv, grids, promote_type(typeof.(query)...)), grids, ops
+    )
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -55,11 +66,14 @@ function cubic_interp(
     _validate_nd_bcs!(grids, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
-    ops = _resolve_deriv_nd(deriv, Val(N))
 
-    # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work)
+    # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work).
+    # A non-Real query never resolves here under AutoCoeffs (the Real-tuple arm skips
+    # it → PreCompute pool); an EXPLICIT OnTheFly rides the hetero collapse engine,
+    # whose non-Real gate keeps the refusal actionable.
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> CubicInterp(), Val(N)))
     if coeffs_resolved isa OnTheFly
+        _check_nd_hetero_grid(Tg_raw)
         methods = map(CubicInterp, bcs)
         return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hint)::Tr
     end
@@ -90,10 +104,12 @@ function _cubic_interp_nd_oneshot_alloc(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    _check_nd_solver_grid(_promote_grid_eltype(grids))
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
+    _check_nd_reparam_grid(grids)
     Tq = _query_eltype(queries)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Same fold as the scalar entry (linear canonical): the buffer must be sized in
+    # ∂-units, else a unit-grid derivative batch throws on the first store.
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _deriv_eltype_nd(_nd_value_eltype(_interp_op, Tv, grids, Tq), grids, ops)
     output = _alloc_query_output(Tr, queries)
     _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
@@ -134,7 +150,9 @@ Zero-allocation after warmup (pool reuse).
     # → isbits `_CachedRange{Tg}` (the per-axis spline caches still memoise via
     # value-deterministic objectid); a mismatched Vector converts into a POOL buffer
     # (warm one-shots stay zero-alloc), so the whole solve pipeline runs at `Tg`.
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    # Non-Real axes wrap at their OWN eltype (abstract-tag arm of the @generated map).
+    Tg_raw = _promote_grid_eltype(grids)
+    Tg = _promote_grid_float(Tg_raw, Tv)
     grids = _cache_axes_pooled(pool, grids, Tg)  # @generated static-Tg unroll (no Type-captured closure)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids)
@@ -156,13 +174,24 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
+    # Non-Real axes solve on the dimensionless twins — the pooled partials stay
+    # [Y]-homogeneous exactly as in the persistent scaled-store build (search and
+    # local params below keep reading the unit axes `grids_p`).
+    if Tg_raw <: Real
+        grids_solve = grids_p
+        bcs_solve = bcs_p
+        Tz = _promote_eltype(_coeff_op2, Tg, Tv)
+    else
+        grids_solve = _reparam_grids(grids_p)
+        bcs_solve = _scale_bcs_reparam(bcs_p, grids_p, data_p)
+        Tz = _promote_eltype(_coeff_op2, _promote_grid_eltype(grids_solve), Tv)
+    end
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
     # 3. Compute all partial derivatives in-place
     #    (internally uses autocached 1D caches + nested @with_pool for temp buffers)
-    _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
+    _compute_nd_partials!(partials, grids_solve, data_p, bcs_solve)
 
     # 4. Eval pipeline (all standalone functions, no Interpolant needed).
     # Axis-only forms — `grids_p` axes carry `h`/`inv_h` directly via `_get_h`/
@@ -170,10 +199,13 @@ Zero-allocation after warmup (pool reuse).
     # the data-aware form width-types hs/inv_hs at `Tg` (raw Int-Vector axes included).
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, extraps_eff)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg)
+    hs, inv_hs, dLs = Tg_raw <: Real ?
+        _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg) :
+        _compute_all_local_params_reparam(q_evals, grids_p, indices, Ls)
 
-    # 6. Tensor-product kernel evaluation
-    return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+    # 6. Tensor-product kernel evaluation ([Y]-scaled partials → grid⁻ᵏ restore at the seam)
+    r = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+    return Tg_raw <: Real ? r : r * _nd_fill_deriv_scale(grids_p, ops)
 end
 
 """
@@ -185,9 +217,12 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
 
 `extraps_val` must be a pre-resolved tuple of concrete `AbstractExtrap` instances.
 """
+# `grids` is NOT pinned to one shared axis eltype: mixed-unit grids (`s` × `m`)
+# reach this backend as a heterogeneous per-axis-float tuple — requiring a common
+# `Tg` excluded them from the batch path entirely (the linear sibling relaxed first).
 @with_pool pool function _cubic_interp_nd_oneshot_batch!(
         output::AbstractArray,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -195,12 +230,13 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         ops::NTuple{N, AbstractEvalOp},
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     _check_query_output_size(output, queries)
     _query_validate(queries)
+    Tg_raw = _promote_grid_eltype(grids)
 
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
@@ -211,10 +247,20 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # per axis when all its queries are in-bounds, so the per-query `_try_fill_oob` /
     # `_handle_all_extraps` branches compile away.
     extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
-    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
+    # Non-Real axes solve on the dimensionless twins (persistent scaled-store mirror);
+    # search + local params below keep reading the unit axes `grids_p`.
+    if Tg_raw <: Real
+        grids_solve = grids_p
+        bcs_solve = bcs_p
+        Tz = _promote_eltype(_coeff_op2, Tg_raw, Tv)
+    else
+        grids_solve = _reparam_grids(grids_p)
+        bcs_solve = _scale_bcs_reparam(bcs_p, grids_p, data_p)
+        Tz = _promote_eltype(_coeff_op2, _promote_grid_eltype(grids_solve), Tv)
+    end
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
-    _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
+    _compute_nd_partials!(partials, grids_solve, data_p, bcs_solve)
 
     # Eval loop: search + kernel per query point. Axis-only helpers read
     # `h`/`inv_h` directly from `grids_p` (no transient pool spacings).
@@ -226,8 +272,11 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints, extraps_eff)
-        hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
-        output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+        hs, inv_hs, dLs = Tg_raw <: Real ?
+            _compute_all_local_params(q_evals, grids_p, indices, Ls) :
+            _compute_all_local_params_reparam(q_evals, grids_p, indices, Ls)
+        r = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+        output[k] = Tg_raw <: Real ? r : r * _nd_fill_deriv_scale(grids_p, ops)
     end
     return output
 end
@@ -251,7 +300,7 @@ Writes results into pre-allocated `output` vector.
 # Public ND in-place batch one-shot (N≥2; N=1 is intercepted by the collapse method
 # below and only reaches here via the OnTheFly branch, which has no 1D equivalent).
 @inline function cubic_interp!(output::AbstractArray, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N}
-    _check_nd_solver_grid(_promote_grid_eltype(grids))
+    _check_nd_reparam_grid(grids)
     return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
 end
 

@@ -1324,7 +1324,13 @@ end
 
 # Pooled value-matched wrap (cubic/quadratic PreCompute scalar backends).
 @generated function _cache_axes_pooled(pool, grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
-    exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    if isconcretetype(Tg)
+        exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is an abstract promotion tag —
+        # wrap each axis at its OWN eltype (mirrors `_convert_cache_axes`).
+        exprs = [:(_cache_axis_pooled(pool, grids[$i], eltype(grids[$i]))) for i in 1:N]
+    end
     return :(($(exprs...),))
 end
 

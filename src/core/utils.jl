@@ -122,19 +122,6 @@ end
     return nothing
 end
 
-# One-shot solver-family ND entries: the pooled pipeline (axis wrap, partials
-# buffer, local params) has no reparameterized arm yet — refuse non-Real axes
-# with a pointer at the persistent builders, which DO support them via the
-# scaled store. The gate is `<: Real` (Dual passes); `Real` folds away.
-@inline _check_nd_solver_grid(::Type{<:Real}) = nothing
-@noinline _check_nd_solver_grid(::Type{Tg}) where {Tg} = throw(
-    ArgumentError(
-        "one-shot solver-family ND entries (Cubic/Quadratic) do not support " *
-            "non-Real grid eltypes yet (grid eltype $(Tg)). The persistent " *
-            "builders DO — build once and evaluate: `cubic_interp(grids, data)(q)`."
-    )
-)
-
 # Cubic ND admits non-Real axes via the exact dimensionless reparameterization
 # t = x·_deriv_oneunit(x, DerivOp(1)) (= x·inv(oneunit(x))): the 2^N store then
 # holds ∂ᵏf·Πoneunit(axis)ᵏ — every slot in the value space [Y], so the single
@@ -595,7 +582,7 @@ end
 end
 
 # Dispatch, not a boolean test, so the accepted case is a signature (matching the
-# `_check_nd_solver_grid` style above) and the check folds to nothing on `Real`.
+# `_check_nd_hetero_grid` style above) and the check folds to nothing on `Real`.
 @inline _check_adjoint_grid_real(::Type{<:Real}, ::Type{<:Real}) = nothing
 @noinline _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq} =
     _throw_adjoint_grid_not_real(Tg, Tq)

@@ -40,6 +40,7 @@
         msg = sprint(showerror, e)
         @test occursin("adjoint", msg)
         @test occursin("not supported", msg)
+        @test occursin("non-Real", msg)        # names the condition (`<: Real` gate)
         @test occursin("ustrip", msg)          # names the workaround
     end
 

@@ -181,7 +181,39 @@ end
             e
         end
         @test err isa ArgumentError
-        @test occursin("unit-carrying", sprint(showerror, err))
+        # The gate condition is `Tg <: Real` — the message must name that, with
+        # units as the canonical example (not the condition itself).
+        @test occursin("non-Real", sprint(showerror, err))
+    end
+end
+
+@testitem "ND gates: units-free duck Number grid gets the accurate refusal" begin
+    # A units-free duck Number hits the same `<: Real` gate — the error must be
+    # the actionable ArgumentError naming the actual eltype, not a units claim.
+    # (Testitem name must NOT contain the pinned phrase: ReTestItems derives the
+    # module name from it, and qualified type names would smuggle it into `msg`.)
+    struct _OrderedDuckNum <: Number
+        v::Float64
+    end
+    Base.isless(a::_OrderedDuckNum, b::_OrderedDuckNum) = isless(a.v, b.v)
+    xd = [_OrderedDuckNum(0.0), _OrderedDuckNum(1.0), _OrderedDuckNum(2.0), _OrderedDuckNum(3.0)]
+    F = [Float64(i + j) for i in 1:4, j in 1:4]
+
+    for build in (
+            () -> cubic_interp((xd, xd), F),        # solver gate (cubic entry)
+            () -> quadratic_interp((xd, xd), F),    # solver gate (quadratic entry)
+            () -> pchip_interp((xd, xd), F),        # hetero gate
+        )
+        err = try
+            build()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        msg = sprint(showerror, err)
+        @test occursin("non-Real", msg)
+        @test occursin("_OrderedDuckNum", msg)
     end
 end
 

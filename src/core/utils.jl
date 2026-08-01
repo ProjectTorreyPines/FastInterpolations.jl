@@ -124,27 +124,29 @@ end
 
 # Solver-family ND builds store mixed derivative-mask orders in ONE homogeneous
 # array — unit-heterogeneous by construction (f vs ∂²f differ even on same-unit
-# axes). Reject unit-carrying grids with an actionable error; `Real` folds away.
+# axes). The gate is `<: Real` (Dual passes; units are the canonical rejected
+# case, but any non-Real Number is refused); `Real` folds away.
 @inline _check_nd_solver_grid(::Type{<:Real}) = nothing
 @noinline _check_nd_solver_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
         "PreCompute ND coefficient builds (Cubic/Quadratic/Hermite axes) do not " *
-            "support unit-carrying grids yet (grid eltype $(Tg)) — the nodal-" *
-            "derivative store mixes derivative orders of different dimensions. " *
-            "Use LinearInterp/ConstantInterp ND, integrate per-fiber 1-D, or strip units."
+            "support non-Real grid eltypes yet (grid eltype $(Tg)) — the nodal-" *
+            "derivative store is one homogeneous array, which unit-carrying grids " *
+            "break (derivative orders of different dimensions). Use LinearInterp/" *
+            "ConstantInterp ND, integrate per-fiber 1-D, or use a Real grid (units: `ustrip`)."
     )
 )
 
 # Same contract for the per-axis (hetero) ND engine — which also backs
 # PCHIP/Akima/Cardinal ND. Neither builder path (OnTheFly eval kernels nor the
-# PreCompute partials store) handles unit-carrying grids yet; without this gate
+# PreCompute partials store) handles non-Real grids yet; without this gate
 # the failure is a deep MethodError (or a "successful" build whose eval throws).
 @inline _check_nd_hetero_grid(::Type{<:Real}) = nothing
 @noinline _check_nd_hetero_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
         "Per-axis (hetero) ND interpolants — including PCHIP/Akima/Cardinal ND — " *
-            "do not support unit-carrying grids yet (grid eltype $(Tg)). " *
-            "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or strip units."
+            "do not support non-Real grid eltypes yet (grid eltype $(Tg)). " *
+            "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid (units: `ustrip`)."
     )
 )
 
@@ -559,10 +561,11 @@ end
 @noinline function _throw_adjoint_grid_not_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
     throw(
         ArgumentError(
-            "adjoint operators on a unit-carrying grid are not supported (grid eltype " *
-                "`$Tg`, query eltype `$Tq`): the anchor weights are built homogeneously " *
-                "in the grid type. Strip units first (`ustrip`) and reattach them to the " *
-                "result, or differentiate the forward evaluation, which does preserve units."
+            "adjoint operators on non-Real grid or query eltypes are not supported " *
+                "(grid eltype `$Tg`, query eltype `$Tq`): the anchor weights are built " *
+                "homogeneously in the grid type. Use a Real grid — for units, strip them " *
+                "(`ustrip`) and reattach to the result, or differentiate the forward " *
+                "evaluation, which does preserve units."
         )
     )
 end

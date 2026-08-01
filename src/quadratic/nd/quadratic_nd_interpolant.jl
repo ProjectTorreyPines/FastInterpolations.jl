@@ -57,9 +57,11 @@ function quadratic_interp(
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 
+    # Gate on the RAW eltype BEFORE float promotion — a non-Real duck Number
+    # dies inside `_nd_promote_grids` (`AbstractFloat(x)` MethodError) otherwise.
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     # Zero-allocation type promotion and grid conversion
-    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
-    _check_nd_solver_grid(Tg_p)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Validate dimensions

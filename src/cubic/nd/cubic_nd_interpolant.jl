@@ -71,9 +71,11 @@ function _cubic_interp_nd(
         coeffs::AbstractCoeffStrategy = PreCompute(),
         store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
+    # Gate on the RAW eltype BEFORE float promotion — a non-Real duck Number
+    # dies inside `_nd_promote_grids` (`AbstractFloat(x)` MethodError) otherwise.
+    _check_nd_solver_grid(_promote_grid_eltype(grids))
     # Zero-allocation type promotion + grid conversion
-    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
-    _check_nd_solver_grid(Tg_p)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
 
     # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
     data_typed = Tv === Tv_raw ? data : Tv.(data)

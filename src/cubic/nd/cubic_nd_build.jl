@@ -613,23 +613,5 @@ function _build_nd_coeffs(
     return _NodalDerivativesND{Tz, N, N + 1}(partials)
 end
 
-# Dimensionless axis twins — `_float_grids_peraxis` peel idiom (build paths ban
-# closure-maps over axis wraps); scaling spelled with the canonical
-# `_deriv_oneunit` witness (= inv(oneunit(axis))). Ranges stay ranges.
-@inline _reparam_grids(::Tuple{}) = ()
-@inline _reparam_grids(grids::Tuple) = (
-    first(grids) .* _deriv_oneunit(first(first(grids)), DerivOp(1)),
-    _reparam_grids(Base.tail(grids))...,
-)
-
-# Typed PointBC payloads live in [Y/Xᵏ] → on the dimensionless axis they must be
-# [Y]: scale by oneunit(axis)ᵏ. Structural Real payloads pass through — the 1D
-# solve's normalize (zero-mint / embeddable / reject) owns their semantics.
-@inline _scale_bc_reparam(bc::BCPair, x) =
-    BCPair(_scale_bc_reparam(bc.left, x), _scale_bc_reparam(bc.right, x))
-@inline _scale_bc_reparam(bc::Deriv1, x) = Deriv1(_scale_payload_reparam(bc.val, oneunit(eltype(x))))
-@inline _scale_bc_reparam(bc::Deriv2, x) = Deriv2(_scale_payload_reparam(bc.val, oneunit(eltype(x))^2))
-@inline _scale_bc_reparam(bc::Deriv3, x) = Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3))
-@inline _scale_bc_reparam(bc::AbstractBC, _x) = bc
-@inline _scale_payload_reparam(v::Real, _u) = v
-@inline _scale_payload_reparam(v, u) = v * u
+# `_reparam_grids` / `_scale_bc_reparam` (shared with quadratic ND) live in
+# core/nd_utils.jl next to the reparam local-params.

@@ -331,20 +331,30 @@ Compute all partial derivatives for N-dimensional quadratic interpolation.
 - `_NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs_quadratic(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
+    # Non-Real axes solve on their exact dimensionless twins (mirrors the cubic
+    # scaled-store build): every stored slot lands in the value space [Y] and the
+    # single homogeneous partials array survives unit grids. Real folds through.
+    _check_nd_reparam_grid(grids)
+    grids_solve, bcs_solve = if _promote_grid_eltype(grids) <: Real
+        grids, bcs
+    else
+        _reparam_grids(grids), map(_scale_bc_reparam, bcs, grids)
+    end
+
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
-    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    _check_nd_solver_grid(Tg)
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    # Tz widens Tv with the solve-grid eltype: Dual grids → Dual-typed derivatives;
+    # unit grids solve dimensionless → Tz stays in the value space.
+    Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
     partials = Array{Tz, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
-    _compute_nd_partials_quadratic!(partials, grids, data, bcs)
+    _compute_nd_partials_quadratic!(partials, grids_solve, data, bcs_solve)
 
     return _NodalDerivativesND{Tz, N, N + 1}(partials)
 end

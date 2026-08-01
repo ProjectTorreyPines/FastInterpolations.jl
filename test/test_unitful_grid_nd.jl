@@ -67,11 +67,11 @@ end
         @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
     end
 
-    @testset "solver families: friendly error (deferred)" begin
-        # Cubic ND admits unit axes since the scaled-store build — this pin
-        # tracks the still-gated solver family (quadratic; PolyFit min-points
-        # would mask the cubic probe on this 3-point axis anyway).
-        @test_throws ArgumentError interp((xs, ym), data; method = QuadraticInterp())
+    @testset "solver families on mixed-unit axes: quadratic builds (scaled store)" begin
+        # Both solver persistents admit unit axes now; quadratic is the probe
+        # here (3-point axis-1 — cubic's PolyFit min-points needs 4, covered by
+        # the dedicated P-testitems below).
+        @test interp((xs, ym), data; method = QuadraticInterp()) isa QuadraticInterpolantND
     end
 end
 
@@ -381,6 +381,48 @@ end
     end
 end
 
+@testitem "Unitful ND: quadratic PreCompute build+eval (P3 mirror)" begin
+    using Unitful
+
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    xf = ustrip.(u"s", x)
+    yf = ustrip.(u"m", y)
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    Ff = ustrip.(u"W", F)
+    itp = quadratic_interp((x, y), F)
+    tw = quadratic_interp((xf, yf), Ff)
+    q = (2.2u"s", 1.3u"m")
+    qf = (2.2, 1.3)
+
+    @testset "store slots in [Y]; axis-fiber oracle" begin
+        P = itp.nodal_derivs.partials
+        @test eltype(P) === typeof(1.0u"W")
+        itp1 = quadratic_interp(x, F[:, 2])
+        @test P[2, 3, 2] ≈ itp1(x[3]; deriv = DerivOp(1)) * oneunit(eltype(x)) rtol = 1.0e-12
+    end
+
+    @testset "eval/deriv ≡ twin with restored units" begin
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(1))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(1))) * u"W/(s*m)" rtol = 1.0e-14
+        g = gradient(itp, q)
+        gt = gradient(tw, qf)
+        @test g[1] ≈ gt[1] * u"W/s" rtol = 1.0e-14
+        @test g[2] ≈ gt[2] * u"W/m" rtol = 1.0e-14
+    end
+
+    @testset "Left/Right payload BCs scale in" begin
+        bcp = (Left(Deriv1(0.25u"W/s")), MinCurvFit())
+        itp_p = quadratic_interp((x, y), F; bc = bcp)
+        itp1p = quadratic_interp(x, F[:, 2]; bc = Left(Deriv1(0.25u"W/s")))
+        @test itp_p.nodal_derivs.partials[2, 1, 2] ≈
+            itp1p(x[1]; deriv = DerivOp(1)) * oneunit(eltype(x)) rtol = 1.0e-12
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 
@@ -522,11 +564,11 @@ end
     q = (2.5u"s", 1.5u"s")
 
     @testset "solver families (Cubic/Quadratic): persistent + one-shot" begin
-        # Cubic persistent admits unit axes since the scaled-store build (P1);
-        # the concrete-Tg dispatch pin flips to build-success. One-shot mirrors
-        # and quadratic stay gated until their phases.
+        # Solver persistents admit unit axes since the scaled-store build; the
+        # concrete-Tg dispatch pins flip to build-success. One-shot mirrors
+        # stay gated until their phase.
         @test cubic_interp((xs, xs2), data) isa CubicInterpolantND
-        @test_throws ArgumentError quadratic_interp((xs, xs2), data)
+        @test quadratic_interp((xs, xs2), data) isa QuadraticInterpolantND
         @test_throws ArgumentError cubic_interp((xs, xs2), data, q)
         @test_throws ArgumentError quadratic_interp((xs, xs2), data, q)
     end

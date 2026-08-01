@@ -156,10 +156,10 @@ end
 end
 @noinline _throw_nd_reparam_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
-        "PreCompute cubic ND builds accept Real or unit-carrying grid axes; the " *
-            "non-Real grid eltype $(Tg) supports no dimensionless reparameterization " *
-            "(needs `oneunit`, `inv`, `*`). Use LinearInterp/ConstantInterp ND, " *
-            "work per-fiber 1-D, or use a Real grid."
+        "Solver-family PreCompute ND builds (Cubic/Quadratic axes) accept Real or " *
+            "unit-carrying grid axes; the non-Real grid eltype $(Tg) supports no " *
+            "dimensionless reparameterization (needs `oneunit`, `inv`, `*`). Use " *
+            "LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid."
     )
 )
 

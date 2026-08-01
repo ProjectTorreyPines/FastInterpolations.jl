@@ -777,6 +777,47 @@ end
     end
 end
 
+@testitem "Unitful ND: Hermite ND rejects unit grids with the friendly refusal" begin
+    using Unitful
+
+    # Hermite ND has no scaled-store/reparam seam (user partials live per-axis in
+    # [Y/Xᵈ]) — unit axes died in deep MethodErrors (`_pack_and_extend_nodal_derivs`,
+    # abstract-Tv coerce) on persistent AND one-shot entries. Pin the gate refusal.
+    xf = [0.0, 1.0, 2.0, 3.0]
+    yfv = [0.0, 1.0, 2.0, 3.0]
+    xs = xf .* u"s"
+    ym = yfv .* u"m"
+    F = [sin(a) + 2.0 * b for a in xf, b in yfv]
+    pR = HermitePartials(
+        (1, 0) => [cos(a) for a in xf, b in yfv],
+        (0, 1) => [2.0 for a in xf, b in yfv],
+        (1, 1) => zeros(4, 4),
+    )
+
+    @testset "persistent + one-shot → ArgumentError" begin
+        @test_throws ArgumentError hermite_interp((xs, ym), F, pR)
+        @test_throws ArgumentError hermite_interp((xs, yfv), F, pR)   # mixed Real×unit
+        @test_throws ArgumentError hermite_interp((xs, ym), F, pR, (1.5u"s", 1.5u"m"))
+        @test_throws ArgumentError hermite_interp((xs, ym), F, pR, [(1.5u"s", 1.5u"m")])
+    end
+
+    @testset "unit data + true-unit partials → same refusal (not a size/coerce error)" begin
+        Fw = F .* u"W"
+        pW = HermitePartials(
+            (1, 0) => [cos(a) for a in xf, b in yfv] .* u"W/s",
+            (0, 1) => [2.0 for a in xf, b in yfv] .* u"W/m",
+            (1, 1) => zeros(4, 4) .* u"W/(s*m)",
+        )
+        @test_throws ArgumentError hermite_interp((xs, ym), Fw, pW)
+        @test_throws ArgumentError hermite_interp((xs, ym), Fw, pW, (1.5u"s", 1.5u"m"))
+    end
+
+    @testset "Real axes stay served" begin
+        @test hermite_interp((xf, yfv), F, pR)((1.5, 1.5)) isa Float64
+        @test hermite_interp((xf, yfv), F, pR, (1.5, 1.5)) isa Float64
+    end
+end
+
 @testitem "Unitful ND: solver/hetero guards fire on same-unit (concrete-Tg) axes (review pin F20)" begin
     using Unitful
 

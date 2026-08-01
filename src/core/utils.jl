@@ -146,14 +146,15 @@ end
 )
 
 # Same contract for the per-axis (hetero) ND engine — which also backs
-# PCHIP/Akima/Cardinal ND. Neither builder path (OnTheFly eval kernels nor the
-# PreCompute partials store) handles non-Real grids yet; without this gate
-# the failure is a deep MethodError (or a "successful" build whose eval throws).
+# PCHIP/Akima/Cardinal ND — and for Hermite ND (user partials per-axis in
+# [Y/Xᵈ], no scaled store). Neither builder path handles non-Real grids yet;
+# without this gate the failure is a deep MethodError (or a "successful"
+# build whose eval throws).
 @inline _check_nd_hetero_grid(::Type{<:Real}) = nothing
 @noinline _check_nd_hetero_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
         "Per-axis (hetero) ND interpolants — including PCHIP/Akima/Cardinal ND — " *
-            "do not support non-Real grid eltypes yet (grid eltype $(Tg)). " *
+            "and Hermite ND do not support non-Real grid eltypes yet (grid eltype $(Tg)). " *
             "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid (units: `ustrip`)."
     )
 )

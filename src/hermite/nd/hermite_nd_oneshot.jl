@@ -111,6 +111,8 @@ end
         bc, extrap, search, deriv,
     ) where {N, Tv_part, K}
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
+    # Non-Real axes: same friendly refusal as the persistent ctor.
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
 
     # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
     # `Tg` value-matched to data∪partials (Int grid + Float32 → Float32) keeps `Tv` narrow,

@@ -936,3 +936,38 @@ end
         @test itc(q) === twc((2.2, 1.3))
     end
 end
+
+@testitem "Unitful ND: GridIdx queries resolve on unit axes" begin
+    using Unitful
+
+    # `_resolve_grididx` rebuilds the wrapper at the AXIS eltype — the payload
+    # constraint must admit Number, else every unit-axis GridIdx query dies in
+    # the constructor (TypeError) before evaluation.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    F = [(sin(xi) + 2.0 * yj) for xi in xf, yj in yf] .* u"W"
+    itp = cubic_interp((xs, ym), F)
+
+    @testset "persistent: all-GridIdx + mixed coordinate/GridIdx" begin
+        @test itp((GridIdx(2), GridIdx(3))) === itp((xs[2], ym[3]))
+        @test itp((2.2u"s", GridIdx(3))) === itp((2.2u"s", ym[3]))
+        itl = interp((xs, ym), F; method = LinearInterp())
+        @test itl((GridIdx(2), GridIdx(3))) === itl((xs[2], ym[3]))
+    end
+
+    @testset "one-shot mirrors (PreCompute / mixed-tuple Auto)" begin
+        @test cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)); coeffs = PreCompute()) ≈
+            itp((xs[2], ym[3])) rtol = 1.0e-14
+        @test quadratic_interp((xs, ym), F, (2.2u"s", GridIdx(3))) ≈
+            quadratic_interp((xs, ym), F)((2.2u"s", ym[3])) rtol = 1.0e-14
+    end
+
+    @testset "all-GridIdx + AutoCoeffs keeps the hetero-collapse refusal" begin
+        # The wrapper subtypes Real, so an all-GridIdx tuple matches the OnTheFly
+        # Real-tuple arm; its collapse engine refuses non-Real grids with the
+        # actionable error — explicit PreCompute above is the supported form.
+        @test_throws ArgumentError cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)))
+    end
+end

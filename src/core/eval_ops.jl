@@ -86,7 +86,8 @@ Search functions short-circuit when they see a `GridIdx` — zero search cost.
 `GridIdx <: Real`: it flows through `Tuple{Vararg{Number, N}}` dispatch transparently.
 Before resolution, `val = NaN` — a poison sentinel that propagates visibly if
 `_resolve_grididx` is ever skipped. After resolution, `val` holds the grid coordinate
-and arithmetic auto-promotes via `promote_rule` (stripping the `GridIdx` wrapper).
+(payload `T <: Number` — unit axes resolve to their Quantity coordinate) and
+arithmetic auto-promotes via `promote_rule` (stripping the `GridIdx` wrapper).
 
 # Examples
 ```julia
@@ -102,27 +103,34 @@ itp_hetero = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 itp_hetero((0.5, GridIdx(10)))   # search short-circuited on axis 2
 ```
 """
-struct GridIdx{T <: Real} <: Real
+struct GridIdx{T <: Number} <: Real
     idx::Int
     val::T
     function GridIdx(i::Integer)
         i >= 1 || throw(ArgumentError("GridIdx index must be ≥ 1, got $i"))
         return new{Float64}(Int(i), NaN64)
     end
-    function GridIdx{T}(i::Int, v::T) where {T <: Real}
+    function GridIdx{T}(i::Int, v::T) where {T <: Number}
         return new{T}(i, v)
     end
 end
 
 Base.show(io::IO, g::GridIdx) = print(io, "GridIdx(", g.idx, ")")
 
-# GridIdx <: Real: arithmetic works transparently via promotion.
+# GridIdx <: Real: Real arithmetic works transparently via promotion.
 # promote(GridIdx{T}, S) → promote_type(T, S), stripping the GridIdx wrapper.
 # Zero overhead — LLVM compiles to identical code as manual g.val extraction.
+# The rule stays S <: Real ON PURPOSE: Unitful's generic Quantity-vs-Real rules
+# see the wrapper (a Real) and nest (`Quantity{Quantity{…}}`) if we promote
+# against Quantity — unit coordinates instead flow through the direct `-` below.
 Base.promote_rule(::Type{GridIdx{T}}, ::Type{S}) where {T, S <: Real} = promote_type(T, S)
 Base.convert(::Type{T}, g::GridIdx) where {T <: Number} = convert(T, g.val)
 Base.float(g::GridIdx) = float(g.val)
 (::Type{T})(g::GridIdx) where {T <: AbstractFloat} = T(g.val)
+# The one value-consuming seam: every kernel reads a resolved coordinate as
+# `q - L` (dL / α). A direct method keeps Number payloads (unit axes) out of
+# the promotion machinery entirely; identical folds for Real payloads.
+Base.:-(g::GridIdx, x::Number) = g.val - x
 
 """
     _resolve_grididx(q, grid) -> resolved coordinate

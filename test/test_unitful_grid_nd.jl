@@ -423,6 +423,46 @@ end
     end
 end
 
+@testitem "Unitful ND: solver-family integrate — full + bounded (P4)" begin
+    using Unitful
+
+    # The separable engine runs on the exact dimensionless twins; the volume
+    # element Π oneunit(axis) restores ∫…dx from ∫…dt, so unit results are the
+    # Float64 twin's values re-tagged with [Y·X₁·X₂].
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    xf = ustrip.(u"s", x)
+    yf = ustrip.(u"m", y)
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    Ff = ustrip.(u"W", F)
+    lo = (0.5u"s", 0.5u"m")
+    hi = (3.5u"s", 3.0u"m")
+    lof = (0.5, 0.5)
+    hif = (3.5, 3.0)
+    TWSM = typeof(1.0u"W*s*m")
+
+    for (name, mk) in (("cubic", cubic_interp), ("quadratic", quadratic_interp))
+        @testset "$name: vec axes" begin
+            itp = mk((x, y), F)
+            tw = mk((xf, yf), Ff)
+            @test integrate(itp) ≈ integrate(tw) * u"W*s*m" rtol = 1.0e-13
+            @test integrate(itp) isa TWSM
+            @test integrate(itp, lo, hi) ≈ integrate(tw, lof, hif) * u"W*s*m" rtol = 1.0e-13
+        end
+    end
+
+    @testset "cubic: unit-Range axes" begin
+        xr = (0.0:1.0:4.0) .* u"s"
+        yr = (0.0:1.0:3.0) .* u"m"
+        Fr = [(xi + 2.0 * yj) * u"W" for xi in 0.0:1.0:4.0, yj in 0.0:1.0:3.0]
+        itp_r = cubic_interp((xr, yr), Fr)
+        tw_r = cubic_interp((0.0:1.0:4.0, 0.0:1.0:3.0), ustrip.(u"W", Fr))
+        @test integrate(itp_r) ≈ integrate(tw_r) * u"W*s*m" rtol = 1.0e-13
+        @test integrate(itp_r, lo, (3.5u"s", 2.5u"m")) ≈
+            integrate(tw_r, lof, (3.5, 2.5)) * u"W*s*m" rtol = 1.0e-13
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 

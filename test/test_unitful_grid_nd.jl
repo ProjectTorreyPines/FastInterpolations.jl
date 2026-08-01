@@ -497,6 +497,19 @@ end
         @test integrate(itp_r, lo, (3.5u"s", 2.5u"m")) ≈
             integrate(tw_r, lof, (3.5, 2.5)) * u"W*s*m" rtol = 1.0e-13
     end
+
+    @testset "bounded degenerate + reversed bounds on the reparam arm" begin
+        # `sign == 0` (point domain) short-circuits to `z_t * vol` — the zero must
+        # still live in [Y·X₁·X₂], same concrete type as a nondegenerate result.
+        itp = cubic_interp((x, y), F)
+        full = integrate(itp, lo, hi)
+        deg = integrate(itp, (2.0u"s", 1.5u"m"), (2.0u"s", 1.5u"m"))
+        @test iszero(deg)
+        @test typeof(deg) === typeof(full)
+        @test deg isa TWSM
+        # One flipped axis → sign == -1 rides `sign * (total * vol)`.
+        @test integrate(itp, (3.5u"s", 0.5u"m"), (0.5u"s", 3.0u"m")) === -full
+    end
 end
 
 @testitem "Unitful ND: composition gaps — 3D, PolyFit{4}, Real-zero BCPair, periodic, in-place" begin
@@ -1026,6 +1039,22 @@ end
         # Real-tuple arm; its collapse engine refuses non-Real grids with the
         # actionable error — explicit PreCompute above is the supported form.
         @test_throws ArgumentError cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)))
+    end
+
+    @testset "deriv × GridIdx: the `-` seam feeds the dLs scaling" begin
+        # `Base.:-(g::GridIdx, x::Number)` is the one value-consuming seam; its
+        # result is scaled by `_deriv_oneunit` in the reparam dLs — pin against
+        # the flat-coordinate equivalents (same cell → bit-identical, [Y/Xᵈ]).
+        d10 = (DerivOp(1), DerivOp(0))
+        d01 = (DerivOp(0), DerivOp(1))
+        @test itp((GridIdx(2), GridIdx(3)); deriv = d10) ===
+            itp((xs[2], ym[3]); deriv = d10)
+        @test itp((2.2u"s", GridIdx(3)); deriv = d01) ===
+            itp((2.2u"s", ym[3]); deriv = d01)
+        @test unit(itp((GridIdx(2), GridIdx(3)); deriv = d10)) == u"W/s"
+        itq = quadratic_interp((xs, ym), F)
+        @test itq((GridIdx(2), GridIdx(3)); deriv = d10) ===
+            itq((xs[2], ym[3]); deriv = d10)
     end
 end
 

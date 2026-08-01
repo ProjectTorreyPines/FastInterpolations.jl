@@ -904,3 +904,35 @@ end
         @test itp(q) isa Float64
     end
 end
+
+@testitem "Unitful ND: promotable data floats on unit axes (fill-space parity with Real axes)" begin
+    using Unitful
+
+    # Real axes float Int data at the entry, so `FillExtrap(0.5)` lives in the
+    # float value space. The unit-axis arm kept promotable data raw → the fill
+    # normalized into Int and threw InexactError. Pin parity across families.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    Fint = [i + j for i in 1:5, j in 1:4]
+    q = (2.2u"s", 1.3u"m")
+    q_oob = (9.9u"s", 1.3u"m")
+
+    @testset "Int data + FillExtrap(0.5): linear + cubic persistent + cubic one-shot" begin
+        itl = interp((xs, ym), Fint; method = LinearInterp(), extrap = FillExtrap(0.5))
+        @test itl(q_oob) === 0.5
+        itc = cubic_interp((xs, ym), Fint; extrap = FillExtrap(0.5))
+        @test itc(q_oob) === 0.5
+        @test cubic_interp(
+            (xs, ym), Fint, q_oob;
+            extrap = FillExtrap(0.5), coeffs = PreCompute()
+        ) === 0.5
+    end
+
+    @testset "in-domain Real-axes parity (value + type)" begin
+        itc = cubic_interp((xs, ym), Fint; extrap = FillExtrap(0.5))
+        twc = cubic_interp((xf, yf), Fint; extrap = FillExtrap(0.5))
+        @test itc(q) === twc((2.2, 1.3))
+    end
+end

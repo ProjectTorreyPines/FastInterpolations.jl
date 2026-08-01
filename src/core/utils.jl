@@ -169,6 +169,13 @@ Determine the output value type from y element type and grid type.
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T <: Real, Tg <: AbstractFloat} = Complex{Tg}
 # Duck-typing fallback for Tv: custom value types preserved as-is
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg <: AbstractFloat} = T
+# Non-AbstractFloat grid tags, promotable values: duck REAL grids (Dual) keep the
+# value raw (no grid-parameter partials in y), but non-Real (unit) tags float it —
+# eval/solve run in the float value space there, so fills must too (Real-axis parity).
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T <: _PromotableValue, Tg} =
+    _value_type_nonfloat_grid(T, Tg)
+@inline _value_type_nonfloat_grid(::Type{T}, ::Type{<:Real}) where {T} = T
+@inline _value_type_nonfloat_grid(::Type{T}, ::Type) where {T} = float(T)
 # Duck-typing fallback for Tg: when grid is duck-typed (Dual, Measurement, etc.),
 # values are not promoted to grid type (no grid-parameter partials in y).
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T

@@ -94,10 +94,13 @@ end
     end
 end
 
-@testitem "cubic Real release-parity pins (per BC, bit-exact)" begin
+@testitem "cubic Real release-parity pins (per BC)" begin
     # Literals generated from the pre-Phase-2 branch (Real path proven
-    # bit-identical to the v0.4.17 release by the Phase 1 A/B) — Phase 2+ edits
-    # to rows/RHS/normalize must not move a single bit on Real grids.
+    # bit-identical to the v0.4.17 release by the Phase 1 A/B). The z pins stay
+    # `===`: the solve is plain arithmetic, bit-stable across Julia versions and
+    # platforms. The EVAL kernels are muladd chains whose fma/SIMD lowering
+    # shifts a few tens of ULPs per Julia/LLVM version and ISA, so the eval
+    # pins assert rtol (the bit-level eval A/B lives on the minting machine).
     xf = [0.0, 1.0, 2.5, 3.0, 4.5]
     yf = [1.0, 2.0, 0.5, 3.0, 2.5]
 
@@ -143,8 +146,8 @@ end
         @testset "$(typeof(bc))" begin
             itp = cubic_interp(xf, yf; bc = bc, autocache = false)
             @test all(i -> itp.z[i] === z_pin[i], eachindex(z_pin))
-            @test itp(2.2) === v22
-            @test itp(0.35) === v035
+            @test itp(2.2) ≈ v22 rtol = 1.0e-13
+            @test itp(0.35) ≈ v035 rtol = 1.0e-13
         end
     end
 end

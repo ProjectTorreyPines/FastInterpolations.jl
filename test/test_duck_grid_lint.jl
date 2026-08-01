@@ -118,12 +118,10 @@
         "core/utils.jl" => 6,
         "cubic/cubic_adjoint.jl" => 1,
         "cubic/cubic_anchor.jl" => 4,
-        "cubic/cubic_oneshot.jl" => 3,
         # cubic series + one-shot: eval sigs relaxed to Number for unit-grid cubic
         # Series (build nondimensionalizes like the scalar path) — one-shot was 5,
         # now 0 → key dropped; interp was 4, now 1 = the `Tg <: Real ||` units-branch
         # idiom itself (allowlist class 3b).
-        "cubic/cubic_series_interp.jl" => 1,
         "cubic/nd/cubic_nd_adjoint.jl" => 1,
         # derivative_view.jl: in-place view query bounds relaxed to Number (Codex
         # #4) — was 2, now 0 → key dropped.
@@ -135,8 +133,6 @@
         "linear/nd/linear_nd_adjoint.jl" => 1,
         "quadratic/nd/quadratic_nd_adjoint.jl" => 1,
         "quadratic/quadratic_anchor.jl" => 8,
-        "quadratic/quadratic_interpolant.jl" => 1,
-        "quadratic/quadratic_oneshot.jl" => 2,
         # quadratic series + one-shot: eval sigs relaxed to Number (Codex parity;
         # eval reaches a documented solver-storage limit, but the SIG isn't the
         # blocker) — were 4 + 4, now 0 → keys dropped.
@@ -150,4 +146,65 @@
         @info "duck-grid lint ratchet drift (update table consciously)" drift
     end
     @test allowed_hits == expected_hits
+end
+
+# ========================================
+# Strip-twin ratchet (refac/duck-thomas)
+# ========================================
+# The strip→solve→reattach twin style (`_*_units` sibling builders,
+# `_strip_*_units` helpers, `<: Real` reroute forks in the solver families) is
+# banned; the counts below ratchet DOWN to zero as the duck-thomas phases
+# delete each site, and any INCREASE is a regression. Exact-name matching only:
+# `_strip_periodic_bc`, `_strip_wrap_extrap` are legitimate names a broad
+# pattern would false-positive on.
+#
+# Phase schedule (update counts consciously at each phase commit):
+#   P2 cubic scalar twin → P3 periodic → P4 quadratic scalar+Series twins
+#   → P5 cubic Series twin → P6 one-shot reroute forks → all zeros.
+
+@testitem "Duck grid: strip-twin ratchet — mention counts must only decrease" begin
+    src_dir = dirname(pathof(FastInterpolations))
+
+    # P2/P4/P5: every strip-twin family is gone — these ratchet at ZERO forever.
+    expected_tokens = Dict(
+        "_cubic_interp_units" => 0,
+        "_cubic_series_units" => 0,
+        "_quadratic_interp_units" => 0,
+        "_strip_series_bc_units" => 0,
+        "_strip_bc_units" => 0,
+    )
+    # `Tg <: Real || return …` / `if !(Tg <: Real)` REROUTE forks, counted only
+    # inside the solver family trees (cubic/, quadratic/) — `utils.jl`'s
+    # promotion arm and adjoint gating live elsewhere and are legitimate.
+    # Reject-guards (`<: Real || throw(...)`) are exempt: throwing an
+    # actionable error for a not-yet-native combo is the endorsed idiom, not a
+    # parallel solve path (e.g. the periodic-units guard until Phase 3).
+    # P2–P6: every reroute fork is gone — the solver families are fork-free
+    # forever (reject-guards with `throw` remain exempt).
+    fork_res = (r"<: Real \|\|", r"if !\([A-Za-z_][A-Za-z0-9_]* <: Real\)")
+    expected_forks = 0
+
+    counts, forks = let counts = Dict(k => 0 for k in keys(expected_tokens)), forks = 0
+        for (root, _, files) in walkdir(src_dir), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(root, f)
+            rel = relpath(path, src_dir)
+            in_family = startswith(rel, "cubic") || startswith(rel, "quadratic")
+            for line in eachline(path)
+                for k in keys(expected_tokens)
+                    occursin(k, line) && (counts[k] += 1)
+                end
+                if in_family && (occursin(fork_res[1], line) || occursin(fork_res[2], line))
+                    occursin("throw", line) || (forks += 1)   # reject-guard exemption
+                end
+            end
+        end
+        counts, forks
+    end
+
+    if counts != expected_tokens || forks != expected_forks
+        @info "strip-twin ratchet drift (decreases: update table at the phase commit; increases: regression)" counts expected_tokens forks expected_forks
+    end
+    @test counts == expected_tokens
+    @test forks == expected_forks
 end

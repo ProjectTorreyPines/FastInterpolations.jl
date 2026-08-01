@@ -170,12 +170,6 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    # Unit-carrying grids route through the persistent strip→solve→reattach
-    # build — the pooled coefficient solve below runs in unit space and throws.
-    Tg <: Real || return quadratic_interp(
-        x, y; bc = bc, extrap = extrap, search = search
-    )(xq; deriv = deriv, hint = hint)
-
     # Value-matched pooled wrap: Int/OneTo grid + Float32 data → Float32 axis
     # (vector conversion lands in a pool buffer — warm one-shots stay zero-alloc).
     x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
@@ -184,7 +178,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     nx = length(x)
     Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, eltype(x), eltype(y)), nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
@@ -232,9 +226,6 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: Number, Tv, Tq <: Number}
-    Tg <: Real || return quadratic_interp(
-        x, y; bc = bc, extrap = extrap, search = search
-    )(output, x_targets; deriv = deriv, hint = hint)
     @assert length(y) == length(x) "x and y must have same length"
     _check_query_output_size(output, x_targets)
     @assert length(x) >= 2 "x must have at least 2 elements"
@@ -246,7 +237,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     nx = length(x)
     Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, eltype(x), eltype(y)), nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 

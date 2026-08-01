@@ -140,7 +140,7 @@ end
 # units); `DerivOp{0}` is the identity. ND folds the single-axis helper across axes.
 @inline _deriv_eltype(::Type{Tr}, ::Type{Tg}, ::DerivOp{0}) where {Tr, Tg} = Tr
 @inline _deriv_eltype(::Type{Tr}, ::Type{Tg}, ::DerivOp{N}) where {Tr, Tg, N} =
-    _deriv_eltype(_promote_eltype(_deriv1_op, Tr, Tg), Tg, DerivOp{N - 1}())
+    _deriv_eltype(_promote_eltype(_deriv1_op, Tg, Tr), Tg, DerivOp{N - 1}())
 @inline _deriv_eltype_nd(::Type{Tr}, ::Tuple{}, ::Tuple{}) where {Tr} = Tr
 @inline _deriv_eltype_nd(::Type{Tr}, grids::Tuple, ops::Tuple) where {Tr} =
     _deriv_eltype_nd(_deriv_eltype(Tr, eltype(first(grids)), first(ops)), Base.tail(grids), Base.tail(ops))

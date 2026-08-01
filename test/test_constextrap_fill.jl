@@ -458,10 +458,11 @@
     end
 
     # ────────────────────────────────────────────
-    # P1: Vector-calculus OOB guard for FillExtrap
+    # P1: Vector-calculus OOB with FillExtrap — fill value is the OOB authority
     # ────────────────────────────────────────────
-    @testset "Vector-calculus OOB guard with FillExtrap" begin
-        # 2D cubic interpolant with NaN fill
+    @testset "Vector-calculus OOB with FillExtrap(NaN)" begin
+        # The fill value IS the OOB region's data (test_oob_zero_carrier_contract):
+        # a NaN fill poisons OOB derivatives, matching the 1D and ND eval paths.
         xg = range(0.0, 1.0, length = 6)
         yg = range(0.0, 1.0, length = 6)
         data = [sin(x + y) for x in xg, y in yg]
@@ -473,36 +474,42 @@
         @test all(isfinite, g_in)
         @test !all(iszero, g_in)
 
-        # OOB query: all derivatives should be zero
+        # OOB query: the NaN fill flows into every derivative
         q_oob = (-0.2, 0.5)
         g_oob = gradient(itp, q_oob)
-        @test all(iszero, g_oob)
+        @test all(isnan, g_oob)
 
         # gradient! OOB
         G = zeros(2)
         gradient!(G, itp, q_oob)
-        @test all(iszero, G)
+        @test all(isnan, G)
 
         # hessian OOB
         H = hessian(itp, q_oob)
-        @test all(iszero, H)
+        @test all(isnan, H)
 
         # hessian! OOB
         H2 = ones(2, 2)
         hessian!(H2, itp, q_oob)
-        @test all(iszero, H2)
+        @test all(isnan, H2)
 
         # laplacian OOB
-        @test laplacian(itp, q_oob) == 0.0
+        @test isnan(laplacian(itp, q_oob))
 
         # Both axes OOB
         q_oob2 = (-0.1, 1.5)
-        @test all(iszero, gradient(itp, q_oob2))
-        @test laplacian(itp, q_oob2) == 0.0
+        @test all(isnan, gradient(itp, q_oob2))
+        @test isnan(laplacian(itp, q_oob2))
 
         # Vector API passes through correctly
         g_vec = gradient(itp, [-0.2, 0.5])
-        @test all(iszero, g_vec)
+        @test all(isnan, g_vec)
+
+        # A FINITE fill keeps clean derivative zeros OOB
+        itp0 = cubic_interp((xg, yg), data; extrap = FillExtrap(0.0))
+        @test all(iszero, gradient(itp0, q_oob))
+        @test all(iszero, hessian(itp0, q_oob))
+        @test iszero(laplacian(itp0, q_oob))
     end
 
     # ────────────────────────────────────────────
@@ -592,15 +599,15 @@
         @test g_oob_x[1] ≈ 0.0 atol = 0.05  # ∂f/∂x at x=0 boundary
         @test isfinite(g_oob_x[2])  # in-domain axis
 
-        # OOB on axis 2 (Fill) → NaN value, all derivatives zero
+        # OOB on axis 2 (Fill) → NaN value; the NaN fill poisons the derivatives
         val_oob_y = itp((0.5, 1.5))
         @test isnan(val_oob_y)  # FillExtrap → NaN
         g_oob_y = gradient(itp, (0.5, 1.5))
-        @test all(iszero, g_oob_y)  # FillExtrap total short-circuit
+        @test all(isnan, g_oob_y)  # fill value carries the OOB zeros
 
-        # Hessian: OOB on Fill axis → all zero
+        # Hessian: OOB on Fill axis → NaN fill flows through
         H = hessian(itp, (0.5, 1.5))
-        @test all(iszero, H)
+        @test all(isnan, H)
 
         # Hessian: OOB on Clamp axis only → real derivatives at boundary
         H2 = hessian(itp, (-0.2, 0.5))

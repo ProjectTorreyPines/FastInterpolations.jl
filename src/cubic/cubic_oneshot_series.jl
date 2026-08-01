@@ -182,11 +182,6 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
-    # Unit-carrying grids: the one-shot inline solve is unit-hostile by storage —
-    # route through the persistent build, which solves a nondimensionalized twin.
-    _promote_grid_float(Tg, _series_eltype(s)) <: Real || return cubic_interp(
-        x, s; bc = bc, extrap = extrap, autocache = autocache, search = search
-    )(xq; deriv = deriv, search = search, hint = hint)
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
@@ -202,7 +197,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
     end
-    bc_pair = _normalize_bc(bc)
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     _cubic_oneshot_series_bcpair!(output, x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
     return output
 end
@@ -223,10 +218,6 @@ end
     ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
-    # Unit grids → persistent build (nondimensionalized twin); see the scalar arm.
-    _promote_grid_float(Tg, _series_eltype(s)) <: Real || return cubic_interp(
-        x, s; bc = bc, extrap = extrap, autocache = autocache, search = search
-    )(output, xq; deriv = deriv, search = search, hint = hint)
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
@@ -234,7 +225,7 @@ end
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
     end
-    bc_pair = _normalize_bc(bc)
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     _cubic_oneshot_series_bcpair!(output, x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
     return output
 end
@@ -257,10 +248,6 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
-    # Unit grids → persistent build (nondimensionalized twin); see the scalar arm.
-    _promote_grid_float(Tg, _series_eltype(s)) <: Real || return cubic_interp(
-        x, s; bc = bc, extrap = extrap, autocache = autocache, search = search
-    )(outputs, xqs; deriv = deriv, search = search)
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
@@ -273,7 +260,7 @@ end
         return _cubic_oneshot_series_periodic_vec!(pool, outputs, x, s, xqs, bc, deriv, autocache, search)
     end
 
-    bc_pair = _normalize_bc(bc)
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
     # Pre-compute lean op/extrap-aware anchors once (search Q times, not K×Q),

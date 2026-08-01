@@ -146,9 +146,9 @@
                     dl = copy(A.dl)
                     d_diag = copy(A.d)
                     du = copy(A.du)
-                    thomas = FI.thomas_factorize!(dl, d_diag, du)
+                    thomas = FI.thomas_factorize(dl, d_diag, du)
                     x_custom = copy(rhs)
-                    FI._ldiv_tridiagonal_nopiv!(x_custom, thomas)
+                    FI._ldiv_tridiagonal_nopiv!(x_custom, x_custom, thomas)
 
                     # Residuals should be comparable
                     resid_base = maximum(abs.(A * x_base .- rhs))
@@ -189,9 +189,9 @@
                 dl = copy(Aprime.dl)
                 d_diag = copy(Aprime.d)
                 du = copy(Aprime.du)
-                thomas = FI.thomas_factorize!(dl, d_diag, du)
+                thomas = FI.thomas_factorize(dl, d_diag, du)
                 x_custom = copy(rhs)
-                FI._ldiv_tridiagonal_nopiv!(x_custom, thomas)
+                FI._ldiv_tridiagonal_nopiv!(x_custom, x_custom, thomas)
 
                 resid_base = maximum(abs.(Aprime * x_base .- rhs))
                 resid_custom = maximum(abs.(Aprime * x_custom .- rhs))
@@ -227,11 +227,11 @@
                 dl = copy(Aprime.dl)
                 d_diag = copy(Aprime.d)
                 du = copy(Aprime.du)
-                thomas = FI.thomas_factorize!(dl, d_diag, du)
+                thomas = FI.thomas_factorize(dl, d_diag, du)
                 q_custom = zeros(T, n_sys)
                 q_custom[1] = one(T)
                 q_custom[end] = one(T)
-                FI._ldiv_tridiagonal_nopiv!(q_custom, thomas)
+                FI._ldiv_tridiagonal_nopiv!(q_custom, q_custom, thomas)
 
                 # Residual check: A' * q ≈ u
                 u_ref = zeros(T, n_sys)
@@ -272,7 +272,8 @@
 
                     # Sequential reference: solve each RHS row independently
                     @inbounds for i in 1:n_batch
-                        FI._ldiv_tridiagonal_nopiv!(view(z_seq, i, :), cache.thomas)
+                        v = view(z_seq, i, :)
+                        FI._ldiv_tridiagonal_nopiv!(v, v, cache.thomas)
                     end
 
                     FI._ldiv_along_dim!(z_batch, cache.thomas, Val(2))
@@ -291,11 +292,184 @@
             z_ref = copy(z)
 
             @inbounds for i in 1:size(z, 1)
-                FI._ldiv_tridiagonal_nopiv!(view(z_ref, i, :), cache.thomas)
+                v = view(z_ref, i, :)
+                FI._ldiv_tridiagonal_nopiv!(v, v, cache.thomas)
             end
 
             FI._ldiv_along_dim!(z, cache.thomas, Val(2))
             @test z ≈ z_ref rtol = 1.0e-10
         end
     end
+end
+
+# ========================================
+# Witness-typed Thomas core (duck grids)
+# ========================================
+# The factorization mixes three unit spaces — l (dimensionless), du (X),
+# inv_d (1/X) — so the storage is per-field typed and the solve writes its
+# result (B/X space) into a caller-provided output instead of overwriting the
+# RHS. Real grids must stay bit-identical: the reference implementations below
+# are the pre-refactor in-place loops, op-for-op (muladd order preserved), used
+# as an executable spec.
+
+@testitem "Thomas duck core: Real bit-identity vs reference algorithm" setup = [AllocConstants] begin
+    const FI = FastInterpolations
+
+    # ── pre-refactor loops (executable spec; do not "simplify") ──
+    function ref_factorize!(dl, d, du)
+        n = length(d)
+        @inbounds begin
+            inv_d_val = inv(d[1])
+            d[1] = inv_d_val
+            for i in 1:(n - 1)
+                l_val = dl[i] * inv_d_val
+                dl[i] = l_val
+                d_next = d[i + 1] - l_val * du[i]
+                inv_d_val = inv(d_next)
+                d[i + 1] = inv_d_val
+            end
+        end
+        return dl, du, d   # (l, du, inv_d)
+    end
+    function ref_nopiv!(b, l, du, inv_d)
+        n = length(inv_d)
+        @inbounds for i in 1:(n - 1)
+            b[i + 1] = muladd(-l[i], b[i], b[i + 1])
+        end
+        @inbounds b[n] *= inv_d[n]
+        @inbounds for i in (n - 1):-1:1
+            b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
+        end
+        return b
+    end
+    function ref_transpose!(b, l, du, inv_d)
+        n = length(inv_d)
+        @inbounds b[1] *= inv_d[1]
+        @inbounds for i in 2:n
+            b[i] = muladd(-du[i - 1], b[i - 1], b[i]) * inv_d[i]
+        end
+        @inbounds for i in (n - 1):-1:1
+            b[i] = muladd(-l[i], b[i + 1], b[i])
+        end
+        return b
+    end
+
+    mk(n) = (
+        d = [4.0 + sin(i) for i in 1:n],
+        dl = [1.0 + 0.1 * cos(i) for i in 1:(n - 1)],
+        du = [1.0 + 0.1 * sin(2i) for i in 1:(n - 1)],
+        b = [sin(3i) for i in 1:n],
+    )
+    bitsame(a, b) = length(a) == length(b) && all(a[i] === b[i] for i in eachindex(a))
+
+    for n in (5, 64)
+        t = mk(n)
+        l_r, du_r, inv_r = ref_factorize!(copy(t.dl), copy(t.d), copy(t.du))
+
+        F = FI.thomas_factorize(t.dl, t.d, t.du)
+        @test typeof(F.dl) === Vector{Float64}
+        @test typeof(F.inv_d) === Vector{Float64}
+        @test F.du === t.du                    # stored by reference, unchanged
+        @test bitsame(F.dl, l_r)
+        @test bitsame(F.inv_d, inv_r)
+        # Real path: witness spaces equal the input eltypes → the donated inputs
+        # ARE the storage (old in-place layout — zero extra allocation, ns-parity).
+        @test F.dl === t.dl
+        @test F.inv_d === t.d
+        t3 = mk(n)
+        @test (@allocated FI.thomas_factorize(t3.dl, t3.d, t3.du)) <= ALLOC_THRESHOLD
+
+        # nopiv: alias form ≡ old in-place, bit-for-bit
+        b_ref = ref_nopiv!(copy(t.b), l_r, du_r, inv_r)
+        b_alias = copy(t.b)
+        @test FI._ldiv_tridiagonal_nopiv!(b_alias, b_alias, F) === b_alias
+        @test bitsame(b_alias, b_ref)
+        # nopiv: separate-output form (b is forward-sweep scratch)
+        x = similar(t.b)
+        FI._ldiv_tridiagonal_nopiv!(x, copy(t.b), F)
+        @test bitsame(x, b_ref)
+
+        # transpose: alias + separate-output, bit-for-bit
+        bt_ref = ref_transpose!(copy(t.b), l_r, du_r, inv_r)
+        bt_alias = copy(t.b)
+        @test FI._ldiv_tridiagonal_transpose!(bt_alias, bt_alias, F) === bt_alias
+        @test bitsame(bt_alias, bt_ref)
+        xt = similar(t.b)
+        FI._ldiv_tridiagonal_transpose!(xt, copy(t.b), F)
+        @test bitsame(xt, bt_ref)
+
+        # batch Val{2} consumes the new struct; rows ≡ per-row nopiv
+        z = [sin(i + j) for i in 1:3, j in 1:n]
+        z_ref = copy(z)
+        for i in 1:3
+            row = z_ref[i, :]
+            FI._ldiv_tridiagonal_nopiv!(row, row, F)
+            z_ref[i, :] = row
+        end
+        FI._ldiv_along_dim!(z, F, Val(2))
+        @test z ≈ z_ref rtol = 1.0e-12
+        @test_throws ArgumentError FI._ldiv_along_dim!(z, F, Val(1))
+    end
+end
+
+@testitem "Thomas duck core: unit-carrying axis solves in witness spaces" begin
+    using Unitful
+    const FI = FastInterpolations
+
+    n = 6
+    d = [(4.0 + sin(i)) * u"s" for i in 1:n]
+    dl = [(1.0 + 0.1 * cos(i)) * u"s" for i in 1:(n - 1)]
+    du = [(1.0 + 0.1 * sin(2i)) * u"s" for i in 1:(n - 1)]
+
+    dl0, d0 = copy(dl), copy(d)
+    F = FI.thomas_factorize(dl, d, du)
+    @test eltype(F.dl) === Float64                    # L multipliers: dimensionless
+    @test eltype(F.inv_d) === typeof(inv(1.0u"s"))    # 1/X
+    @test F.du === du                                 # X, by reference
+    # unit path: witness spaces differ → fresh outputs, donated inputs untouched
+    @test dl == dl0 && d == d0
+
+    # value-preservation: identical mantissas to the ustrip'd Real solve
+    Fr = FI.thomas_factorize(ustrip.(u"s", dl), ustrip.(u"s", d), ustrip.(u"s", du))
+    @test all(F.dl[i] === Fr.dl[i] for i in eachindex(Fr.dl))
+    @test all(ustrip(u"s^-1", F.inv_d[i]) === Fr.inv_d[i] for i in eachindex(Fr.inv_d))
+
+    # cubic-shaped RHS: Y/X in, Y/X² out
+    b = [sin(3i) * u"W/s" for i in 1:n]
+    x = Vector{typeof(1.0u"W/s^2")}(undef, n)
+    FI._ldiv_tridiagonal_nopiv!(x, copy(b), F)
+    xr = Vector{Float64}(undef, n)
+    FI._ldiv_tridiagonal_nopiv!(xr, ustrip.(u"W/s", b), Fr)
+    @test all(ustrip(u"W/s^2", x[i]) === xr[i] for i in 1:n)
+
+    # transpose (adjoint path): same spaces
+    xt = Vector{typeof(1.0u"W/s^2")}(undef, n)
+    FI._ldiv_tridiagonal_transpose!(xt, copy(b), F)
+    xtr = Vector{Float64}(undef, n)
+    FI._ldiv_tridiagonal_transpose!(xtr, ustrip.(u"W/s", b), Fr)
+    @test all(ustrip(u"W/s^2", xt[i]) === xtr[i] for i in 1:n)
+end
+
+@testitem "Thomas duck core: Dual grid keeps flowing (Dual <: Real)" begin
+    using ForwardDiff: Dual, value
+    const FI = FastInterpolations
+
+    n = 5
+    d = Dual.([4.0 + sin(i) for i in 1:n], 1.0)
+    dl = Dual.([1.0 + 0.1 * cos(i) for i in 1:(n - 1)], 0.0)
+    du = Dual.([1.0 + 0.1 * sin(2i) for i in 1:(n - 1)], 0.0)
+
+    F = FI.thomas_factorize(dl, d, du)
+    @test eltype(F.dl) <: Dual
+    @test eltype(F.inv_d) <: Dual
+    # Dual is autocache-OFF (ephemeral grids) → factorize runs on EVERY build;
+    # the reuse-storage arm must cover it too (inv(Dual) is the same Dual type).
+    @test F.dl === dl
+    @test F.inv_d === d
+
+    b = Dual.([sin(3i) for i in 1:n], 1.0)
+    x = similar(b)
+    FI._ldiv_tridiagonal_nopiv!(x, copy(b), F)
+    @test eltype(x) <: Dual
+    @test all(isfinite, value.(x))
 end

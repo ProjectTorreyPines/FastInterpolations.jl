@@ -9,8 +9,9 @@
 #   B  1D DerivativeView eval     — deriv1/2/3(itp)(q::Quantity)
 #   E  ND GriddedQuery eval       — _anchor_loc coord promotion
 #   G  Series eval                — query bound widened to Number
-# Adjoints / mixed-unit hessian / solver-family series build are design-excluded
-# (kept <:Real) — their friendly-error contract is pinned separately.
+# Adjoints / mixed-unit hessian remain design-excluded (kept <:Real) — their
+# friendly-error contract is pinned separately. Solver-family Series builds
+# are unit-native since the duck Thomas core (see test_cubic_unit_native.jl).
 
 @testitem "Unitful A: show(text/plain) renders for every built family" begin
     using Unitful

@@ -24,9 +24,6 @@
     ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
-    Tg_p <: Real || return quadratic_interp(
-        x, s; bc = bc, extrap = extrap, search = search
-    )(xq; deriv = deriv, search = search, hint = hint)
     # Pool-backed cache: K-series loop reuses h/inv_h across all K calls.
     x = _cache_axis_pooled(pool, x, Tg_p)
     _check_domain(x, xq, extrap)
@@ -48,7 +45,7 @@
     )
     output = Vector{T_out}(undef, K)
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, Tg_actual, _series_eltype(s)), nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -75,9 +72,6 @@ end
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
-    Tg_p <: Real || return quadratic_interp(
-        x, s; bc = bc, extrap = extrap, search = search
-    )(output, xq; deriv = deriv, search = search, hint = hint)
     # Pool-backed cache: K-series loop reuses h/inv_h.
     x = _cache_axis_pooled(pool, x, Tg_p)
     _check_domain(x, xq, extrap)
@@ -92,7 +86,7 @@ end
     Tg_actual = eltype(x)
     Tcoeff = _promote_eltype(_coeff_op, Tg_actual, _series_eltype(s))
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, Tg_actual, _series_eltype(s)), nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -121,9 +115,6 @@ end
     ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
-    Tg_p <: Real || return quadratic_interp(
-        x, s; bc = bc, extrap = extrap, search = search
-    )(outputs, xqs; deriv = deriv, search = search)
     # Pool-backed cache: K-series × Q-query loop reuses h/inv_h.
     x = _cache_axis_pooled(pool, x, Tg_p)
     K = n_series(s)
@@ -144,7 +135,7 @@ end
     _fill_series_anchors_resolved!(QuadraticInterp(), anchors, x, xqs, extrap_eff, extrap_eff isa WrapExtrap, search, nothing)
 
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, Tg_actual, _series_eltype(s)), nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)

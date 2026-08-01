@@ -135,13 +135,19 @@ end
     return _promote_extrap_val(fill_val, qe)
 end
 
-# Per-axis inverse-coordinate-unit product for a FillExtrap OOB derivative zero: scales the
-# value-space zero into value/∏gridᵈ space (units only — the value stays 0/NaN). A scalar op
-# broadcasts to every axis. `true` (dimensionless) on Real grids, so no runtime cost there.
+# CANONICAL per-axis grid⁻ᵒʳᵈᵉʳ scale fold: ∏ᵈ `_deriv_oneunit(samples[d], ops[d])`.
+# `samples[d]` is any grid-space value for axis d (`oneunit` is taken inside the
+# single-axis factor). `true` (dimensionless) on Real grids — folds to no-op.
+# Every ND derivative-zero scale routes through THIS fold — do not respell it.
+@inline _nd_deriv_scale(::Tuple{}, ::Tuple{}) = true
+@inline _nd_deriv_scale(samples::Tuple, ops::Tuple) =
+    _deriv_oneunit(first(samples), first(ops)) * _nd_deriv_scale(Base.tail(samples), Base.tail(ops))
+
+# FillExtrap OOB form: axis samples from the grid eltypes; a scalar op
+# broadcasts to every axis.
 @inline _nd_fill_deriv_scale(grids::Tuple, op::AbstractEvalOp) = _nd_fill_deriv_scale(grids, map(_ -> op, grids))
-@inline _nd_fill_deriv_scale(::Tuple{}, ::Tuple{}) = true
 @inline _nd_fill_deriv_scale(grids::Tuple, ops::Tuple) =
-    _deriv_oneunit(oneunit(eltype(first(grids))), first(ops)) * _nd_fill_deriv_scale(Base.tail(grids), Base.tail(ops))
+    _nd_deriv_scale(map(g -> oneunit(eltype(g)), grids), ops)
 
 # Extract fill_value from the first FillExtrap in extraps tuple.
 # Only called on OOB cold path (guarded by _is_fill_oob).

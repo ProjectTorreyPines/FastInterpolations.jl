@@ -1943,3 +1943,20 @@ end
         end
     end
 end
+
+@testitem "Duck Typing: Real-zero BC payloads rehydrate duck-safely (BCPair + cache)" setup = [DuckTypeSetup] begin
+    # Structural Real zeros (user BCPair, cache markers) must mint the duck-space
+    # zero via `0 * value-witness` — `one`/`oneunit(Tv)` are not duck-contract ops.
+    ref = cubic_interp(x_vec, y_generic; bc = ZeroCurvBC())
+
+    @testset "user BCPair with Real zeros beside duck data" begin
+        itp = cubic_interp(x_vec, y_generic; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
+        @test _val(itp(xq)) === _val(ref(xq))
+    end
+
+    @testset "cache markers (Deriv{Float64} zeros) rehydrate against duck values" begin
+        cache = CubicSplineCache(x_vec; bc = ZeroCurvBC())
+        itp_c = cubic_interp(cache, y_generic)
+        @test _val(itp_c(xq)) === _val(ref(xq))
+    end
+end

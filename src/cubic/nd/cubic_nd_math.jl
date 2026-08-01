@@ -387,9 +387,9 @@ This enables @simd vectorization over the contiguous dimension.
 - `thomas::ThomasFactorization{Tg}`: Thomas factorization with dl, du, inv_d
 """
 @inline function _ldiv_along_dim_vectorized!(
-        z::AbstractMatrix{Tv},
-        thomas::ThomasFactorization{Tg, V}
-    ) where {Tv, Tg, V <: AbstractVector{Tg}}
+        z::AbstractMatrix,
+        thomas::ThomasFactorization
+    )
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d

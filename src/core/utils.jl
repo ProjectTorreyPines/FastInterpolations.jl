@@ -253,10 +253,15 @@ end
 # Unitful inverse units and duck carriers.
 @inline _inv_op(h) = inv(h)
 
+# `_thomas_l_op` (2-arg, both grid-space): Thomas L-multiplier eltype —
+# `dl[i]*inv(d)` cancels the axis unit (dimensionless float for unit grids,
+# `Tg` for Real). Drives `thomas_factorize`'s `l` output allocation.
+@inline _thomas_l_op(h::Tg, d::Tg2) where {Tg, Tg2} = h * inv(d)
+
 # `_deriv1_op` (2-arg): ONE order of differentiation — output type `r` scaled by a single
 # `inv(h)`. dⁿf/dxⁿ ∈ `[value]/[grid]ⁿ` is this folded n times (`_deriv_eltype`); one
 # `inv(h)` per order — never `h^-n` (type-unstable for units) — keeps every step concrete.
-@inline _deriv1_op(r::Tr, h::Tg) where {Tr, Tg} = r * inv(h)
+@inline _deriv1_op(h::Tg, r::Tr) where {Tg, Tr} = r * inv(h)
 
 # Grid-precision DIMENSIONLESS constant `1/n` (kernel coefficients like 1/24):
 # `Tg(n)` would demand a unit for unit-carrying grids — `one(Tg)` keeps the
@@ -597,15 +602,25 @@ ForwardDiff support is added via:
 # GridIdx <: Real: _extract_primal(g::GridIdx) returns g (identity fallback).
 
 """
+    _grid_bankable(::Type{Tg}) -> Bool
+
+Whether grid eltype `Tg` may participate in the autocache pool. Contract: the
+pool is keyed by linear `isequal` scans (never `hash`), so `isequal(a, b)` on
+two grids must imply interchangeable factorizations. ForwardDiff Duals compare
+primal AND partials (safe); Unitful compares across unit rescale, but banks
+are segregated by exact eltype so cross-unit hits cannot occur. A type whose
+`isequal` ignores factorization-relevant state must opt out with a `false`
+method (none known today — escape hatch).
+"""
+@inline _grid_bankable(::Type{Tg}) where {Tg} = true
+
+"""
     _effective_autocache(autocache, Tg) -> Bool
 
-Disable autocache for non-standard grid types (e.g. ForwardDiff.Dual).
-Enabled for `_PromotableValue` types (AbstractFloat, Integer, Rational) which
-have stable grid identity (cache hit rate > 0). Dual grids are ephemeral
-(created fresh each AD call), so autocache is disabled for them.
-Resolves at specialization time — zero runtime cost on the Float hot path.
+Resolve the user's `autocache` flag against `_grid_bankable(Tg)`.
+Folds at specialization time — zero runtime cost on the Float hot path.
 """
-@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: _PromotableValue)
+@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & _grid_bankable(Tg)
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """

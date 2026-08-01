@@ -550,6 +550,46 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 # Needed when data type (e.g. MyDuck) doesn't support convert(MyDuck, Float64).
 @inline _normalize_bc(::ZeroCurvBC, sample) = (z = 0 * sample; BCPair(Deriv2(z), Deriv2(z)))
 @inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
+# Grid-aware duck-safe zeros — THE solve-side normalize (`(grid, value)` array
+# order): Deriv2/Deriv1 payload spaces are [Y/X²]/[Y/X] — a value-space zero
+# (`0 * y`) would make the RHS rule `bc.val * oneunit(Tg)` dimensionally wrong
+# on unit grids. The zero is a `0 *` value-witness (no `zero(::Type)`/`convert`
+# — duck-Tv contract); `oneunit(first(x))` (never `first(x)`) keeps it finite
+# for grids starting at 0. Samples are read INSIDE the zero-BC arms only —
+# shape-only BCs never touch the arrays (a caller-side `first(x)` costs a box
+# on some kwarg paths, so keep the reads here).
+@inline _normalize_bc(::ZeroCurvBC, x::AbstractArray, y::AbstractArray) =
+    (z = 0 * _coeff_op2(oneunit(first(x)), first(y)); BCPair(Deriv2(z), Deriv2(z)))
+@inline _normalize_bc(::ZeroSlopeBC, x::AbstractArray, y::AbstractArray) =
+    (z = 0 * _coeff_op(oneunit(first(x)), first(y)); BCPair(Deriv1(z), Deriv1(z)))
+# BCPair (grid-aware): rehydrate structural Real payloads. Zero is the one
+# Real with no unit ambiguity → promote into [Y/Xⁿ]; a nonzero Real beside
+# unit spaces errors; Complex/Dual carriers and typed payloads pass verbatim.
+# Typed payloads short-circuit BEFORE the witness — the [Y/Xⁿ] witness is a
+# `first(y)` value-product (mirrors the zero-BC arms above); `one`/`oneunit`
+# are not duck-Tv contract ops, so they must never run on duck data.
+@inline _normalize_bc(bc::BCPair, x::AbstractArray, y::AbstractArray) =
+    BCPair(_rehydrate_pointbc(bc.left, x, y), _rehydrate_pointbc(bc.right, x, y))
+@inline _rehydrate_pointbc(bc::Deriv1, x, y) = Deriv1(_rehydrate_payload(bc.val, x, y, DerivOp(1)))
+@inline _rehydrate_pointbc(bc::Deriv2, x, y) = Deriv2(_rehydrate_payload(bc.val, x, y, DerivOp(2)))
+@inline _rehydrate_pointbc(bc::Deriv3, x, y) = Deriv3(_rehydrate_payload(bc.val, x, y, DerivOp(3)))
+@inline _rehydrate_pointbc(bc::PointBC, _x, _y) = bc              # PolyFit{D}: payload-free
+@inline _rehydrate_payload(v, _x, _y, ::DerivOp) = v              # typed payload: RHS rules own the space
+@inline _rehydrate_payload(v::Real, x, y, n::DerivOp) =
+    _payload_val(v, first(y) * _deriv_oneunit(first(x), n))
+@inline _payload_val(v::Real, pw::Real) = v                       # Real solve: verbatim
+@inline function _payload_val(v::Real, pw)
+    iszero(v) && return 0 * pw                                    # structural zero → payload space
+    one(pw) * v isa typeof(pw) && return v                        # Complex/Dual y: embeds verbatim
+    throw(
+        ArgumentError(
+            "unitless BC payload `$v` with unit-carrying data — pass the payload " *
+                "in its derivative space, e.g. `Deriv2(κ)` with `κ::Quantity` in [value]/[grid]²"
+        )
+    )
+end
+# Shape-only fallback: other BC types carry user payloads verbatim.
+@inline _normalize_bc(bc::AbstractBC, _x::AbstractArray, _y::AbstractArray) = _normalize_bc(bc)
 @inline _normalize_bc(bc::BCPair) = bc
 @inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
 @inline _normalize_bc(bc::NoBC) = bc
@@ -662,6 +702,26 @@ function _normalize_bc_array(
 
     return [_normalize_bc(bc) for bc in bcs]
 end
+
+# Grid-aware (grid, value) variant for the SOLVE side: zero-BC payloads land
+# in their true derivative spaces (see the array 3-arg `_normalize_bc`).
+function _normalize_bc_array(
+        bcs::AbstractVector{<:AbstractBC},
+        x::AbstractArray, y::AbstractArray,
+        n_series::Int
+    )
+    length(bcs) == n_series || throw(
+        DimensionMismatch(
+            "BC array length $(length(bcs)) does not match n_series $n_series"
+        )
+    )
+    for (i, bc) in enumerate(bcs)
+        _is_periodic_bc(bc) && _throw_periodic_in_bc_array(i)
+    end
+    return [_normalize_bc(bc, x, y) for bc in bcs]
+end
+@inline _normalize_bc_array(bcs::AbstractVector{<:BCPair}, ::AbstractArray, y::AbstractArray, n_series::Int) =
+    _normalize_bc_array(bcs, eltype(y), n_series)
 
 
 # ========================================

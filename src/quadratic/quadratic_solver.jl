@@ -41,8 +41,11 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 """
 @inline function _compute_quadratic_secants!(s::AbstractVector{Tc}, y::AbstractVector, axis::AbstractVector{Tg}) where {Tc, Tg}
     n = length(y) - 1
+    # Diffs lift into VALUE space (wrap-free for narrow eltypes); the [Y/X]
+    # dimension enters via `inv_h`, never by converting y into it.
+    Tvs = _value_space_eltype(Tg, eltype(y))
     @inbounds for i in 1:n
-        s[i] = _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(axis, i)  # promote y into secant field Tc
+        s[i] = _fielddiff(Tvs, y[i + 1], y[i]) * _get_inv_h(axis, i)
     end
     return s
 end
@@ -121,12 +124,12 @@ derivatives from data. For other BC types, they are ignored.
 end
 
 # Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
+# κ ∈ [Y/X²] ≠ slope space — never pre-convert; κ·h lands in [Y/X].
 @inline function _fill_slopes!(
         d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
         bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
     ) where {Tc, Tg}
-    κ = convert(Tc, bc.bc.val)
-    d1 = s[1] - κ * (_get_h(axis, 1) / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
+    d1 = s[1] - bc.bc.val * (_get_h(axis, 1) / 2)
     return _forward_recurrence!(d, s, d1)
 end
 
@@ -145,9 +148,8 @@ end
         d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
         bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
     ) where {Tc, Tg}
-    κ = convert(Tc, bc.bc.val)
     n_intervals = length(s)
-    dn = s[end] + κ * (_get_h(axis, n_intervals) / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
+    dn = s[end] + bc.bc.val * (_get_h(axis, n_intervals) / 2)
     return _backward_recurrence!(d, s, dn)
 end
 
@@ -203,10 +205,12 @@ O(n) time, O(1) extra space (on-the-fly β computation).
     # Σ α[i]*(s[i] - β[i])/h[i] = d[1] * Σ 1/h[i]
     # d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
 
-    inv_h_sum = zero(Tg)
-    numerator = 0 * first(s)
+    # Accumulator spaces: inv_h_sum ∈ [1/X], numerator ∈ [Y/X²] (s·inv_h),
+    # β ∈ [Y/X] — value-witness zeros (Real: all plain 0.0, bit-identical).
+    inv_h_sum = zero(_promote_eltype(_inv_op, Tg))
+    numerator = 0 * (first(s) * _get_inv_h(axis, 1))
     β = 0 * first(s)
-    sign = one(Tg)  # α[1] = (-1)^(1+1) = +1
+    sign = one(Tg)  # dimensionless ±1 — `one`, not `oneunit`
 
     @inbounds for i in 1:n_intervals
         inv_h_i = _get_inv_h(axis, i)  # precomputed — no inv() needed
@@ -282,9 +286,10 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 - `Tv`: Value type (unconstrained)
 - `Tg`: Grid type
 """
-@inline function _compute_quadratic_coefficients!(a::AbstractVector{Tc}, d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg}) where {Tc, Tg}
+# `a` lives one `inv_h` power above `d`/`s` — no shared-eltype pin.
+@inline function _compute_quadratic_coefficients!(a::AbstractVector, d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg}) where {Tc, Tg}
     @inbounds for i in eachindex(a)
-        a[i] = (s[i] - d[i]) * _get_inv_h(axis, i)  # (Tv - Tv) * Tg → Tv
+        a[i] = (s[i] - d[i]) * _get_inv_h(axis, i)  # [Y/X] * [1/X] → [Y/X²]
     end
     return a
 end
@@ -364,10 +369,12 @@ function _compute_quadratic_coeffs(
     ) where {Tg}
     nx = length(x)
 
-    # Allocate arrays — widened type when grid is duck-typed (e.g. Dual)
+    # d is order-1 ([Y/X], `_coeff_op`); a is order-2 ([Y/X²], `_coeff_op2`).
+    # Real grids collapse both to one float — the historic single witness.
     Tcoeff = _promote_eltype(_coeff_op, Tg, eltype(y))
+    Ta = _promote_eltype(_coeff_op2, Tg, eltype(y))
     d = Vector{Tcoeff}(undef, nx)
-    a = Vector{Tcoeff}(undef, nx - 1)
+    a = Vector{Ta}(undef, nx - 1)
 
     # Fill using in-place version
     _compute_quadratic_coeffs!(d, a, x, y, bc)

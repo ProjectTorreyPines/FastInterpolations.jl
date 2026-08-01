@@ -22,7 +22,8 @@ no separate `period` field.
 # Type Parameters
 - `Tg`: Grid element type (Float32, Float64, or duck e.g. `ForwardDiff.Dual`).
 - `X`: Wrapped axis type (`_CachedRange`/`_CachedVector`/`_ExclusivePeriodicAxis`).
-- `F`: Thomas factorization type (`ThomasFactorization{Tg, Vector{Tg}}`).
+- `F`: Thomas factorization type (`ThomasFactorization{Vl, Vu, Vd}` — per-field
+  storage; all three are `Vector{Tg}` for Real grids).
 - `BC`: User's boundary condition (`BCPair{L,R}`, `PeriodicBC{E,P,C}`, etc.).
   Carries the resolved period for `:exclusive` periodic so display / cache pool
   comparison works without a separate field.
@@ -46,11 +47,11 @@ no separate `period` field.
 - `bc=ZeroCurvBC()`: Zero-curvature spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
-struct CubicSplineCache{Tg, X <: AbstractVector{Tg}, F, BC <: AbstractBC}
+struct CubicSplineCache{Tg, X <: AbstractVector{Tg}, F, BC <: AbstractBC, Q}
     x::X
     bc::BC
     thomas::F
-    q::Vector{Tg}   # Sherman-Morrison q (length n_cells for periodic; empty otherwise)
+    q::Q   # Sherman-Morrison q (periodic: Vector, length n_cells; `nothing` otherwise)
 end
 
 # AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)

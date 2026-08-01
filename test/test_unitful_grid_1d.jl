@@ -395,37 +395,19 @@ end
     end
 end
 
-@testitem "Unitful 1D: cubic PeriodicBC rejection is friendly (review pin F7)" begin
+@testitem "Unitful 1D: cubic PeriodicBC native S-M (was rejection pin F7)" begin
     using Unitful
 
-    # `_cubic_interp_units` deliberately rejects PeriodicBC (strip→solve→reattach
-    # has no periodic factorization path yet) — pin the ERROR QUALITY, not just
-    # that it throws: message must name the feature and the workaround.
+    # The strip-twin era rejected PeriodicBC on unit grids; the native build
+    # supports it (u dimensionless, q in [1/X]). Public-API sanity here — the
+    # internal bit pins live in test_cubic_unit_native.jl.
     xs = [0.0, 1.0, 2.5, 3.0] .* u"s"
-    yw = [1.0, 2.0, 4.0, 8.0] .* u"W"
-    err = try
-        cubic_interp(xs, yw; bc = PeriodicBC())
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    msg = sprint(showerror, err)
-    @test occursin("PeriodicBC", msg)
-    @test occursin("unit-carrying", msg)
-    @test occursin("ustrip", msg)   # actionable workaround named
-
-    @testset "unhandled BC type: catch-all is actionable, not a solve MethodError" begin
-        struct _F7UnknownBC <: FastInterpolations.AbstractBC end
-        err2 = try
-            FastInterpolations._strip_bc_units(_F7UnknownBC(), 1.0u"W", 1.0u"s")
-            nothing
-        catch e
-            e
-        end
-        @test err2 isa ArgumentError
-        @test occursin("ustrip", sprint(showerror, err2))
-    end
+    yw = [1.0, 2.0, 4.0, 1.0] .* u"W"
+    itp = cubic_interp(xs, yw; bc = PeriodicBC())
+    ref = cubic_interp([0.0, 1.0, 2.5, 3.0], [1.0, 2.0, 4.0, 1.0]; bc = PeriodicBC())
+    @test itp(1.0u"s") === 2.0u"W"                    # node hit
+    @test ustrip(u"W", itp(1.7u"s")) === ref(1.7)     # stripped bit parity
+    @test itp(4.2u"s") ≈ itp(1.2u"s")                 # wrap (period 3s)
 end
 
 @testitem "Unitful 1D: batch eval across families (review pin F8)" begin
@@ -1022,5 +1004,70 @@ end
         iu = f(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0u"s"))
         ir = f(xf, yf; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
         @test iu(1.5u"s") ≈ ir(1.5) * u"W"
+    end
+end
+
+@testitem "PolyFit{D>=4} endpoint fits survive unit grids (twin-era regression)" begin
+    using Unitful
+
+    # The twin era stripped units before the generic barycentric kernels, so
+    # PolyFit{4}+ worked; the native-unit route hit grid-typed intermediate
+    # buffers (β lives in X^(1-N)) and a same-type-only uniform kernel.
+    xu = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    xru = range(0.0u"s", 4.5u"s", length = 5)
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yu = [1.0, 2.0, 0.5, 3.0, 2.5] .* u"W"
+    yf = [1.0, 2.0, 0.5, 3.0, 2.5]
+
+    @testset "cubic PolyFit{4}: vector + range grids" begin
+        @test cubic_interp(xu, yu; bc = PolyFit{4}())(2.2u"s") ≈
+            cubic_interp(xf, yf; bc = PolyFit{4}())(2.2) * u"W" rtol = 1.0e-12
+        @test cubic_interp(xru, yu; bc = PolyFit{4}())(2.2u"s") ≈
+            cubic_interp(range(0.0, 4.5, length = 5), yf; bc = PolyFit{4}())(2.2) * u"W" rtol = 1.0e-12
+    end
+    @testset "quadratic Left(PolyFit{4})" begin
+        @test quadratic_interp(xu, yu; bc = Left(PolyFit{4}()))(2.2u"s") ≈
+            quadratic_interp(xf, yf; bc = Left(PolyFit{4}()))(2.2) * u"W" rtol = 1.0e-12
+    end
+    @testset "cubic PolyFit{5} (6 points)" begin
+        x6u = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] .* u"s"
+        x6f = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+        y6u = [1.0, 2.0, 0.5, 3.0, 2.5, 1.0] .* u"W"
+        y6f = [1.0, 2.0, 0.5, 3.0, 2.5, 1.0]
+        @test cubic_interp(x6u, y6u; bc = PolyFit{5}())(2.2u"s") ≈
+            cubic_interp(x6f, y6f; bc = PolyFit{5}())(2.2) * u"W" rtol = 1.0e-12
+    end
+end
+
+@testitem "Unitful 1D: constant deriv zeros scale from the GRID unit (in-domain ≡ OOB)" begin
+    using Unitful
+
+    # hr grid + s queries: the in-domain kernel scaled its zero from the query
+    # offset (→ W/s) while OOB used the grid axis (→ W/hr) — the return type
+    # flipped across the domain boundary. The grid axis is canonical (matches
+    # linear/cubic deriv spaces and the ND grid⁻ᴺ pins).
+    xh = [0.0, 1.0, 2.0, 3.0] .* u"hr"
+    yW = [1.0, 2.0, 3.0, 4.0] .* u"W"
+    itp = constant_interp(xh, yW; extrap = ClampExtrap())
+    q_in = 3600.0u"s"      # = 1 hr, in-domain
+    q_oob = -3600.0u"s"
+
+    for (nm, op, U) in (
+            ("deriv1", DerivOp(1), u"W/hr"),
+            ("deriv2", DerivOp(2), u"W/hr^2"),
+            ("deriv4", DerivOp(4), u"W/hr^4"),
+        )
+        @testset "$nm" begin
+            din = itp(q_in; deriv = op)
+            doob = itp(q_oob; deriv = op)
+            @test unit(din) === Unitful.unit(1.0 * U)
+            @test typeof(din) === typeof(doob)   # no boundary type flip
+            @test iszero(din)
+        end
+    end
+
+    @testset "one-shot mirrors the persistent kernel" begin
+        v = constant_interp(xh, yW, q_in; deriv = DerivOp(1), extrap = ClampExtrap())
+        @test unit(v) === Unitful.unit(1.0u"W/hr")
     end
 end

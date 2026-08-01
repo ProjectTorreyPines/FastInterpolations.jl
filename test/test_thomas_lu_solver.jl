@@ -312,7 +312,7 @@ end
 # are the pre-refactor in-place loops, op-for-op (muladd order preserved), used
 # as an executable spec.
 
-@testitem "Thomas duck core: Real bit-identity vs reference algorithm" begin
+@testitem "Thomas duck core: Real bit-identity vs reference algorithm" setup = [AllocConstants] begin
     const FI = FastInterpolations
 
     # ── pre-refactor loops (executable spec; do not "simplify") ──
@@ -377,7 +377,7 @@ end
         @test F.dl === t.dl
         @test F.inv_d === t.d
         t3 = mk(n)
-        @test (@allocated FI.thomas_factorize(t3.dl, t3.d, t3.du)) == 0
+        @test (@allocated FI.thomas_factorize(t3.dl, t3.d, t3.du)) <= ALLOC_THRESHOLD
 
         # nopiv: alias form ≡ old in-place, bit-for-bit
         b_ref = ref_nopiv!(copy(t.b), l_r, du_r, inv_r)

@@ -122,18 +122,16 @@ end
     return nothing
 end
 
-# Solver-family ND builds store mixed derivative-mask orders in ONE homogeneous
-# array — unit-heterogeneous by construction (f vs ∂²f differ even on same-unit
-# axes). The gate is `<: Real` (Dual passes; units are the canonical rejected
-# case, but any non-Real Number is refused); `Real` folds away.
+# One-shot solver-family ND entries: the pooled pipeline (axis wrap, partials
+# buffer, local params) has no reparameterized arm yet — refuse non-Real axes
+# with a pointer at the persistent builders, which DO support them via the
+# scaled store. The gate is `<: Real` (Dual passes); `Real` folds away.
 @inline _check_nd_solver_grid(::Type{<:Real}) = nothing
 @noinline _check_nd_solver_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
-        "PreCompute ND coefficient builds (Cubic/Quadratic/Hermite axes) do not " *
-            "support non-Real grid eltypes yet (grid eltype $(Tg)) — the nodal-" *
-            "derivative store is one homogeneous array, which unit-carrying grids " *
-            "break (derivative orders of different dimensions). Use LinearInterp/" *
-            "ConstantInterp ND, integrate per-fiber 1-D, or use a Real grid (units: `ustrip`)."
+        "one-shot solver-family ND entries (Cubic/Quadratic) do not support " *
+            "non-Real grid eltypes yet (grid eltype $(Tg)). The persistent " *
+            "builders DO — build once and evaluate: `cubic_interp(grids, data)(q)`."
     )
 )
 

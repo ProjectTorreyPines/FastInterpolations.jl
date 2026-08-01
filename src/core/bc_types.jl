@@ -565,19 +565,22 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 # BCPair (grid-aware): rehydrate structural Real payloads. Zero is the one
 # Real with no unit ambiguity → promote into [Y/Xⁿ]; a nonzero Real beside
 # unit spaces errors; Complex/Dual carriers and typed payloads pass verbatim.
+# Typed payloads short-circuit BEFORE the witness — the [Y/Xⁿ] witness is a
+# `first(y)` value-product (mirrors the zero-BC arms above); `one`/`oneunit`
+# are not duck-Tv contract ops, so they must never run on duck data.
 @inline _normalize_bc(bc::BCPair, x::AbstractArray, y::AbstractArray) =
     BCPair(_rehydrate_pointbc(bc.left, x, y), _rehydrate_pointbc(bc.right, x, y))
-@inline _rehydrate_pointbc(bc::Deriv1, x, y) =
-    Deriv1(_payload_val(bc.val, oneunit(first(y)) * _deriv_oneunit(oneunit(first(x)), DerivOp(1))))
-@inline _rehydrate_pointbc(bc::Deriv2, x, y) =
-    Deriv2(_payload_val(bc.val, oneunit(first(y)) * _deriv_oneunit(oneunit(first(x)), DerivOp(2))))
-@inline _rehydrate_pointbc(bc::Deriv3, x, y) =
-    Deriv3(_payload_val(bc.val, oneunit(first(y)) * _deriv_oneunit(oneunit(first(x)), DerivOp(3))))
+@inline _rehydrate_pointbc(bc::Deriv1, x, y) = Deriv1(_rehydrate_payload(bc.val, x, y, DerivOp(1)))
+@inline _rehydrate_pointbc(bc::Deriv2, x, y) = Deriv2(_rehydrate_payload(bc.val, x, y, DerivOp(2)))
+@inline _rehydrate_pointbc(bc::Deriv3, x, y) = Deriv3(_rehydrate_payload(bc.val, x, y, DerivOp(3)))
 @inline _rehydrate_pointbc(bc::PointBC, _x, _y) = bc              # PolyFit{D}: payload-free
+@inline _rehydrate_payload(v, _x, _y, ::DerivOp) = v              # typed payload: RHS rules own the space
+@inline _rehydrate_payload(v::Real, x, y, n::DerivOp) =
+    _payload_val(v, first(y) * _deriv_oneunit(first(x), n))
 @inline _payload_val(v::Real, pw::Real) = v                       # Real solve: verbatim
 @inline function _payload_val(v::Real, pw)
-    one(pw) * v isa typeof(pw) && return v                        # Complex/Dual y: late-convert
     iszero(v) && return 0 * pw                                    # structural zero → payload space
+    one(pw) * v isa typeof(pw) && return v                        # Complex/Dual y: embeds verbatim
     throw(
         ArgumentError(
             "unitless BC payload `$v` with unit-carrying data — pass the payload " *
@@ -585,7 +588,6 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
         )
     )
 end
-@inline _payload_val(v, pw) = v                                   # typed payload: RHS rules own the space
 # Shape-only fallback: other BC types carry user payloads verbatim.
 @inline _normalize_bc(bc::AbstractBC, _x::AbstractArray, _y::AbstractArray) = _normalize_bc(bc)
 @inline _normalize_bc(bc::BCPair) = bc

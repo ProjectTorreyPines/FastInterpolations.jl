@@ -1,9 +1,10 @@
 @testitem "ConstantAdjointND PeriodicBC dot-product identity" begin
-    using LinearAlgebra: dot
+    using LinearAlgebra: dot, norm
 
-    # Constant interp is single-point (no blending), so the dot-product
-    # identity ⟨W·f, ȳ⟩ == ⟨f, Wᵀ·ȳ⟩ is not just within rtol but exact —
-    # both sides are sums over a 1-1 mapping query → grid index.
+    # Constant interp is single-point (no blending): both sides sum the SAME
+    # products f[cell(q)]·ȳ[q], but Wᵀ groups them per cell first — that
+    # regrouping shifts ULPs, and a randn dot can land near 0 where rtol
+    # alone fails. Scale the tolerance by the operands, not the result.
     function dot_id_test(grids, xqs, f, y_bar; bc, side = NearestSide(), extrap = NoExtrap())
         itp = constant_interp(grids, f; bc = bc, side = side, extrap = extrap)
         adj = constant_adjoint(grids, xqs; bc = bc, side = side, extrap = extrap)
@@ -15,7 +16,10 @@
         WTy = adj(y_bar)
         @test size(WTy) == size(f)
 
-        return isapprox(dot(Wf, y_bar), dot(vec(f), vec(WTy)); rtol = 1.0e-12)
+        return isapprox(
+            dot(Wf, y_bar), dot(vec(f), vec(WTy));
+            rtol = 1.0e-12, atol = 1.0e-12 * norm(Wf) * norm(y_bar)
+        )
     end
 
     n_query = 40

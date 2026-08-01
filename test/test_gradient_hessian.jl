@@ -476,7 +476,7 @@ end
 
         val, grad = value_gradient(itp, (2.0, 0.5))
         @test isnan(val)
-        @test all(g -> g == 0.0, grad)
+        @test all(isnan, grad)   # fill-value rule: a NaN fill poisons OOB derivs too
 
         # Also test with finite non-zero fill value
         itp2 = cubic_interp((x, y), data; extrap = FillExtrap(-999.0))
@@ -822,5 +822,42 @@ end
         check_splat_equiv(itp, (GridIdx(3), GridIdx(5)))  # both GridIdx
         check_splat_equiv(itp, (GridIdx(3), 0.9))          # GridIdx + Float64
         @test isequal(gradient(itp, GridIdx(3), 0.9), gradient(itp, (GridIdx(3), 0.9)))
+    end
+end
+
+@testitem "FillExtrap OOB derivatives derive from the FILL value (NaN rule)" begin
+    # Package rule (1D + ND eval agree): the OOB region belongs to the fill
+    # value — FillExtrap(NaN) poisons OOB derivatives; interior data NaN does
+    # NOT leak into OOB. The vector-calculus OOB zeros used a DATA sample,
+    # which was backwards on both counts.
+    x = [0.0, 1.0, 2.0]
+    y = [0.0, 0.5, 1.0]
+    data = [1.0 2.0 3.0; 2.0 3.0 4.0; 3.0 4.0 5.0]
+    q_oob = (9.0, 0.5)
+
+    @testset "fill = NaN poisons OOB derivs (matches eval/1D)" begin
+        itp = interp((x, y), data; method = LinearInterp(), extrap = FillExtrap(NaN))
+        @test isnan(itp(q_oob; deriv = (DerivOp(1), DerivOp(0))))   # eval rule anchor
+        @test all(isnan, gradient(itp, q_oob))
+        vg = value_gradient(itp, q_oob)
+        @test isnan(vg[1]) && all(isnan, vg[2])
+        @test all(isnan, hessian(itp, q_oob))
+        @test isnan(laplacian(itp, q_oob))
+        G = zeros(2)
+        gradient!(G, itp, q_oob)
+        @test all(isnan, G)
+        H = zeros(2, 2)
+        hessian!(H, itp, q_oob)
+        @test all(isnan, H)
+    end
+
+    @testset "interior data NaN does NOT leak into OOB" begin
+        dn = copy(data)
+        dn[1, 1] = NaN
+        itp = interp((x, y), dn; method = LinearInterp(), extrap = FillExtrap(0.0))
+        @test itp(q_oob) === 0.0
+        @test all(iszero, gradient(itp, q_oob))
+        @test all(iszero, hessian(itp, q_oob))
+        @test iszero(laplacian(itp, q_oob))
     end
 end

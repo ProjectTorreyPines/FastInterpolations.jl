@@ -123,8 +123,9 @@ end
                 :(_eval_at_cell(itp, cell, $ops))
             end for i in 1:N
     ]
-    # Gradient component i is ∂f/∂xᵢ — scale the value-space zero by `inv(gridᵢ unit)`
-    # so a unit-grid FillExtrap OOB returns `value/gridᵢ` (identity on Real grids).
+    # Gradient component i is ∂f/∂xᵢ — the FILL value carries the zero (a NaN
+    # fill poisons OOB derivatives, matching the 1D/ND eval rule; interior data
+    # never leaks into OOB), scaled by `inv(gridᵢ unit)` into `value/gridᵢ`.
     zero_tuple = [:(0 * zref * _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1))) for i in 1:N]
 
     return quote
@@ -133,7 +134,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _sample_data(itp)
+            zref = _first_fill_value(itp.extraps)
             return tuple($(zero_tuple...))
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
@@ -221,7 +222,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _sample_data(itp)
+            zref = _first_fill_value(itp.extraps)
             @inbounds for i in 1:$N
                 G[i] = 0 * zref * _deriv_oneunit(oneunit(eltype(itp.grids[i])), DerivOp(1))
             end
@@ -321,9 +322,8 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _sample_data(itp)
-            fill_val = _first_fill_value(itp.extraps)
-            return (fill_val, tuple($(zero_tuple...)))
+            zref = _first_fill_value(itp.extraps)
+            return (zref, tuple($(zero_tuple...)))
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
         val = $value_call
@@ -430,13 +430,13 @@ end
         )
     end
 
-    # OOB (FillExtrap) zeros per element: `zero(zref)` (sign-free, NaN-free —
-    # matches the old `fill!(zero(Tq))` on concrete eltypes) scaled into each
+    # OOB (FillExtrap) zeros per element: the FILL value carries the zero (a
+    # NaN fill poisons OOB derivatives — 1D/ND eval rule), scaled into each
     # entry's own `[value]/[gridᵢ·gridⱼ]` space. Also serves abstract-eltype
     # stores, where `zero(eltype(H))` has no method.
     oob_stmts = [
         :(
-                H[$i, $j] = zero(zref) *
+                H[$i, $j] = 0 * zref *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1)) *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$j])), DerivOp(1))
             )
@@ -455,7 +455,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _sample_data(itp)
+            zref = _first_fill_value(itp.extraps)
             $(oob_stmts...)
             return H
         end
@@ -556,7 +556,7 @@ end
     # no method for abstract-eltype stores (`Matrix{Any}`), which are accepted.
     oob_stmts = [
         :(
-                H[$i, $j] = zero(zref) *
+                H[$i, $j] = 0 * zref *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1)) *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$j])), DerivOp(1))
             )
@@ -574,7 +574,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _sample_data(itp)
+            zref = _first_fill_value(itp.extraps)
             $(oob_stmts...)
             return H
         end
@@ -666,7 +666,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            return 0 * _sample_data(itp) * _deriv_oneunit(oneunit(eltype(itp.grids[1])), DerivOp(2))
+            return 0 * _first_fill_value(itp.extraps) * _deriv_oneunit(oneunit(eltype(itp.grids[1])), DerivOp(2))
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
         return +($(deriv_calls...))

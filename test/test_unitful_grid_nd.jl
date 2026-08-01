@@ -971,3 +971,39 @@ end
         @test_throws ArgumentError cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)))
     end
 end
+
+@testitem "Unitful ND: GriddedQuery on unit axes serves through the pointwise core" begin
+    using Unitful
+
+    # The cubic/quadratic gridded fast path stores PHYSICAL h/inv_h/dL anchors and
+    # calls the cell kernels directly — on non-Real axes the store is [Y]-scaled
+    # (dimensionless frame), so the fast path must decline and the restore-aware
+    # pointwise core serve instead.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    F = [(sin(xi) + 2.0 * yj) for xi in xf, yj in yf] .* u"W"
+    qx = [1.2, 2.2] .* u"s"
+    qy = [0.6, 1.3] .* u"m"
+    gq = GriddedQuery((qx, qy))
+    itp = cubic_interp((xs, ym), F)
+    itq = quadratic_interp((xs, ym), F)
+    d10 = (DerivOp(1), DerivOp(0))
+
+    @testset "persistent cubic/quadratic: value + deriv match pointwise" begin
+        g = itp(gq)
+        @test size(g) == (2, 2)
+        @test g[2, 2] === itp((qx[2], qy[2]))
+        # Deriv crosses two FP orderings (batch core vs scalar locate) — ≈, not ===.
+        gd = itp(gq; deriv = d10)
+        @test gd[1, 2] ≈ itp((qx[1], qy[2]); deriv = d10) rtol = 1.0e-14
+        g2 = itq(gq)
+        @test g2[2, 1] === itq((qx[2], qy[1]))
+    end
+
+    @testset "unified one-shot GriddedQuery (method = CubicInterp)" begin
+        g = interp((xs, ym), F, gq; method = CubicInterp())
+        @test g[2, 2] ≈ itp((qx[2], qy[2])) rtol = 1.0e-14
+    end
+end

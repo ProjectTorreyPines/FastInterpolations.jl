@@ -184,6 +184,26 @@ end
 @inline _gridded_methods(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} =
     map(QuadraticInterp, itp.bcs)
 
+# Non-Real axes decline the fused fast path: its anchors store PHYSICAL
+# h/inv_h/dL against the [Y]-scaled store — the restore-aware pointwise core
+# serves instead (dispatch: the `Tg <: Real` arms below win for Real).
+@inline _gridded_eval_itp_methods!(
+    ::AbstractArray{<:Any, N},
+    ::CubicInterpolantND,
+    ::GriddedQuery,
+    _ops,
+    _extraps,
+    ::Tuple{Vararg{CubicInterp, N}}
+) where {N} = false
+@inline _gridded_eval_itp_methods!(
+    ::AbstractArray{<:Any, N},
+    ::QuadraticInterpolantND,
+    ::GriddedQuery,
+    _ops,
+    _extraps,
+    ::Tuple{Vararg{QuadraticInterp, N}}
+) where {N} = false
+
 @inline function _gridded_eval_itp_methods!(
         out::AbstractArray{<:Any, N},
         itp::CubicInterpolantND{Tg, Tv, N},
@@ -191,7 +211,7 @@ end
         ops,
         extraps,
         methods::Tuple{Vararg{CubicInterp, N}}
-    ) where {Tg, Tv, N}
+    ) where {Tg <: Real, Tv, N}
     _gridded_eval_cubic_partials!(
         out, itp.grids, itp.nodal_derivs.partials, gq.axes, methods, ops, extraps, _sample_data(itp)
     )
@@ -205,7 +225,7 @@ end
         ops,
         extraps,
         methods::Tuple{Vararg{QuadraticInterp, N}}
-    ) where {Tg, Tv, N}
+    ) where {Tg <: Real, Tv, N}
     _gridded_eval_quadratic_partials!(
         out, itp.grids, itp.nodal_derivs.partials, gq.axes, methods, ops, extraps, _sample_data(itp)
     )
@@ -225,6 +245,17 @@ end
         coeffs
     ) where {Tv, N}
     coeffs isa OnTheFly && return false
+    # Non-Real axes decline (tag dispatch): the fused build runs the physical-unit
+    # pipeline — the pointwise batch core serves those instead.
+    return _cubic_gridded_oneshot_try!(
+        _promote_grid_eltype(grids), out_nd, grids, data, gq, methods, extrap, deriv
+    )
+end
+@inline _cubic_gridded_oneshot_try!(::Type, _out, _grids, _data, _gq, _methods, _extrap, _deriv) =
+    false
+@inline function _cubic_gridded_oneshot_try!(
+        ::Type{<:Real}, out_nd, grids, data, gq, methods, extrap, deriv
+    )
     _cubic_gridded_oneshot_fused!(out_nd, grids, data, gq.axes, methods, extrap, deriv)
     return true
 end
@@ -266,6 +297,15 @@ end
         coeffs
     ) where {Tv, N}
     coeffs isa OnTheFly && return false
+    return _quadratic_gridded_oneshot_try!(
+        _promote_grid_eltype(grids), out_nd, grids, data, gq, methods, extrap, deriv
+    )
+end
+@inline _quadratic_gridded_oneshot_try!(::Type, _out, _grids, _data, _gq, _methods, _extrap, _deriv) =
+    false
+@inline function _quadratic_gridded_oneshot_try!(
+        ::Type{<:Real}, out_nd, grids, data, gq, methods, extrap, deriv
+    )
     _quadratic_gridded_oneshot_fused!(out_nd, grids, data, gq.axes, methods, extrap, deriv)
     return true
 end

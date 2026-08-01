@@ -77,7 +77,11 @@ end
     # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
     # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
+    # Non-Real axes: the scaled store is [Y]-homogeneous, so the kernel consumes
+    # dimensionless local params (type-folded — Real is the exact old call).
+    hs, inv_hs, dLs = Tg <: Real ?
+        _compute_all_local_params(q_evals, itp.grids, indices, Ls) :
+        _compute_all_local_params_reparam(q_evals, itp.grids, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
@@ -86,14 +90,18 @@ end
 # N=2, so a hand-destructured 2D variant is equal-or-slower (verified via
 # same-process method-swap A/B).
 
-# Evaluate kernel at a pre-located cell with given derivative ops
+# Evaluate kernel at a pre-located cell with given derivative ops.
+# Non-Real axes: the kernel runs dimensionless over the [Y]-scaled store, so
+# derivative results restore their per-axis grid⁻ᵏ units at this single seam
+# (canonical `_nd_deriv_scale` fold; `true` on value ops and Real grids — folds).
 @inline function _eval_at_cell(
-        ::CubicInterpolantND,
+        itp::CubicInterpolantND{Tg},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
-    ) where {N}
+    ) where {Tg, N}
     partials, indices, hs, inv_hs, dLs = cell
-    return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+    r = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+    return Tg <: Real ? r : r * _nd_fill_deriv_scale(itp.grids, ops)
 end
 
 # Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).

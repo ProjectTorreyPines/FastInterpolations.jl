@@ -1179,6 +1179,30 @@ end
     return hs, inv_hs, dLs
 end
 
+# Reparameterized (dimensionless) local params for non-Real axes: each axis's
+# h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness — the
+# scaled-store kernels ([Y]-homogeneous partials) then run entirely in the value
+# space, and mixed-unit axes converge to homogeneous Real tuples. Real callers
+# never come here (type-folded branch at the call sites). Multiplication (not
+# conversion) preserves Dual-query partials in `dLs`.
+@inline function _compute_all_local_params_reparam(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Number, N}},
+    ) where {N}
+    hs = ntuple(Val(N)) do d
+        @inbounds _get_h(grids[d], indices[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
+    end
+    inv_hs = ntuple(Val(N)) do d
+        @inbounds _get_inv_h(grids[d], indices[d]) * oneunit(first(grids[d]))
+    end
+    dLs = ntuple(Val(N)) do d
+        @inbounds (q_evals[d] - Ls[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
+    end
+    return hs, inv_hs, dLs
+end
+
 
 # ========================================
 # @generated Tensor-Product Code Generation Helpers

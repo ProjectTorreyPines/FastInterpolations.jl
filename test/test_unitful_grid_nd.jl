@@ -292,6 +292,95 @@ end
     end
 end
 
+@testitem "Unitful ND: cubic PreCompute eval/deriv/OOB (P2)" setup = [AllocConstants] begin
+    using Unitful
+    using Test: @inferred
+
+    # The dimensionless solve runs the SAME arithmetic as the Float64 twin, so
+    # unit results are the twin's values re-tagged: value [Y], deriv [Y/Xᵏ] via
+    # the canonical `_nd_deriv_scale` restoration at the cell surface.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    xf = ustrip.(u"s", x)
+    yf = ustrip.(u"m", y)
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    Ff = ustrip.(u"W", F)
+    itp = cubic_interp((x, y), F)
+    tw = cubic_interp((xf, yf), Ff)
+    q = (2.2u"s", 1.3u"m")
+    qf = (2.2, 1.3)
+
+    @testset "value ≡ Float64 twin × unit" begin
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test (@inferred itp(q)) isa typeof(1.0u"W")
+        @test itp((0.0u"s", 0.0u"m")) ≈ tw((0.0, 0.0)) * u"W" rtol = 1.0e-14
+        @test itp((4.5u"s", 3.5u"m")) ≈ tw((4.5, 3.5)) * u"W" rtol = 1.0e-14
+    end
+
+    @testset "deriv orders restore per-axis grid⁻ᵏ units" begin
+        @test itp(q; deriv = (DerivOp(1), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(0), DerivOp(1))) ≈
+            tw(qf; deriv = (DerivOp(0), DerivOp(1))) * u"W/m" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(1))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(1))) * u"W/(s*m)" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(2), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(2), DerivOp(0))) * u"W/s^2" rtol = 1.0e-14
+    end
+
+    @testset "vector calculus unlocks (mixed: grad/hess ✓, laplacian guarded)" begin
+        g = gradient(itp, q)
+        gt = gradient(tw, qf)
+        @test g[1] ≈ gt[1] * u"W/s" rtol = 1.0e-14
+        @test g[2] ≈ gt[2] * u"W/m" rtol = 1.0e-14
+        H = hessian(itp, q)
+        Ht = hessian(tw, qf)
+        @test H[1, 2] ≈ Ht[1, 2] * u"W/(s*m)" rtol = 1.0e-13
+        @test_throws ArgumentError laplacian(itp, q)
+    end
+
+    @testset "same-unit axes: laplacian works" begin
+        ys = [0.0, 1.0, 2.0, 3.5] .* u"s"
+        itp_s = cubic_interp((x, ys), F)
+        tw_s = cubic_interp((xf, yf), Ff)
+        @test laplacian(itp_s, (2.2u"s", 1.3u"s")) ≈
+            laplacian(tw_s, (2.2, 1.3)) * u"W/s^2" rtol = 1.0e-13
+    end
+
+    @testset "OOB: NoExtrap DomainError / Clamp value / Fill-NaN rule" begin
+        @test_throws DomainError itp((9.9u"s", 1.0u"m"))
+        itp_c = cubic_interp((x, y), F; extrap = ClampExtrap())
+        tw_c = cubic_interp((xf, yf), Ff; extrap = ClampExtrap())
+        @test itp_c((9.9u"s", 1.0u"m")) ≈ tw_c((9.9, 1.0)) * u"W" rtol = 1.0e-14
+        itp_f = cubic_interp((x, y), F; extrap = FillExtrap(NaN * u"W"))
+        @test isnan(itp_f((9.9u"s", 1.0u"m")))
+        @test isnan(itp_f((9.9u"s", 1.0u"m"); deriv = (DerivOp(1), DerivOp(0))))
+    end
+
+    @testset "unit Range axes + batch SoA" begin
+        xr = (0.0:1.0:4.0) .* u"s"
+        yr = (0.0:1.0:3.0) .* u"m"
+        Fr = [(xi + 2.0 * yj) * u"W" for xi in 0.0:1.0:4.0, yj in 0.0:1.0:3.0]
+        itp_r = cubic_interp((xr, yr), Fr)
+        tw_r = cubic_interp((0.0:1.0:4.0, 0.0:1.0:3.0), ustrip.(u"W", Fr))
+        @test itp_r((2.2u"s", 1.3u"m")) ≈ tw_r((2.2, 1.3)) * u"W" rtol = 1.0e-14
+        out = itp(([1.1, 2.2] .* u"s", [0.5, 1.5] .* u"m"))
+        @test eltype(out) === typeof(1.0u"W")
+        @test out[2] ≈ itp((2.2u"s", 1.5u"m")) rtol = 1.0e-14
+    end
+
+    @testset "alloc: unit scalar eval hot path" begin
+        # Function barriers: the testitem-global `itp` boxes the KWARG call form
+        # under `@allocated` (16 B measurement artifact, not a path allocation).
+        measure_val(itp, q) = @allocated itp(q)
+        measure_der(itp, q) = @allocated itp(q; deriv = (DerivOp(1), DerivOp(0)))
+        measure_val(itp, q)
+        measure_der(itp, q)
+        @test measure_val(itp, q) <= ND_ALLOC_THRESHOLD
+        @test measure_der(itp, q) <= ND_ALLOC_THRESHOLD
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 

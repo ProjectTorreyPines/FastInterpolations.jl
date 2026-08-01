@@ -99,6 +99,42 @@ end
         g = @inferred gradient(itp, (1.5u"s", 0.75u"m"))
         @test g isa Tuple{typeof(1.0u"W/s"), typeof(1.0u"W/m")}
     end
+
+    # Scaled-store families: the dimensionless-twin machinery (build/eval/restore/
+    # integrate/one-shot) must stay concretely inferred end to end.
+    xs4 = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    ym4 = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    F4 = [Float64(i + j) for i in 1:4, j in 1:4] .* u"W"
+    q4 = (1.5u"s", 0.75u"m")
+    d10 = (DerivOp(1), DerivOp(0))
+
+    @testset "solver families (scaled store): eval / deriv / integrate / one-shot" begin
+        itp = cubic_interp((xs4, ym4), F4)
+        @test (@inferred itp(q4)) isa TW
+        @test (@inferred itp(q4; deriv = d10)) isa typeof(1.0u"W/s")
+        @test (@inferred integrate(itp)) isa typeof(1.0u"W*s*m")
+        @test (@inferred integrate(itp, (0.5u"s", 0.25u"m"), (2.5u"s", 3.0u"m"))) isa
+            typeof(1.0u"W*s*m")
+        @test (@inferred quadratic_interp((xs4, ym4), F4)(q4)) isa TW
+        @test (@inferred cubic_interp((xs4, ym4), F4, q4)) isa TW
+        @test (@inferred cubic_interp((xs4, ym4), F4, q4; coeffs = PreCompute())) isa TW
+        @test (@inferred cubic_interp((xs4, ym4), F4, q4; deriv = d10)) isa typeof(1.0u"W/s")
+        @test (@inferred cubic_interp((xs4, ym4), F4, [q4, q4])) isa Vector{TW}
+    end
+
+    @testset "FillExtrap keeps the value type concrete (in-domain + OOB + deriv)" begin
+        q_oob = (9.9u"s", 0.75u"m")
+        itpf = cubic_interp((xs4, ym4), F4; extrap = FillExtrap(NaN * u"W"))
+        @test (@inferred itpf(q4)) isa TW
+        @test (@inferred itpf(q_oob)) isa TW
+        @test (@inferred itpf(q_oob; deriv = d10)) isa typeof(1.0u"W/s")
+        @test (
+            @inferred cubic_interp(
+                (xs4, ym4), F4, q_oob;
+                extrap = FillExtrap(NaN * u"W"), coeffs = PreCompute()
+            )
+        ) isa TW
+    end
 end
 
 @testitem "Unitful ND: 1-tuple adapters, vector-point, unit-Range axes (review F13)" begin

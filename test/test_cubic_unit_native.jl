@@ -388,3 +388,25 @@ end
         @test_throws ArgumentError cubic_interp(xu, S; bc = [BCPair(Deriv2(0.3), Deriv2(0.3))])
     end
 end
+
+@testitem "cubic unit native: inference pins — rehydrated builds + FillExtrap" begin
+    using Unitful
+    using Test: @inferred
+
+    # The rehydration arms and unit FillExtrap must keep eval concretely inferred
+    # (fill values normalize into the value space at build, so OOB == in-domain type).
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    xu = xf .* u"m"
+    yw = [sin(v) for v in xf] .* u"K"
+    TK = typeof(1.0u"K")
+
+    itp = cubic_interp(xu, yw; bc = Deriv2(0.0))
+    @test (@inferred itp(2.2u"m")) isa TK
+
+    sitp = cubic_interp(xu, Series(reshape(yw, :, 1)); bc = [BCPair(Deriv2(0.0), Deriv2(0.0))])
+    @test (@inferred sitp(2.2u"m")) isa Vector{TK}
+
+    itpf = cubic_interp(xu, yw; extrap = FillExtrap(NaN * u"K"))
+    @test (@inferred itpf(2.2u"m")) isa TK
+    @test (@inferred itpf(9.9u"m")) isa TK
+end

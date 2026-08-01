@@ -580,23 +580,56 @@ Compute all partial derivatives for N-dimensional Hermite interpolation.
 - `_NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Validate periodic BCs and PolyFit requirements (runs once at construction time)
     _validate_nd_bcs!(grids, bcs, data, Val(N))
 
+    # Non-Real axes solve on their exact dimensionless twins t = x·inv(oneunit(x)):
+    # every stored slot then lands in the value space [Y] (= ∂ᵏf·Πoneunit(axis)ᵏ),
+    # keeping the single homogeneous partials array. Real axes fold to passthrough
+    # (original arrays, zero copies). Typed BC payloads [Y/Xᵏ] scale into [Y];
+    # structural Real payloads stay for the 1D normalize/rehydrate to own.
+    _check_nd_reparam_grid(grids)
+    grids_solve, bcs_solve = if _promote_grid_eltype(grids) <: Real
+        grids, bcs
+    else
+        _reparam_grids(grids), map(_scale_bc_reparam, bcs, grids)
+    end
+
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
-    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    _check_nd_solver_grid(Tg)
-    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
+    # Tz widens Tv with the solve-grid eltype: Dual grids → Dual-typed derivatives;
+    # unit grids solve dimensionless → Tz stays in the value space.
+    Tz = _promote_eltype(_coeff_op2, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
     partials = Array{Tz, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
-    _compute_nd_partials!(partials, grids, data, bcs)
+    _compute_nd_partials!(partials, grids_solve, data, bcs_solve)
 
     return _NodalDerivativesND{Tz, N, N + 1}(partials)
 end
+
+# Dimensionless axis twins — `_float_grids_peraxis` peel idiom (build paths ban
+# closure-maps over axis wraps); scaling spelled with the canonical
+# `_deriv_oneunit` witness (= inv(oneunit(axis))). Ranges stay ranges.
+@inline _reparam_grids(::Tuple{}) = ()
+@inline _reparam_grids(grids::Tuple) = (
+    first(grids) .* _deriv_oneunit(first(first(grids)), DerivOp(1)),
+    _reparam_grids(Base.tail(grids))...,
+)
+
+# Typed PointBC payloads live in [Y/Xᵏ] → on the dimensionless axis they must be
+# [Y]: scale by oneunit(axis)ᵏ. Structural Real payloads pass through — the 1D
+# solve's normalize (zero-mint / embeddable / reject) owns their semantics.
+@inline _scale_bc_reparam(bc::BCPair, x) =
+    BCPair(_scale_bc_reparam(bc.left, x), _scale_bc_reparam(bc.right, x))
+@inline _scale_bc_reparam(bc::Deriv1, x) = Deriv1(_scale_payload_reparam(bc.val, oneunit(eltype(x))))
+@inline _scale_bc_reparam(bc::Deriv2, x) = Deriv2(_scale_payload_reparam(bc.val, oneunit(eltype(x))^2))
+@inline _scale_bc_reparam(bc::Deriv3, x) = Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3))
+@inline _scale_bc_reparam(bc::AbstractBC, _x) = bc
+@inline _scale_payload_reparam(v::Real, _u) = v
+@inline _scale_payload_reparam(v, u) = v * u

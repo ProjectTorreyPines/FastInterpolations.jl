@@ -1279,7 +1279,17 @@ end
 # Owned cached wrap (PreCompute/adjoint inner ctors): cache + `_convert_copy`
 # per axis. Closure-map forms of this are banned — see the store-policy lint.
 @generated function _convert_cache_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
-    exprs = [:(_convert_copy(_cache_axis(grids[$i], bcs[$i], Tg), Tg)) for i in 1:N]
+    if isconcretetype(Tg)
+        exprs = [:(_convert_copy(_cache_axis(grids[$i], bcs[$i], Tg), Tg)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is an abstract promotion tag —
+        # wrap + own each axis at its OWN eltype (mirrors `_store_axes`;
+        # `oneunit(abstract)` is undefined).
+        exprs = [
+            :(_convert_copy(_cache_axis(grids[$i], bcs[$i], eltype(grids[$i])), eltype(grids[$i])))
+                for i in 1:N
+        ]
+    end
     return :(($(exprs...),))
 end
 

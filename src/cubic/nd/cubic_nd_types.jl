@@ -82,7 +82,7 @@ struct CubicInterpolantND{
         Tv,
         N,
         NP1,
-        G <: NTuple{N, AbstractVector{Tg}},
+        G <: Tuple{Vararg{AbstractVector, N}},
         B <: NTuple{N, AbstractBC},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: NTuple{N, AbstractSearchPolicy},
@@ -94,13 +94,16 @@ struct CubicInterpolantND{
     searches::P
 
     function CubicInterpolantND(
-            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            grids::Tuple{Vararg{AbstractVector, N}},
             nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
             bcs::NTuple{N, AbstractBC},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             searches::NTuple{N, AbstractSearchPolicy}
-        ) where {Tg, Tv, N, NP1}
+        ) where {Tv, N, NP1}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
+        # Promotion-tag Tg (mixed-unit axes → abstract tag, mirrors LinearInterpolantND);
+        # Real axes keep the concrete common eltype — same params as before.
+        Tg = _promote_grid_eltype(grids)
         # Wrapper-aware ownership copy + idempotent cache_axis insurance.
         # When the outer API has already wrapped + extended the grids, this
         # is just a per-axis `copy` of the wrapper (no buffer duplication

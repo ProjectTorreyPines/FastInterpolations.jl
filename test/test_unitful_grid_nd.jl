@@ -68,7 +68,10 @@ end
     end
 
     @testset "solver families: friendly error (deferred)" begin
-        @test_throws ArgumentError interp((xs, ym), data; method = CubicInterp())
+        # Cubic ND admits unit axes since the scaled-store build — this pin
+        # tracks the still-gated solver family (quadratic; PolyFit min-points
+        # would mask the cubic probe on this 3-point axis anyway).
+        @test_throws ArgumentError interp((xs, ym), data; method = QuadraticInterp())
     end
 end
 
@@ -217,6 +220,78 @@ end
     end
 end
 
+@testitem "Unitful ND: cubic PreCompute build — scaled [Y]-homogeneous store (P1)" begin
+    using Unitful
+    using ForwardDiff: Dual
+
+    # Store contract: slot p holds ∂ᵏf · Π oneunit(axisᵢ)ᵏ — every 2^N slot in
+    # the value space [Y], so the single homogeneous partials array survives
+    # unit grids. Axis reparameterization is exact (t = x·inv(oneunit)), so the
+    # fiber solves are the SAME arithmetic as the 1D unit-native path.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    F = [
+        (
+                sin(ustrip(u"s", xi)) + 2.0 * ustrip(u"m", yj) +
+                0.4 * ustrip(u"s", xi) * ustrip(u"m", yj)
+            ) * u"W"
+            for xi in x, yj in y
+    ]
+
+    itp = cubic_interp((x, y), F)
+    P = itp.nodal_derivs.partials
+    @test eltype(P) === typeof(1.0u"W")
+
+    @testset "slot 1 = f verbatim" begin
+        @test all(P[1, i, j] === F[i, j] for i in eachindex(x), j in eachindex(y))
+    end
+
+    @testset "slot 2/3 = axis-fiber nodal derivative × oneunit(axis)" begin
+        for j in eachindex(y)
+            itp1 = cubic_interp(x, F[:, j])
+            for i in eachindex(x)
+                @test P[2, i, j] ≈ itp1(x[i]; deriv = DerivOp(1)) * oneunit(eltype(x)) rtol = 1.0e-12
+            end
+        end
+        for i in eachindex(x)
+            itp2 = cubic_interp(y, F[i, :])
+            for j in eachindex(y)
+                @test P[3, i, j] ≈ itp2(y[j]; deriv = DerivOp(1)) * oneunit(eltype(y)) rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "slot 4 = mixed partial, [Y]-typed finite" begin
+        @test all(isfinite, ustrip.(P[4, :, :]))
+    end
+
+    @testset "payload-free zero BCs mint unit-correct boundary rows" begin
+        itp_z = cubic_interp((x, y), F; bc = (ZeroSlopeBC(), ZeroCurvBC()))
+        Pz = itp_z.nodal_derivs.partials
+        @test iszero(Pz[2, 1, 1]) && iszero(Pz[2, end, 1])   # ∂f/∂x₁ = 0 at both x-edges
+        @test Pz[2, 1, 1] isa typeof(1.0u"W")
+    end
+
+    @testset "typed per-axis payload BC scales into the store" begin
+        itp_p = cubic_interp((x, y), F; bc = (Deriv1(0.25u"W/s"), ZeroCurvBC()))
+        Pp = itp_p.nodal_derivs.partials
+        for j in eachindex(y)
+            @test Pp[2, 1, j] ≈ 0.25u"W/s" * oneunit(eltype(x)) rtol = 1.0e-12
+        end
+    end
+
+    @testset "Dual grids stay on the Real passthrough (no reparameterization)" begin
+        xd = Dual.(ustrip.(u"s", x), 1.0)
+        yd = Dual.(ustrip.(u"m", y), 0.0)
+        Fd = ustrip.(u"W", F)
+        itp_d = cubic_interp((xd, yd), Fd)
+        Pd = itp_d.nodal_derivs.partials
+        @test eltype(Pd) <: Dual
+        itp_d1 = cubic_interp(xd, Fd[:, 2])
+        @test Pd[2, 3, 2] ≈ itp_d1(xd[3]; deriv = DerivOp(1)) rtol = 1.0e-12
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 
@@ -358,7 +433,10 @@ end
     q = (2.5u"s", 1.5u"s")
 
     @testset "solver families (Cubic/Quadratic): persistent + one-shot" begin
-        @test_throws ArgumentError cubic_interp((xs, xs2), data)
+        # Cubic persistent admits unit axes since the scaled-store build (P1);
+        # the concrete-Tg dispatch pin flips to build-success. One-shot mirrors
+        # and quadratic stay gated until their phases.
+        @test cubic_interp((xs, xs2), data) isa CubicInterpolantND
         @test_throws ArgumentError quadratic_interp((xs, xs2), data)
         @test_throws ArgumentError cubic_interp((xs, xs2), data, q)
         @test_throws ArgumentError quadratic_interp((xs, xs2), data, q)

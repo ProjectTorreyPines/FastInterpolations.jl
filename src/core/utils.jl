@@ -137,6 +137,32 @@ end
     )
 )
 
+# Cubic ND admits non-Real axes via the exact dimensionless reparameterization
+# t = x·_deriv_oneunit(x, DerivOp(1)) (= x·inv(oneunit(x))): the 2^N store then
+# holds ∂ᵏf·Πoneunit(axis)ᵏ — every slot in the value space [Y], so the single
+# homogeneous partials array survives unit grids. Capability is probed PER AXIS
+# (a mixed-unit promoted Tg is an abstract tag — witnesses must come from
+# per-axis eltypes) with the canonical `_coeff_op` witness: missing `oneunit`/
+# `inv` arithmetic infers `Union{}`/non-Real → friendly refusal. `Real` folds away.
+@inline _check_nd_reparam_grid(::Tuple{}) = nothing
+@inline function _check_nd_reparam_grid(grids::Tuple)
+    _check_nd_reparam_eltype(eltype(first(grids)))
+    return _check_nd_reparam_grid(Base.tail(grids))
+end
+@inline _check_nd_reparam_eltype(::Type{<:Real}) = nothing
+@inline function _check_nd_reparam_eltype(::Type{Tg}) where {Tg}
+    Tt = Base.promote_op(_coeff_op, Tg, Tg)
+    return (Tt !== Union{} && Tt <: Real) ? nothing : _throw_nd_reparam_grid(Tg)
+end
+@noinline _throw_nd_reparam_grid(::Type{Tg}) where {Tg} = throw(
+    ArgumentError(
+        "PreCompute cubic ND builds accept Real or unit-carrying grid axes; the " *
+            "non-Real grid eltype $(Tg) supports no dimensionless reparameterization " *
+            "(needs `oneunit`, `inv`, `*`). Use LinearInterp/ConstantInterp ND, " *
+            "work per-fiber 1-D, or use a Real grid."
+    )
+)
+
 # Same contract for the per-axis (hetero) ND engine — which also backs
 # PCHIP/Akima/Cardinal ND. Neither builder path (OnTheFly eval kernels nor the
 # PreCompute partials store) handles non-Real grids yet; without this gate

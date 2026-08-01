@@ -9,13 +9,6 @@
 # ONE-SHOT PUBLIC API
 # ========================================
 
-# One-shot fill/extrap payload space: data is not eagerly converted here, so Real
-# axes widen by the coeff witness; a non-Real tag cannot run the witness — the
-# value space itself serves (the persistent entry's convention).
-@inline _oneshot_fill_eltype(::Type{Tg}, ::Type{Tv}) where {Tg <: Real, Tv} =
-    _promote_eltype(_coeff_op2, Tg, Tv)
-@inline _oneshot_fill_eltype(::Type{Tg}, ::Type{Tv}) where {Tg, Tv} = _value_type(Tv, Tg)
-
 """
     cubic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
 
@@ -52,7 +45,7 @@ function cubic_interp(
     # Float32 data → Float32), so the OnTheFly eval + witness `Tr` agree. Batch keeps eager-convert.
     Tg_raw = _promote_grid_eltype(grids)
     Tg = _promote_grid_float(Tg_raw, Tv)
-    Tv_p = _oneshot_fill_eltype(Tg, Tv)
+    Tv_p = _oneshot_fill_eltype(_coeff_op2, Tg, Tv)
     _validate_nd_grids(grids, data)
     # Reparameterizable axes only (Real or unit-carrying) — the persistent builder's gate.
     _check_nd_reparam_grid(grids)

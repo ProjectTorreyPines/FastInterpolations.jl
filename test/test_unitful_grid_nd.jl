@@ -935,6 +935,22 @@ end
         twc = cubic_interp((xf, yf), Fint; extrap = FillExtrap(0.5))
         @test itc(q) === twc((2.2, 1.3))
     end
+
+    @testset "quadratic one-shot mirrors the cubic fill space (unit + Real axes)" begin
+        itq = quadratic_interp((xs, ym), Fint; extrap = FillExtrap(0.5))
+        twq = quadratic_interp((xf, yf), Fint; extrap = FillExtrap(0.5))
+        @test itq(q_oob) === 0.5
+        @test itq(q) === twq((2.2, 1.3))
+        # One-shot entries resolve the fill eagerly — raw-Int space threw
+        # InexactError even for in-domain queries. Scalar + batch, unit + Real.
+        @test quadratic_interp((xs, ym), Fint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+        @test quadratic_interp(
+            (xs, ym), Fint, q;
+            extrap = FillExtrap(0.5), coeffs = PreCompute()
+        ) === itq(q)
+        @test quadratic_interp((xf, yf), Fint, (9.9, 1.3); extrap = FillExtrap(0.5)) === 0.5
+        @test quadratic_interp((xs, ym), Fint, [q, q_oob]; extrap = FillExtrap(0.5))[2] === 0.5
+    end
 end
 
 @testitem "Unitful ND: GridIdx queries resolve on unit axes" begin

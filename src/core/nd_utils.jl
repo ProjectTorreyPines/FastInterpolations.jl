@@ -259,6 +259,14 @@ end
     return :(($(exprs...),))
 end
 
+# One-shot fill/extrap payload space (scalar entries don't eagerly convert data):
+# Real axes widen by the family coeff witness (`_coeff_op2` cubic, `_coeff_op`
+# quadratic); a non-Real tag cannot run the witness — the value space serves
+# (the persistent entry's convention).
+@inline _oneshot_fill_eltype(op::F, ::Type{Tg}, ::Type{Tv}) where {F, Tg <: Real, Tv} =
+    _promote_eltype(op, Tg, Tv)
+@inline _oneshot_fill_eltype(::F, ::Type{Tg}, ::Type{Tv}) where {F, Tg, Tv} = _value_type(Tv, Tg)
+
 # ── Periodic BC compatibility checks for Mode types ──────────────────
 
 @inline function _check_mode_periodic_compat(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}) where {N}

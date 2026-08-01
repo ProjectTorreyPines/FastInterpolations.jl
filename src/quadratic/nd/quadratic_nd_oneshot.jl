@@ -170,6 +170,9 @@ function quadratic_interp(
     # Scalar one-shot: raw grids — both PreCompute and OnTheFly accept them
     # (`_compute_all_local_params` floats the cell width). Batch keeps eager-convert.
     Tg_raw = _promote_grid_eltype(grids)
+    # Fill payload space mirrors the cubic scalar entry (raw Int data must not
+    # pin the fill: `FillExtrap(0.5)` + Int data threw at the eager resolve).
+    Tv_p = _oneshot_fill_eltype(_coeff_op, _promote_grid_float(Tg_raw, Tv), Tv)
     _validate_nd_grids(grids, data)
     # Reparameterizable axes only (Real or unit-carrying) — the persistent builder's gate.
     _check_nd_reparam_grid(grids)
@@ -183,7 +186,7 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
 
     # Central policy (same as cubic): scalar AutoCoeffs → OnTheFly. Bit-exact parity
     # with the persistent interpolant stays available via explicit coeffs=PreCompute().
@@ -254,11 +257,12 @@ function quadratic_interp!(
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))
     _check_nd_reparam_grid(grids)
-    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
+    # `Tv_p` (3rd return) is the promoted fill space — the cubic in-place mirror.
+    grids_typed, _, Tv_p, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, ops, search, hint)
 end

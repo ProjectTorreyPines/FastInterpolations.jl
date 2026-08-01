@@ -47,9 +47,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv
     # with the solve-grid eltype (Dual grid → Dual derivs); `_coeff_op` floats Int.
-    # Non-Real axes solve on the dimensionless twins (`_reparam_solve_frame`) — the
-    # pooled partials stay [Y]-homogeneous exactly as in the persistent scaled-store
-    # build (search/local params keep reading `grids_c`).
+    # Non-Real axes solve on the dimensionless twins; search/params keep reading `grids_c`.
     grids_solve, bcs_solve = _reparam_solve_frame(grids_c, bcs, data)
     Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
@@ -61,8 +59,7 @@ Zero-allocation after warmup (pool reuse).
     # 4. Per-axis extrap passthrough against the (possibly extended) grid.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
 
-    # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly; a non-Real
-    # width tag routes to the dimensionless collapse by dispatch)
+    # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints, extraps_eff)
     _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls, Tg)
@@ -190,9 +187,8 @@ function quadratic_interp(
 
     # Central policy (same as cubic): scalar AutoCoeffs → OnTheFly. Bit-exact parity
     # with the persistent interpolant stays available via explicit coeffs=PreCompute().
-    # A non-Real query never resolves OnTheFly under AutoCoeffs (Real-tuple arm →
-    # PreCompute pool); an EXPLICIT OnTheFly rides the hetero collapse engine,
-    # whose non-Real gate keeps the refusal actionable.
+    # Non-Real queries resolve PreCompute by dispatch (Real-tuple arm); an explicit
+    # OnTheFly rides the hetero collapse, whose gate keeps the refusal friendly.
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> QuadraticInterp(), Val(N)))
     if coeffs_resolved isa OnTheFly
         _check_nd_hetero_grid(Tg_raw)

@@ -71,10 +71,9 @@ function cubic_interp(
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
 
-    # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work).
-    # A non-Real query never resolves here under AutoCoeffs (the Real-tuple arm skips
-    # it → PreCompute pool); an EXPLICIT OnTheFly rides the hetero collapse engine,
-    # whose non-Real gate keeps the refusal actionable.
+    # OnTheFly: skip full partials build — sequential 1D collapse (2^N× less work).
+    # Non-Real queries resolve PreCompute by dispatch (Real-tuple arm); an explicit
+    # OnTheFly rides the hetero collapse, whose gate keeps the refusal friendly.
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> CubicInterp(), Val(N)))
     if coeffs_resolved isa OnTheFly
         _check_nd_hetero_grid(Tg_raw)
@@ -175,11 +174,9 @@ Zero-allocation after warmup (pool reuse).
     # 2-arg primitive is identity for tag-struct extraps (Wrap, Clamp, ...).
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
-    # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
-    # Tz widens Tv with the solve-grid eltype: Dual grids → Dual-typed derivatives.
-    # Non-Real axes solve on the dimensionless twins (`_reparam_solve_frame`) — the
-    # pooled partials stay [Y]-homogeneous exactly as in the persistent scaled-store
-    # build (search and local params below keep reading the unit axes `grids_p`).
+    # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv
+    # with the solve-grid eltype (Dual grids → Dual derivs). Non-Real axes solve on
+    # the dimensionless twins; search/local params below keep reading `grids_p`.
     grids_solve, bcs_solve = _reparam_solve_frame(grids_p, bcs_p, data_p)
     Tz = _promote_eltype(_coeff_op2, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
@@ -192,8 +189,7 @@ Zero-allocation after warmup (pool reuse).
     # 4. Eval pipeline (all standalone functions, no Interpolant needed).
     # Axis-only forms — `grids_p` axes carry `h`/`inv_h` directly via `_get_h`/
     # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector);
-    # the data-aware form width-types hs/inv_hs at `Tg` (raw Int-Vector axes included;
-    # a non-Real tag routes to the dimensionless collapse by dispatch).
+    # the data-aware form width-types hs/inv_hs at `Tg` (raw Int-Vector axes included).
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, extraps_eff)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg)

@@ -71,10 +71,8 @@ function _cubic_interp_nd(
         coeffs::AbstractCoeffStrategy = PreCompute(),
         store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
-    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-Real duck
-    # Number dies inside `_nd_promote_grids` (`AbstractFloat(x)` MethodError)
-    # otherwise. Cubic admits reparameterizable axes (units); per-axis probe —
-    # the mixed-unit promoted Tg is an abstract tag no witness can run on.
+    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-reparameterizable
+    # duck Number would die deep inside `_nd_promote_grids` otherwise.
     _check_nd_reparam_grid(grids)
     # Zero-allocation type promotion + grid conversion
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)

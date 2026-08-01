@@ -88,10 +88,9 @@ end
 # N=2, so a hand-destructured 2D variant is equal-or-slower (verified via
 # same-process method-swap A/B).
 
-# Evaluate kernel at a pre-located cell with given derivative ops.
-# Non-Real axes: the kernel runs dimensionless over the [Y]-scaled store, so
-# derivative results restore their per-axis grid⁻ᵏ units at this single seam
-# (canonical `_nd_deriv_scale` fold; `true` on value ops and Real grids — folds).
+# Evaluate kernel at a pre-located cell with given derivative ops. Non-Real axes
+# run dimensionless over the [Y]-scaled store — `_restore_nd_deriv_scale`
+# re-attaches the per-axis grid⁻ᵏ units at this single seam.
 @inline function _eval_at_cell(
         itp::CubicInterpolantND{Tg},
         cell::Tuple,

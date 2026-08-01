@@ -1199,11 +1199,10 @@ end
     _reparam_grids(Base.tail(grids))...,
 )
 
-# Typed PointBC payloads live in [Y/Xᵏ] → on the dimensionless axis they must be
-# [Y]: scale by oneunit(axis)ᵏ. Structural Real payloads take the canonical
-# `_payload_val` rehydration against a data sample — on the t-axis the payload
-# space IS [Y], and the ND fiber solve (`_deriv_1d!`) has no normalize of its
-# own. Left/Right are quadratic's side wrappers around the same PointBC payloads.
+# Typed PointBC payloads live in [Y/Xᵏ] → scale by oneunit(axis)ᵏ onto the
+# dimensionless axis ([Y]). Structural Real payloads rehydrate via the canonical
+# `_payload_val` against a data sample — the ND fiber solve (`_deriv_1d!`) has
+# no normalize of its own. Left/Right are quadratic's side wrappers.
 @inline _scale_bcs_reparam(::Tuple{}, ::Tuple{}, _data) = ()
 @inline _scale_bcs_reparam(bcs::Tuple, grids::Tuple, data) = (
     _scale_bc_reparam(first(bcs), first(grids), data),
@@ -1233,22 +1232,18 @@ end
 @inline _reparam_solve_frame(::Type, grids, bcs, data) =
     (_reparam_grids(grids), _scale_bcs_reparam(bcs, grids, data))
 
-# Cell-seam restoration for the scaled-store families: the kernel runs
-# dimensionless over the [Y]-homogeneous partials, so a non-Real grid multiplies
-# the result back into value/coordᴺ space (canonical `_nd_fill_deriv_scale`
-# fold). The Real arm is an identity ARM, not ×1.0 — branch preservation is
-# load-bearing (LLVM folds only ×true).
+# Cell-seam restoration: scaled-store kernels run dimensionless over the
+# [Y]-homogeneous partials, so a non-Real grid multiplies the result back into
+# value/coordᴺ space. The Real arm is an identity ARM, not ×1.0 — LLVM folds only ×true.
 @inline _restore_nd_deriv_scale(r, grids, ops) =
     _restore_nd_deriv_scale(_promote_grid_eltype(grids), r, grids, ops)
 @inline _restore_nd_deriv_scale(::Type{<:Real}, r, _grids, _ops) = r
 @inline _restore_nd_deriv_scale(::Type, r, grids, ops) = r * _nd_fill_deriv_scale(grids, ops)
 
 # Reparameterized (dimensionless) local params for non-Real axes: each axis's
-# h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness — the
-# scaled-store kernels ([Y]-homogeneous partials) then run entirely in the value
-# space, and mixed-unit axes converge to homogeneous Real tuples. Real callers
-# never come here (type-folded branch at the call sites). Multiplication (not
-# conversion) preserves Dual-query partials in `dLs`.
+# h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness, so the
+# [Y]-homogeneous kernels run in value space even on mixed-unit axes.
+# Multiplication (not conversion) preserves Dual-query partials in `dLs`.
 @inline function _compute_all_local_params_reparam(
         q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},

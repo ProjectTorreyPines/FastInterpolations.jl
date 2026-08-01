@@ -335,9 +335,8 @@ function _build_nd_coeffs_quadratic(
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tv, N}
-    # Non-Real axes solve on their exact dimensionless twins (mirrors the cubic
-    # scaled-store build): every stored slot lands in the value space [Y] and the
-    # single homogeneous partials array survives unit grids. Real folds through.
+    # Non-Real axes solve on their dimensionless twins (mirrors the cubic
+    # scaled-store build); Real axes pass through untouched.
     _check_nd_reparam_grid(grids)
     grids_solve, bcs_solve = _reparam_solve_frame(grids, bcs, data)
 

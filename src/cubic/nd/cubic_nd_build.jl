@@ -587,11 +587,9 @@ function _build_nd_coeffs(
     # Validate periodic BCs and PolyFit requirements (runs once at construction time)
     _validate_nd_bcs!(grids, bcs, data, Val(N))
 
-    # Non-Real axes solve on their exact dimensionless twins t = x·inv(oneunit(x)):
-    # every stored slot then lands in the value space [Y] (= ∂ᵏf·Πoneunit(axis)ᵏ),
-    # keeping the single homogeneous partials array. Real axes fold to passthrough
-    # (original arrays, zero copies). Typed BC payloads [Y/Xᵏ] scale into [Y];
-    # structural Real payloads stay for the 1D normalize/rehydrate to own.
+    # Non-Real axes solve on their dimensionless twins t = x·inv(oneunit(x)), so the
+    # single 2^N store stays [Y]-homogeneous (= ∂ᵏf·Πoneunit(axis)ᵏ); Real axes pass
+    # through untouched. BC payloads scale [Y/Xᵏ]→[Y] inside the frame helper.
     _check_nd_reparam_grid(grids)
     grids_solve, bcs_solve = _reparam_solve_frame(grids, bcs, data)
 

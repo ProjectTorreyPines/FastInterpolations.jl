@@ -122,13 +122,10 @@ end
     return nothing
 end
 
-# Cubic ND admits non-Real axes via the exact dimensionless reparameterization
-# t = x·_deriv_oneunit(x, DerivOp(1)) (= x·inv(oneunit(x))): the 2^N store then
-# holds ∂ᵏf·Πoneunit(axis)ᵏ — every slot in the value space [Y], so the single
-# homogeneous partials array survives unit grids. Capability is probed PER AXIS
-# (a mixed-unit promoted Tg is an abstract tag — witnesses must come from
-# per-axis eltypes) with the canonical `_coeff_op` witness: missing `oneunit`/
-# `inv` arithmetic infers `Union{}`/non-Real → friendly refusal. `Real` folds away.
+# Solver-family axes must be Real or dimensionless-reparameterizable (unit-carrying).
+# Probed PER AXIS with the canonical `_coeff_op` witness — a mixed-unit promoted Tg
+# is an abstract tag no witness may run on. Missing `oneunit`/`inv` arithmetic
+# infers `Union{}`/non-Real → friendly refusal; `Real` folds away.
 @inline _check_nd_reparam_grid(::Tuple{}) = nothing
 @inline function _check_nd_reparam_grid(grids::Tuple)
     _check_nd_reparam_eltype(eltype(first(grids)))

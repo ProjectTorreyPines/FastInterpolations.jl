@@ -57,9 +57,8 @@ function quadratic_interp(
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 
-    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-Real duck
-    # Number dies inside `_nd_promote_grids` (`AbstractFloat(x)` MethodError)
-    # otherwise. Quadratic admits reparameterizable axes (units) like cubic.
+    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-reparameterizable
+    # duck Number would die deep inside `_nd_promote_grids` otherwise.
     _check_nd_reparam_grid(grids)
     # Zero-allocation type promotion and grid conversion
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)

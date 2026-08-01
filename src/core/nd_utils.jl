@@ -1166,7 +1166,7 @@ end
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Number, N}},
         ::Type{Tg},
-    ) where {N, Tg}
+    ) where {N, Tg <: Real}
     hs = ntuple(Val(N)) do d
         @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end
@@ -1178,6 +1178,16 @@ end
     end
     return hs, inv_hs, dLs
 end
+
+# Non-Real width tag (unit type or abstract promotion tag) → the dimensionless
+# collapse: the axes carry the witnesses, the tag itself is never instantiated.
+@inline _compute_all_local_params(
+    q_evals::Tuple{Vararg{Number, N}},
+    grids::Tuple{Vararg{AbstractVector, N}},
+    indices::NTuple{N, Int},
+    Ls::Tuple{Vararg{Number, N}},
+    ::Type,
+) where {N} = _compute_all_local_params_reparam(q_evals, grids, indices, Ls)
 
 # Dimensionless axis twins for the solver-family ND builds — the
 # `_float_grids_peraxis` peel idiom (build paths ban closure-maps over axis
@@ -1212,6 +1222,26 @@ end
 @inline _scale_bc_reparam(bc::AbstractBC, _x, _data) = bc
 @inline _scale_payload_reparam(v::Real, _u, data) = _payload_val(v, @inbounds first(data))
 @inline _scale_payload_reparam(v, u, _data) = v * u
+
+# Solve-frame selection for the scaled-store families (persistent build + one-shot
+# pool): Real axes solve natively; non-Real axes solve on their dimensionless
+# twins with [Y]-rescaled BC payloads. Dispatch on the promotion tag, not a
+# boolean test (gate style) — the Real arm folds to a passthrough.
+@inline _reparam_solve_frame(grids, bcs, data) =
+    _reparam_solve_frame(_promote_grid_eltype(grids), grids, bcs, data)
+@inline _reparam_solve_frame(::Type{<:Real}, grids, bcs, _data) = (grids, bcs)
+@inline _reparam_solve_frame(::Type, grids, bcs, data) =
+    (_reparam_grids(grids), _scale_bcs_reparam(bcs, grids, data))
+
+# Cell-seam restoration for the scaled-store families: the kernel runs
+# dimensionless over the [Y]-homogeneous partials, so a non-Real grid multiplies
+# the result back into value/coordᴺ space (canonical `_nd_fill_deriv_scale`
+# fold). The Real arm is an identity ARM, not ×1.0 — branch preservation is
+# load-bearing (LLVM folds only ×true).
+@inline _restore_nd_deriv_scale(r, grids, ops) =
+    _restore_nd_deriv_scale(_promote_grid_eltype(grids), r, grids, ops)
+@inline _restore_nd_deriv_scale(::Type{<:Real}, r, _grids, _ops) = r
+@inline _restore_nd_deriv_scale(::Type, r, grids, ops) = r * _nd_fill_deriv_scale(grids, ops)
 
 # Reparameterized (dimensionless) local params for non-Real axes: each axis's
 # h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness — the

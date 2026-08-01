@@ -42,23 +42,16 @@ Zero-allocation after warmup (pool reuse).
     # 1. Value-matched grid float (Int/OneTo grid + Float32 data → Float32) shared by the pooled
     # per-axis cache and the partials type, so the pool buffer + output follow natural promote_type.
     # Non-Real axes wrap at their OWN eltype (abstract-tag arm of the @generated map).
-    Tg_raw = _promote_grid_eltype(grids)
-    Tg = _promote_grid_float(Tg_raw, Tv)
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     grids_c = _cache_axes_pooled(pool, grids, Tg)  # @generated static-Tg unroll (no Type-captured closure)
 
-    # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv with Tg
-    # (Dual grid → Dual derivs); `_coeff_op` floats Int. Non-Real axes solve on the
-    # dimensionless twins — the pooled partials stay [Y]-homogeneous exactly as in
-    # the persistent scaled-store build (search/local params keep reading `grids_c`).
-    if Tg_raw <: Real
-        grids_solve = grids_c
-        bcs_solve = bcs
-        Tz = _promote_eltype(_coeff_op, Tg, Tv)
-    else
-        grids_solve = _reparam_grids(grids_c)
-        bcs_solve = _scale_bcs_reparam(bcs, grids_c, data)
-        Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
-    end
+    # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv
+    # with the solve-grid eltype (Dual grid → Dual derivs); `_coeff_op` floats Int.
+    # Non-Real axes solve on the dimensionless twins (`_reparam_solve_frame`) — the
+    # pooled partials stay [Y]-homogeneous exactly as in the persistent scaled-store
+    # build (search/local params keep reading `grids_c`).
+    grids_solve, bcs_solve = _reparam_solve_frame(grids_c, bcs, data)
+    Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
@@ -68,16 +61,15 @@ Zero-allocation after warmup (pool reuse).
     # 4. Per-axis extrap passthrough against the (possibly extended) grid.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
 
-    # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
+    # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly; a non-Real
+    # width tag routes to the dimensionless collapse by dispatch)
     q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints, extraps_eff)
-    _, inv_hs, dLs = Tg_raw <: Real ?
-        _compute_all_local_params(q_eval, grids_c, indices, Ls) :
-        _compute_all_local_params_reparam(q_eval, grids_c, indices, Ls)
+    _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls, Tg)
 
     # 6. Tensor-product kernel evaluation ([Y]-scaled partials → grid⁻ᵏ restore at the seam)
     r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
-    return Tg_raw <: Real ? r : r * _nd_fill_deriv_scale(grids_c, ops)
+    return _restore_nd_deriv_scale(r, grids_c, ops)
 end
 
 """
@@ -115,15 +107,8 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
 
     # Build phase (done once). Non-Real axes solve on the dimensionless twins
     # (persistent scaled-store mirror); the eval loop keeps reading `grids_c`.
-    if Tg_raw <: Real
-        grids_solve = grids_c
-        bcs_solve = bcs
-        Tz = _promote_eltype(_coeff_op, Tg_raw, Tv)
-    else
-        grids_solve = _reparam_grids(grids_c)
-        bcs_solve = _scale_bcs_reparam(bcs, grids_c, data)
-        Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
-    end
+    grids_solve, bcs_solve = _reparam_solve_frame(grids_c, bcs, data)
+    Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids_solve, data, bcs_solve)
@@ -140,11 +125,9 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         end
         q_eval = _handle_all_extraps(query_k, grids_c, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints, extraps_eff)
-        _, inv_hs, dLs = Tg_raw <: Real ?
-            _compute_all_local_params(q_eval, grids_c, indices, Ls) :
-            _compute_all_local_params_reparam(q_eval, grids_c, indices, Ls)
+        _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls, Tg_raw)
         r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
-        output[k] = Tg_raw <: Real ? r : r * _nd_fill_deriv_scale(grids_c, ops)
+        output[k] = _restore_nd_deriv_scale(r, grids_c, ops)
     end
     return output
 end

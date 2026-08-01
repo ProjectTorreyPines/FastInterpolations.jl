@@ -589,13 +589,15 @@ end
 # Scaled-store families (cubic/quadratic ND) integrate on their exact
 # dimensionless axis twins — the [Y]-scaled partials pair with dimensionless
 # weights, and the volume element Π oneunit(axis) restores ∫…dx from ∫…dt.
-# Native-unit engines return `nothing` (fold), as does the Real path of the
-# scaled families (type-folded on the promotion tag).
+# Native-unit engines return `nothing` (fold), as does the Real arm of the
+# scaled families (dispatch on the promotion tag).
 @inline _integrate_reparam(::AbstractInterpolantND) = nothing
 @inline _integrate_reparam(
     itp::Union{CubicInterpolantND{Tg}, QuadraticInterpolantND{Tg}}
-) where {Tg} =
-    Tg <: Real ? nothing : (_reparam_grids(itp.grids), _nd_volume_scale(itp.grids))
+) where {Tg} = _integrate_reparam(Tg, itp)
+@inline _integrate_reparam(::Type{<:Real}, _itp) = nothing
+@inline _integrate_reparam(::Type, itp) =
+    (_reparam_grids(itp.grids), _nd_volume_scale(itp.grids))
 @inline _nd_volume_scale(::Tuple{}) = true
 @inline _nd_volume_scale(grids::Tuple) =
     oneunit(eltype(first(grids))) * _nd_volume_scale(Base.tail(grids))

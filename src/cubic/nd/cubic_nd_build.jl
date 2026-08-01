@@ -593,11 +593,7 @@ function _build_nd_coeffs(
     # (original arrays, zero copies). Typed BC payloads [Y/Xᵏ] scale into [Y];
     # structural Real payloads stay for the 1D normalize/rehydrate to own.
     _check_nd_reparam_grid(grids)
-    grids_solve, bcs_solve = if _promote_grid_eltype(grids) <: Real
-        grids, bcs
-    else
-        _reparam_grids(grids), _scale_bcs_reparam(bcs, grids, data)
-    end
+    grids_solve, bcs_solve = _reparam_solve_frame(grids, bcs, data)
 
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     # Tz widens Tv with the solve-grid eltype: Dual grids → Dual-typed derivatives;

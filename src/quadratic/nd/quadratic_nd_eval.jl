@@ -97,10 +97,8 @@ end
     # `_compute_all_local_params` uses the spacings-free overload (cached h/inv_h).
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
     # Non-Real axes: the scaled store is [Y]-homogeneous, so the kernel consumes
-    # dimensionless local params (type-folded — Real is the exact old call).
-    hs, inv_hs, dLs = Tg <: Real ?
-        _compute_all_local_params(q_evals, itp.grids, indices, Ls) :
-        _compute_all_local_params_reparam(q_evals, itp.grids, indices, Ls)
+    # dimensionless local params (the width-tag dispatch routes; Real = exact old width).
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls, Tg)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
@@ -120,7 +118,7 @@ end
     ) where {Tg, N}
     partials, indices, _, inv_hs, dLs = cell   # `hs` in the cell tuple is unused by quadratic
     r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
-    return Tg <: Real ? r : r * _nd_fill_deriv_scale(itp.grids, ops)
+    return _restore_nd_deriv_scale(r, itp.grids, ops)
 end
 
 # Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).

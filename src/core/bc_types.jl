@@ -570,6 +570,10 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 # are not duck-Tv contract ops, so they must never run on duck data.
 @inline _normalize_bc(bc::BCPair, x::AbstractArray, y::AbstractArray) =
     BCPair(_rehydrate_pointbc(bc.left, x, y), _rehydrate_pointbc(bc.right, x, y))
+# Bare PointBC (grid-aware): same rehydration through the pair arm — the
+# shape-only fallback below must not swallow payload-carrying BCs.
+@inline _normalize_bc(bc::PointBC, x::AbstractArray, y::AbstractArray) =
+    _normalize_bc(BCPair(bc, bc), x, y)
 @inline _rehydrate_pointbc(bc::Deriv1, x, y) = Deriv1(_rehydrate_payload(bc.val, x, y, DerivOp(1)))
 @inline _rehydrate_pointbc(bc::Deriv2, x, y) = Deriv2(_rehydrate_payload(bc.val, x, y, DerivOp(2)))
 @inline _rehydrate_pointbc(bc::Deriv3, x, y) = Deriv3(_rehydrate_payload(bc.val, x, y, DerivOp(3)))
@@ -720,8 +724,9 @@ function _normalize_bc_array(
     end
     return [_normalize_bc(bc, x, y) for bc in bcs]
 end
-@inline _normalize_bc_array(bcs::AbstractVector{<:BCPair}, ::AbstractArray, y::AbstractArray, n_series::Int) =
-    _normalize_bc_array(bcs, eltype(y), n_series)
+# NOTE: no `Vector{<:BCPair}` fast path here — unlike the type-only 3-arg form,
+# the solve side must rehydrate each pair's structural Real payloads, so
+# `Vector{<:BCPair}` deliberately takes the general per-element arm above.
 
 
 # ========================================

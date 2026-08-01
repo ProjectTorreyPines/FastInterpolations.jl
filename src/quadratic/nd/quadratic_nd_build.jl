@@ -342,7 +342,7 @@ function _build_nd_coeffs_quadratic(
     grids_solve, bcs_solve = if _promote_grid_eltype(grids) <: Real
         grids, bcs
     else
-        _reparam_grids(grids), map(_scale_bc_reparam, bcs, grids)
+        _reparam_grids(grids), _scale_bcs_reparam(bcs, grids, data)
     end
 
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)

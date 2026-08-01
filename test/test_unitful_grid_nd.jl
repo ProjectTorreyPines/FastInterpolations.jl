@@ -463,6 +463,82 @@ end
     end
 end
 
+@testitem "Unitful ND: composition gaps — 3D, PolyFit{4}, Real-zero BCPair, periodic, in-place" begin
+    using Unitful
+
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    x = xf .* u"s"
+    y = yf .* u"m"
+    F2 = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    F2f = ustrip.(u"W", F2)
+
+    @testset "3D mixed-unit: build/eval/deriv/integrate vs twin" begin
+        zf = [0.0, 0.5, 1.0, 2.0]
+        z = zf .* u"kg"
+        F3 = [
+            (sin(xi) + 2.0 * yj + 0.3 * zk + 0.1 * xi * yj * zk) * u"W"
+                for xi in xf, yj in yf, zk in zf
+        ]
+        F3f = ustrip.(u"W", F3)
+        itp = cubic_interp((x, y, z), F3)
+        tw = cubic_interp((xf, yf, zf), F3f)
+        q = (2.2u"s", 1.3u"m", 0.7u"kg")
+        qf = (2.2, 1.3, 0.7)
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(0), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(0), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(1), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(1), DerivOp(0))) * u"W/(s*m)" rtol = 1.0e-13
+        @test integrate(itp) ≈ integrate(tw) * u"W*s*m*kg" rtol = 1.0e-13
+        @test integrate(itp, (0.5u"s", 0.5u"m", 0.2u"kg"), (3.5u"s", 3.0u"m", 1.5u"kg")) ≈
+            integrate(tw, (0.5, 0.5, 0.2), (3.5, 3.0, 1.5)) * u"W*s*m*kg" rtol = 1.0e-13
+    end
+
+    @testset "per-axis PolyFit{4} on unit axes ≡ twin" begin
+        itp = cubic_interp((x, y), F2; bc = (PolyFit{4}(), CubicFit()))
+        tw = cubic_interp((xf, yf), F2f; bc = (PolyFit{4}(), CubicFit()))
+        @test itp((2.2u"s", 1.3u"m")) ≈ tw((2.2, 1.3)) * u"W" rtol = 1.0e-14
+        @test itp((0.2u"s", 3.3u"m")) ≈ tw((0.2, 3.3)) * u"W" rtol = 1.0e-14
+    end
+
+    @testset "Real-zero BCPair payloads beside unit ND data (rehydrate composition)" begin
+        bcs = (BCPair(Deriv2(0.0), Deriv2(0.0)), ZeroCurvBC())
+        itp = cubic_interp((x, y), F2; bc = bcs)
+        tw = cubic_interp((xf, yf), F2f; bc = bcs)
+        @test itp((2.2u"s", 1.3u"m")) ≈ tw((2.2, 1.3)) * u"W" rtol = 1.0e-14
+        # structurally ≡ the payload-free zero-curvature axis
+        ref = cubic_interp((x, y), F2; bc = (ZeroCurvBC(), ZeroCurvBC()))
+        @test itp((2.2u"s", 1.3u"m")) === ref((2.2u"s", 1.3u"m"))
+    end
+
+    @testset "exclusive periodic unit axis composes with the twin build" begin
+        xpf = [0.0, 1.0, 2.0, 3.0]
+        xp = xpf .* u"s"
+        Fp = [(sin(2π * xi / 4.0) + 2.0 * yj) * u"W" for xi in xpf, yj in yf]
+        Fpf = ustrip.(u"W", Fp)
+        itp = cubic_interp(
+            (xp, y), Fp;
+            bc = (PeriodicBC(endpoint = :exclusive, period = 4.0u"s"), ZeroCurvBC())
+        )
+        tw = cubic_interp(
+            (xpf, yf), Fpf;
+            bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), ZeroCurvBC())
+        )
+        @test itp((3.7u"s", 1.3u"m")) ≈ tw((3.7, 1.3)) * u"W" rtol = 1.0e-14
+        @test itp((0.3u"s", 1.3u"m")) ≈ tw((0.3, 1.3)) * u"W" rtol = 1.0e-14
+    end
+
+    @testset "gradient! into an eltype-compatible store" begin
+        itp = cubic_interp((x, y), F2)
+        q = (2.2u"s", 1.3u"m")
+        g_ref = gradient(itp, q)
+        buf = Vector{Any}(undef, 2)
+        gradient!(buf, itp, q)
+        @test buf[1] === g_ref[1] && buf[2] === g_ref[2]
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, mixed-unit abstract-Tg (review pin F6)" setup = [AllocConstants] begin
     using Unitful
 

@@ -1190,19 +1190,28 @@ end
 )
 
 # Typed PointBC payloads live in [Y/Xᵏ] → on the dimensionless axis they must be
-# [Y]: scale by oneunit(axis)ᵏ. Structural Real payloads pass through — the 1D
-# solve's normalize (zero-mint / embeddable / reject) owns their semantics.
-# Left/Right are quadratic's side wrappers around the same PointBC payloads.
-@inline _scale_bc_reparam(bc::BCPair, x) =
-    BCPair(_scale_bc_reparam(bc.left, x), _scale_bc_reparam(bc.right, x))
-@inline _scale_bc_reparam(bc::Left, x) = Left(_scale_bc_reparam(bc.bc, x))
-@inline _scale_bc_reparam(bc::Right, x) = Right(_scale_bc_reparam(bc.bc, x))
-@inline _scale_bc_reparam(bc::Deriv1, x) = Deriv1(_scale_payload_reparam(bc.val, oneunit(eltype(x))))
-@inline _scale_bc_reparam(bc::Deriv2, x) = Deriv2(_scale_payload_reparam(bc.val, oneunit(eltype(x))^2))
-@inline _scale_bc_reparam(bc::Deriv3, x) = Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3))
-@inline _scale_bc_reparam(bc::AbstractBC, _x) = bc
-@inline _scale_payload_reparam(v::Real, _u) = v
-@inline _scale_payload_reparam(v, u) = v * u
+# [Y]: scale by oneunit(axis)ᵏ. Structural Real payloads take the canonical
+# `_payload_val` rehydration against a data sample — on the t-axis the payload
+# space IS [Y], and the ND fiber solve (`_deriv_1d!`) has no normalize of its
+# own. Left/Right are quadratic's side wrappers around the same PointBC payloads.
+@inline _scale_bcs_reparam(::Tuple{}, ::Tuple{}, _data) = ()
+@inline _scale_bcs_reparam(bcs::Tuple, grids::Tuple, data) = (
+    _scale_bc_reparam(first(bcs), first(grids), data),
+    _scale_bcs_reparam(Base.tail(bcs), Base.tail(grids), data)...,
+)
+@inline _scale_bc_reparam(bc::BCPair, x, data) =
+    BCPair(_scale_bc_reparam(bc.left, x, data), _scale_bc_reparam(bc.right, x, data))
+@inline _scale_bc_reparam(bc::Left, x, data) = Left(_scale_bc_reparam(bc.bc, x, data))
+@inline _scale_bc_reparam(bc::Right, x, data) = Right(_scale_bc_reparam(bc.bc, x, data))
+@inline _scale_bc_reparam(bc::Deriv1, x, data) =
+    Deriv1(_scale_payload_reparam(bc.val, oneunit(eltype(x)), data))
+@inline _scale_bc_reparam(bc::Deriv2, x, data) =
+    Deriv2(_scale_payload_reparam(bc.val, oneunit(eltype(x))^2, data))
+@inline _scale_bc_reparam(bc::Deriv3, x, data) =
+    Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3, data))
+@inline _scale_bc_reparam(bc::AbstractBC, _x, _data) = bc
+@inline _scale_payload_reparam(v::Real, _u, data) = _payload_val(v, @inbounds first(data))
+@inline _scale_payload_reparam(v, u, _data) = v * u
 
 # Reparameterized (dimensionless) local params for non-Real axes: each axis's
 # h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness — the

@@ -864,3 +864,43 @@ end
         @test (@inferred iu((0.5u"s", 0.5u"s"))) isa typeof(1.0u"W")   # concrete grid ⇒ no box
     end
 end
+
+@testitem "Unitful ND: Real BC payloads validate in their true derivative space" begin
+    using Unitful
+
+    # Real data on unit axes: a nonzero Real `Deriv1` payload is dimensionally
+    # incomplete ([Y/X] carries axis units) — the 1D builders reject it with an
+    # actionable error, and the reparam scale-in must match. The structural zero
+    # keeps minting in the true space before scaling into the [Y] store.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    Freal = [(sin(xi) + 2.0 * yj) for xi in xf, yj in yf]
+    q = (2.2u"s", 1.3u"m")
+
+    @testset "nonzero Real payload beside Real data + unit axes → ArgumentError" begin
+        err = try
+            cubic_interp((xs, ym), Freal; bc = (BCPair(Deriv1(0.25), Deriv1(0.25)), ZeroCurvBC()))
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("derivative space", sprint(showerror, err))
+    end
+
+    @testset "structural zero still mints (Real data + unit axes)" begin
+        ref = cubic_interp((xs, ym), Freal; bc = (ZeroCurvBC(), ZeroCurvBC()))
+        itp = cubic_interp((xs, ym), Freal; bc = (BCPair(Deriv2(0.0), Deriv2(0.0)), ZeroCurvBC()))
+        @test itp(q) === ref(q)
+    end
+
+    @testset "typed payloads in the true [Y/X] space stay accepted" begin
+        itp = cubic_interp(
+            (xs, ym), Freal;
+            bc = (BCPair(Deriv1(0.25u"s^-1"), Deriv1(0.25u"s^-1")), ZeroCurvBC())
+        )
+        @test itp(q) isa Float64
+    end
+end

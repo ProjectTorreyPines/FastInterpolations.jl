@@ -1201,8 +1201,10 @@ end
 
 # Typed PointBC payloads live in [Y/Xᵏ] → scale by oneunit(axis)ᵏ onto the
 # dimensionless axis ([Y]). Structural Real payloads rehydrate via the canonical
-# `_payload_val` against a data sample — the ND fiber solve (`_deriv_1d!`) has
-# no normalize of its own. Left/Right are quadratic's side wrappers.
+# `_payload_val` in that TRUE space (witness `first(data)·u⁻¹` — matches the 1D
+# rejection of dimensionally incomplete nonzero Reals) before scaling into [Y];
+# the ND fiber solve (`_deriv_1d!`) has no normalize of its own. Left/Right are
+# quadratic's side wrappers.
 @inline _scale_bcs_reparam(::Tuple{}, ::Tuple{}, _data) = ()
 @inline _scale_bcs_reparam(bcs::Tuple, grids::Tuple, data) = (
     _scale_bc_reparam(first(bcs), first(grids), data),
@@ -1219,7 +1221,8 @@ end
 @inline _scale_bc_reparam(bc::Deriv3, x, data) =
     Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3, data))
 @inline _scale_bc_reparam(bc::AbstractBC, _x, _data) = bc
-@inline _scale_payload_reparam(v::Real, _u, data) = _payload_val(v, @inbounds first(data))
+@inline _scale_payload_reparam(v::Real, u, data) =
+    _payload_val(v, (@inbounds first(data)) * inv(u)) * u
 @inline _scale_payload_reparam(v, u, _data) = v * u
 
 # Solve-frame selection for the scaled-store families (persistent build + one-shot

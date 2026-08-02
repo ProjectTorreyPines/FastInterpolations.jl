@@ -1748,3 +1748,19 @@ end
         end
     end
 end
+
+@testitem "NoInterp + GridIdx: KNOWN BROKEN — 1-D batch queries" begin
+    # `GridIdx` resolves at the scalar door and (since the ND batch fix) per
+    # point in the N-D batch loops. The 1-D vector loops have neither: the
+    # domain check sees the unresolved `val = NaN` and throws. Loud, never
+    # silent. Present in v0.4.17 and earlier — recorded, not fixed: resolution
+    # would have to reach each family's 1-D loop, and rebuilding the query
+    # array at the entry would break the batch zero-alloc contract.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5]
+    y = [0.0, 1.0, 2.0, 3.0, 4.0]
+    itp = linear_interp(x, y)
+
+    @test itp(GridIdx(2)) === y[2]                      # scalar path works
+    @test_broken itp([GridIdx(2), GridIdx(4)]) == [y[2], y[4]]
+    @test_broken cubic_interp(x, y)([GridIdx(2)])[1] === cubic_interp(x, y)(GridIdx(2))
+end

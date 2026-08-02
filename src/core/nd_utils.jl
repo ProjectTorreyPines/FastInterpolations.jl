@@ -1208,10 +1208,10 @@ end
 # access. The eltype comes from the same op that the gate probes and the view
 # applies — one witness, three uses.
 @inline function _ReparamAxis(inner::AbstractVector)
-    scale = _deriv_oneunit(first(inner), DerivOp(1))
-    return _ReparamAxis{_promote_eltype(_reparam_op, eltype(inner)), typeof(inner), typeof(scale), typeof(oneunit(eltype(inner)))}(
-        inner, scale, oneunit(eltype(inner))
-    )
+    u = oneunit(eltype(inner))                       # type-derived: never touches the data
+    scale = _deriv_oneunit(u, DerivOp(1))
+    T = _promote_eltype(_reparam_op, eltype(inner))
+    return _ReparamAxis{T, typeof(inner), typeof(scale), typeof(u)}(inner, scale, u)
 end
 
 @inline Base.size(a::_ReparamAxis) = size(a.inner)

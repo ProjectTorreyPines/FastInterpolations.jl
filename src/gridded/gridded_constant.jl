@@ -224,11 +224,10 @@ end
         extrap,
         deriv
     ) where {Tv, N}
-    grids_typed, Tg, _ = _nd_promote_grids_raw(grids, data)
+    grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
     bcs = map(m -> m.bc, methods)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    # Fill lives in the kernel's float value space (persistent ctor mirror).
-    extraps = _resolve_extrap(extrap, bcs, Val(N), _value_type(Tv, _promote_grid_float(Tg, Tv)))
+    extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _gridded_eval_methods!(out_nd, grids_typed, data, targets, methods, ops, extraps)
 end

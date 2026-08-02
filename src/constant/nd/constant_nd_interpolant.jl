@@ -61,7 +61,7 @@ function constant_interp(
     # Raw storage (no Float widening): `Tg = promote_type(eltype.(grids)...)`,
     # `Tv = eltype(data)`. Kernel handles return-type widening via per-axis
     # `* one(dL_d)`.
-    grids_typed, Tg, Tv = _nd_promote_grids_raw(grids, data)
+    grids_typed, _, Tv = _nd_promote_grids_raw(grids, data)
     data_typed = data
 
     # Resolve per-axis configuration
@@ -76,8 +76,8 @@ function constant_interp(
     grids_typed = _policy_axes(grids_typed, bcs_post, store)
 
     # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
-    # The fill lives in the kernel's float value space, not in raw `Tv` (1D mirror).
-    extrap_vals = _resolve_extrap(extrap, bcs, Val(N), _value_type(Tv, _promote_grid_float(Tg, Tv)))
+    # The fill lives in `Tv` — Constant returns data verbatim (1D mirror).
+    extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return ConstantInterpolantND(grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post, store = store)
 end

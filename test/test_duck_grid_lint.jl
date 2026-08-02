@@ -44,6 +44,13 @@
             (rel == "core/utils.jl" && occursin("_promote_extrap", line)) ||
             # 3. `_inv_const` Real arm — dispatch pair with the dimensionless arm.
             occursin("_inv_const", line) ||
+            # 3a. Scaled-store policy seams: each is a dispatch PAIR whose
+            #     unconstrained sibling serves duck/unit grids (fill eltype,
+            #     local params → reparam collapse, gridded fused → pointwise).
+            #     The Real arm exists to keep that path byte-identical.
+            occursin("_oneshot_fill_eltype", line) ||
+            (rel == "core/nd_utils.jl" && occursin("Tg <: Real}", line)) ||
+            (rel == "gridded/gridded_partials.jl" && occursin("Tg <: Real,", line)) ||
             # 3b. Type-level units-branch idiom (`Tg <: Real || return _*_units(...)`).
             occursin("<: Real ||", line) ||
             # 4. DEFERRED: Series EVAL + anchored-query paths (integrate-side series
@@ -105,8 +112,14 @@
         # anchor_common.jl (`_anchor_loc` ×2 + `_AnchorLoc` struct): relaxed to
         # Number for the deferred anchored-query paths (ND GriddedQuery on unit
         # grids) — was 3, now 0 → key dropped.
-        "core/nd_utils.jl" => 2,
+        # core/nd_utils.jl: 2 `q::Real` axis-search arms + 2 scaled-store policy
+        # seams (`_oneshot_fill_eltype`, `_compute_all_local_params`), each a
+        # dispatch pair whose unconstrained sibling serves duck/unit grids.
+        "core/nd_utils.jl" => 4,
         "core/search.jl" => 4,
+        # gridded/gridded_partials.jl: the 2 persistent fused arms; their
+        # unconstrained siblings decline non-Real axes to the pointwise core.
+        "gridded/gridded_partials.jl" => 2,
         # series_lean_anchors.jl (`_build_series_anchor`): relaxed to Number for
         # unit-grid Series eval — was 1, now 0 → key dropped.
         # series_utils.jl (the 6 `_constant_extrap_boundary_value` /

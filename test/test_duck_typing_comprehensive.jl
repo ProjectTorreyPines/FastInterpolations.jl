@@ -1551,9 +1551,13 @@ end
     # standard numeric promotion is unaffected by duck-typing paths.
     # ================================================================
     @testset "33. Contract boundaries" begin
-        # DuckFloat5 has no convert(DuckFloat5, Float64) → cross-type Deriv must fail
-        @testset "cubic Deriv1(0.0) fails without convert" begin
-            @test_throws MethodError cubic_interp(x_vec, y_generic; bc = Deriv1(0.0))
+        # MyDuck has no convert from Float64 → a cross-type Deriv payload must
+        # fail. Exception (the #201 rule, extended to the bare-PointBC arm):
+        # a STRUCTURAL Real zero is dimensionally unambiguous and mints into the
+        # payload space, so `Deriv1(0.0)` builds; a nonzero one still fails.
+        @testset "cubic Deriv1: structural zero mints, nonzero fails" begin
+            @test cubic_interp(x_vec, y_generic; bc = Deriv1(0.0)) isa CubicInterpolant
+            @test_throws MethodError cubic_interp(x_vec, y_generic; bc = Deriv1(0.25))
         end
         @testset "quadratic Left(Deriv1(0.0)) fails without convert" begin
             @test_throws MethodError quadratic_interp(

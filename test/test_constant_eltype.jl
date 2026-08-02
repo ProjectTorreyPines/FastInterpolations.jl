@@ -467,6 +467,8 @@ end
     end
 
     @testset "1D persistent: Int data + Float fill → InexactError on construction" begin
+        # Constant returns data values verbatim, so the fill lives in `Tv`: a
+        # float fill on Int data is rejected at construction (Int has no NaN).
         x = Float64.(0:4)
         y = [10, 20, 30, 40, 50]
         @test_throws InexactError constant_interp(x, y; extrap = FillExtrap(NaN))

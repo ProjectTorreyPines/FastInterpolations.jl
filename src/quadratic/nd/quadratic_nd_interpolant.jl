@@ -57,9 +57,11 @@ function quadratic_interp(
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 
+    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-reparameterizable
+    # duck Number would die deep inside `_nd_promote_grids` otherwise.
+    _check_nd_reparam_grid(grids)
     # Zero-allocation type promotion and grid conversion
-    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
-    _check_nd_solver_grid(Tg_p)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Validate dimensions
@@ -108,16 +110,18 @@ end
 # ========================================
 
 function _build_nd_quadratic_interpolant(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Cache axes for the build phase — inner ctor of `QuadraticInterpolantND`
     # handles the owned `_convert_copy` separately, so we only wrap (no copy)
-    # here. Already-cached axes pass through idempotently in the ctor.
-    grids_cached = map(_cache_axis, grids, bcs, ntuple(_ -> Tg, Val(N)))
+    # here. Already-cached axes pass through idempotently in the ctor. Grids
+    # arrive value-promoted, so the Tg-less 2-arg wrap is the right form
+    # (mixed-unit axes have no common Tg; mirrors the cubic assembly).
+    grids_cached = map(_cache_axis, grids, bcs)
     nodal_derivs = _build_nd_coeffs_quadratic(grids_cached, data, bcs)
 
     return QuadraticInterpolantND(grids_cached, nodal_derivs, bcs, extraps_val, searches)

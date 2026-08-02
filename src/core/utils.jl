@@ -122,29 +122,41 @@ end
     return nothing
 end
 
-# Solver-family ND builds store mixed derivative-mask orders in ONE homogeneous
-# array — unit-heterogeneous by construction (f vs ∂²f differ even on same-unit
-# axes). Reject unit-carrying grids with an actionable error; `Real` folds away.
-@inline _check_nd_solver_grid(::Type{<:Real}) = nothing
-@noinline _check_nd_solver_grid(::Type{Tg}) where {Tg} = throw(
+# Solver-family axes must be Real or dimensionless-reparameterizable (unit-carrying).
+# Probed PER AXIS with the canonical `_reparam_op` witness — the exact transform the
+# twin build applies (a mixed-unit promoted Tg is an abstract tag no witness may run
+# on). Missing `oneunit`/`inv`/`*` infers `Union{}`/non-Real → friendly refusal;
+# `Real` folds away.
+@inline _check_nd_reparam_grid(::Tuple{}) = nothing
+@inline function _check_nd_reparam_grid(grids::Tuple)
+    _check_nd_reparam_eltype(eltype(first(grids)))
+    return _check_nd_reparam_grid(Base.tail(grids))
+end
+@inline _check_nd_reparam_eltype(::Type{<:Real}) = nothing
+@inline function _check_nd_reparam_eltype(::Type{Tg}) where {Tg}
+    Tt = Base.promote_op(_reparam_op, Tg)
+    return (Tt !== Union{} && Tt <: Real) ? nothing : _throw_nd_reparam_grid(Tg)
+end
+@noinline _throw_nd_reparam_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
-        "PreCompute ND coefficient builds (Cubic/Quadratic/Hermite axes) do not " *
-            "support unit-carrying grids yet (grid eltype $(Tg)) — the nodal-" *
-            "derivative store mixes derivative orders of different dimensions. " *
-            "Use LinearInterp/ConstantInterp ND, integrate per-fiber 1-D, or strip units."
+        "Solver-family PreCompute ND builds (Cubic/Quadratic axes) accept Real or " *
+            "unit-carrying grid axes; the non-Real grid eltype $(Tg) supports no " *
+            "dimensionless reparameterization (needs `oneunit`, `inv`, `*`). Use " *
+            "LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid."
     )
 )
 
 # Same contract for the per-axis (hetero) ND engine — which also backs
-# PCHIP/Akima/Cardinal ND. Neither builder path (OnTheFly eval kernels nor the
-# PreCompute partials store) handles unit-carrying grids yet; without this gate
-# the failure is a deep MethodError (or a "successful" build whose eval throws).
+# PCHIP/Akima/Cardinal ND — and for Hermite ND (user partials per-axis in
+# [Y/Xᵈ], no scaled store). Neither builder path handles non-Real grids yet;
+# without this gate the failure is a deep MethodError (or a "successful"
+# build whose eval throws).
 @inline _check_nd_hetero_grid(::Type{<:Real}) = nothing
 @noinline _check_nd_hetero_grid(::Type{Tg}) where {Tg} = throw(
     ArgumentError(
         "Per-axis (hetero) ND interpolants — including PCHIP/Akima/Cardinal ND — " *
-            "do not support unit-carrying grids yet (grid eltype $(Tg)). " *
-            "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or strip units."
+            "and Hermite ND do not support non-Real grid eltypes yet (grid eltype $(Tg)). " *
+            "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid (units: `ustrip`)."
     )
 )
 
@@ -159,6 +171,13 @@ Determine the output value type from y element type and grid type.
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T <: Real, Tg <: AbstractFloat} = Complex{Tg}
 # Duck-typing fallback for Tv: custom value types preserved as-is
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg <: AbstractFloat} = T
+# Non-AbstractFloat grid tags, promotable values: duck REAL grids (Dual) keep the
+# value raw (no grid-parameter partials in y), but non-Real (unit) tags float it —
+# eval/solve run in the float value space there, so fills must too (Real-axis parity).
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T <: _PromotableValue, Tg} =
+    _value_type_nonfloat_grid(T, Tg)
+@inline _value_type_nonfloat_grid(::Type{T}, ::Type{<:Real}) where {T} = T
+@inline _value_type_nonfloat_grid(::Type{T}, ::Type) where {T} = float(T)
 # Duck-typing fallback for Tg: when grid is duck-typed (Dual, Measurement, etc.),
 # values are not promoted to grid type (no grid-parameter partials in y).
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
@@ -559,16 +578,17 @@ end
 @noinline function _throw_adjoint_grid_not_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
     throw(
         ArgumentError(
-            "adjoint operators on a unit-carrying grid are not supported (grid eltype " *
-                "`$Tg`, query eltype `$Tq`): the anchor weights are built homogeneously " *
-                "in the grid type. Strip units first (`ustrip`) and reattach them to the " *
-                "result, or differentiate the forward evaluation, which does preserve units."
+            "adjoint operators on non-Real grid or query eltypes are not supported " *
+                "(grid eltype `$Tg`, query eltype `$Tq`): the anchor weights are built " *
+                "homogeneously in the grid type. Use a Real grid — for units, strip them " *
+                "(`ustrip`) and reattach to the result, or differentiate the forward " *
+                "evaluation, which does preserve units."
         )
     )
 end
 
 # Dispatch, not a boolean test, so the accepted case is a signature (matching the
-# `_check_nd_solver_grid` style above) and the check folds to nothing on `Real`.
+# `_check_nd_hetero_grid` style above) and the check folds to nothing on `Real`.
 @inline _check_adjoint_grid_real(::Type{<:Real}, ::Type{<:Real}) = nothing
 @noinline _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq} =
     _throw_adjoint_grid_not_real(Tg, Tq)

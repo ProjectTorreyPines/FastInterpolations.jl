@@ -111,6 +111,8 @@ end
         bc, extrap, search, deriv,
     ) where {N, Tv_part, K}
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
+    # Non-Real axes: same friendly refusal as the persistent ctor.
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
 
     # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
     # `Tg` value-matched to data∪partials (Int grid + Float32 → Float32) keeps `Tv` narrow,
@@ -207,7 +209,7 @@ end
     extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
 
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_p)
         oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val

@@ -729,3 +729,46 @@
         end
     end
 end
+
+@testitem "FillExtrap: a float fill on integer data lives in the output space" begin
+    # The kernels already float Int data against a float grid (`itp(2.2)::Float64`),
+    # but several persistent entries promoted the fill against the RAW data eltype
+    # → `convert(Int, 0.5)` InexactError at construction. Real axes, plain Int data.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5]
+    y = [0.0, 1.0, 2.0, 3.5]
+    yint = [1, 2, 3, 4, 5]
+    Zint = [i + j for i in 1:5, j in 1:4]
+    q_oob, q_in = 9.9, 2.2
+
+    # `ConstantInterp` is excluded on purpose: it returns data values verbatim,
+    # so its fill lives in `Tv` and a float fill on Int data is rejected at
+    # construction (Int has no NaN) — pinned in test_constant_eltype.jl.
+    @testset "1D persistent: every interpolating family accepts it" begin
+        for mk in (linear_interp, cubic_interp, quadratic_interp, pchip_interp)
+            itp = mk(x, yint; extrap = FillExtrap(0.5))
+            @test itp(q_oob) === 0.5
+            @test itp(q_in) isa Float64
+        end
+    end
+
+    @testset "1D one-shot mirrors" begin
+        @test cubic_interp(x, yint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+        @test linear_interp(x, yint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+    end
+
+    @testset "ND persistent + gridded" begin
+        itp = interp((x, y), Zint; method = LinearInterp(), extrap = FillExtrap(0.5))
+        @test itp((q_oob, 1.0)) === 0.5
+        # Gridded (axis-target) path shares the fill promotion.
+        @test itp(([q_oob], [1.0]))[1] === 0.5
+        @test cubic_interp((x, y), Zint; extrap = FillExtrap(0.5))((q_oob, 1.0)) === 0.5
+    end
+
+    @testset "NaN fill propagates wherever the value space holds NaN" begin
+        for mk in (linear_interp, cubic_interp, quadratic_interp)
+            @test isnan(mk(x, yint; extrap = FillExtrap(NaN))(q_oob))
+            @test isnan(mk(Float32.(x), Float32.(yint); extrap = FillExtrap(NaN))(Float32(q_oob)))
+        end
+        @test isnan(constant_interp(x, Float64.(yint); extrap = FillExtrap(NaN))(q_oob))
+    end
+end

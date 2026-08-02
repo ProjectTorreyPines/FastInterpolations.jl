@@ -143,8 +143,10 @@ end
 @inline _nd_deriv_scale(samples::Tuple, ops::Tuple) =
     _deriv_oneunit(first(samples), first(ops)) * _nd_deriv_scale(Base.tail(samples), Base.tail(ops))
 
-# FillExtrap OOB form: axis samples from the grid eltypes; a scalar op
-# broadcasts to every axis.
+# Grid-sample adapter for the fold above (axis samples from the grid eltypes; a
+# scalar op broadcasts to every axis). Despite the historical "fill" name it
+# serves BOTH the FillExtrap OOB zeros and the scaled-store in-domain restore
+# seam (`_restore_nd_deriv_scale`) — eval correctness rides on it.
 @inline _nd_fill_deriv_scale(grids::Tuple, op::AbstractEvalOp) = _nd_fill_deriv_scale(grids, map(_ -> op, grids))
 @inline _nd_fill_deriv_scale(grids::Tuple, ops::Tuple) =
     _nd_deriv_scale(map(g -> oneunit(eltype(g)), grids), ops)
@@ -258,6 +260,14 @@ end
     exprs = [:(FastInterpolations._promote_extrap(extraps[$d], Tv)) for d in 1:N]
     return :(($(exprs...),))
 end
+
+# One-shot fill/extrap payload space (scalar entries don't eagerly convert data):
+# Real axes widen by the family coeff witness (`_coeff_op2` cubic, `_coeff_op`
+# quadratic); a non-Real tag cannot run the witness — the value space serves
+# (the persistent entry's convention).
+@inline _oneshot_fill_eltype(op::F, ::Type{Tg}, ::Type{Tv}) where {F, Tg <: Real, Tv} =
+    _promote_eltype(op, Tg, Tv)
+@inline _oneshot_fill_eltype(::F, ::Type{Tg}, ::Type{Tv}) where {F, Tg, Tv} = _value_type(Tv, Tg)
 
 # ── Periodic BC compatibility checks for Mode types ──────────────────
 
@@ -1166,7 +1176,7 @@ end
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Number, N}},
         ::Type{Tg},
-    ) where {N, Tg}
+    ) where {N, Tg <: Real}
     hs = ntuple(Val(N)) do d
         @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end
@@ -1175,6 +1185,115 @@ end
     end
     dLs = ntuple(Val(N)) do d
         @inbounds q_evals[d] - Ls[d]
+    end
+    return hs, inv_hs, dLs
+end
+
+# Non-Real width tag (unit type or abstract promotion tag) → the dimensionless
+# collapse: the axes carry the witnesses, the tag itself is never instantiated.
+@inline _compute_all_local_params(
+    q_evals::Tuple{Vararg{Number, N}},
+    grids::Tuple{Vararg{AbstractVector, N}},
+    indices::NTuple{N, Int},
+    Ls::Tuple{Vararg{Number, N}},
+    ::Type,
+) where {N} = _compute_all_local_params_reparam(q_evals, grids, indices, Ls)
+
+# Canonical per-element reparam transform (axis element → dimensionless twin).
+# The solver gate (`_check_nd_reparam_eltype`) probes exactly this op, so the
+# gate's promise (`oneunit`, `inv`, `*`) is what it actually checks.
+@inline _reparam_op(x) = x * _deriv_oneunit(x, DerivOp(1))
+
+# Lazy twin (see `_ReparamAxis` in axis_types.jl): `_reparam_op` applied per
+# access. The eltype comes from the same op that the gate probes and the view
+# applies — one witness, three uses.
+@inline function _ReparamAxis(inner::AbstractVector)
+    u = oneunit(eltype(inner))                       # type-derived: never touches the data
+    scale = _deriv_oneunit(u, DerivOp(1))
+    T = _promote_eltype(_reparam_op, eltype(inner))
+    return _ReparamAxis{T, typeof(inner), typeof(scale), typeof(u)}(inner, scale, u)
+end
+
+@inline Base.size(a::_ReparamAxis) = size(a.inner)
+Base.IndexStyle(::Type{<:_ReparamAxis}) = IndexLinear()
+@inline Base.@propagate_inbounds Base.getindex(a::_ReparamAxis, i::Int) = a.inner[i] * a.scale
+# Widths pass through the parent's cache — a scalar multiply, no re-subtraction.
+@inline Base.@propagate_inbounds _get_h(a::_ReparamAxis, i::Int) = _get_h(a.inner, i) * a.scale
+@inline Base.@propagate_inbounds _get_inv_h(a::_ReparamAxis, i::Int) = _get_inv_h(a.inner, i) * a.unit
+
+# Dimensionless axis twins for the solver-family ND builds — the
+# `_float_grids_peraxis` peel idiom (build paths ban closure-maps over axis
+# wraps). Ranges keep the arithmetic form: Base's range broadcast already
+# yields an isbits range (no array) and preserves the `_CachedRange` objectid
+# fast path in the solve cache banks. Everything else takes the lazy view.
+@inline _reparam_axis(x::AbstractRange) = x .* _deriv_oneunit(first(x), DerivOp(1))
+@inline _reparam_axis(x::AbstractVector) = _ReparamAxis(x)
+@inline _reparam_grids(::Tuple{}) = ()
+@inline _reparam_grids(grids::Tuple) =
+    (_reparam_axis(first(grids)), _reparam_grids(Base.tail(grids))...)
+
+# Typed PointBC payloads live in [Y/Xᵏ] → scale by oneunit(axis)ᵏ onto the
+# dimensionless axis ([Y]). Structural Real payloads rehydrate via the canonical
+# `_payload_val` in that TRUE space (witness `first(data)·u⁻¹` — matches the 1D
+# rejection of dimensionally incomplete nonzero Reals) before scaling into [Y];
+# the ND fiber solve (`_deriv_1d!`) has no normalize of its own. Left/Right are
+# quadratic's side wrappers.
+@inline _scale_bcs_reparam(::Tuple{}, ::Tuple{}, _data) = ()
+@inline _scale_bcs_reparam(bcs::Tuple, grids::Tuple, data) = (
+    _scale_bc_reparam(first(bcs), first(grids), data),
+    _scale_bcs_reparam(Base.tail(bcs), Base.tail(grids), data)...,
+)
+@inline _scale_bc_reparam(bc::BCPair, x, data) =
+    BCPair(_scale_bc_reparam(bc.left, x, data), _scale_bc_reparam(bc.right, x, data))
+@inline _scale_bc_reparam(bc::Left, x, data) = Left(_scale_bc_reparam(bc.bc, x, data))
+@inline _scale_bc_reparam(bc::Right, x, data) = Right(_scale_bc_reparam(bc.bc, x, data))
+@inline _scale_bc_reparam(bc::Deriv1, x, data) =
+    Deriv1(_scale_payload_reparam(bc.val, oneunit(eltype(x)), data))
+@inline _scale_bc_reparam(bc::Deriv2, x, data) =
+    Deriv2(_scale_payload_reparam(bc.val, oneunit(eltype(x))^2, data))
+@inline _scale_bc_reparam(bc::Deriv3, x, data) =
+    Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3, data))
+@inline _scale_bc_reparam(bc::AbstractBC, _x, _data) = bc
+@inline _scale_payload_reparam(v::Real, u, data) =
+    _payload_val(v, (@inbounds first(data)) * inv(u)) * u
+@inline _scale_payload_reparam(v, u, _data) = v * u
+
+# Solve-frame selection for the scaled-store families (persistent build + one-shot
+# pool): Real axes solve natively; non-Real axes solve on their dimensionless
+# twins with [Y]-rescaled BC payloads. Dispatch on the promotion tag, not a
+# boolean test (gate style) — the Real arm folds to a passthrough.
+@inline _reparam_solve_frame(grids, bcs, data) =
+    _reparam_solve_frame(_promote_grid_eltype(grids), grids, bcs, data)
+@inline _reparam_solve_frame(::Type{<:Real}, grids, bcs, _data) = (grids, bcs)
+@inline _reparam_solve_frame(::Type, grids, bcs, data) =
+    (_reparam_grids(grids), _scale_bcs_reparam(bcs, grids, data))
+
+# Cell-seam restoration: scaled-store kernels run dimensionless over the
+# [Y]-homogeneous partials, so a non-Real grid multiplies the result back into
+# value/coordᴺ space. The Real arm is an identity ARM, not ×1.0 — LLVM folds only ×true.
+@inline _restore_nd_deriv_scale(r, grids, ops) =
+    _restore_nd_deriv_scale(_promote_grid_eltype(grids), r, grids, ops)
+@inline _restore_nd_deriv_scale(::Type{<:Real}, r, _grids, _ops) = r
+@inline _restore_nd_deriv_scale(::Type, r, grids, ops) = r * _nd_fill_deriv_scale(grids, ops)
+
+# Reparameterized (dimensionless) local params for non-Real axes: each axis's
+# h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness, so the
+# [Y]-homogeneous kernels run in value space even on mixed-unit axes.
+# Multiplication (not conversion) preserves Dual-query partials in `dLs`.
+@inline function _compute_all_local_params_reparam(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Number, N}},
+    ) where {N}
+    hs = ntuple(Val(N)) do d
+        @inbounds _get_h(grids[d], indices[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
+    end
+    inv_hs = ntuple(Val(N)) do d
+        @inbounds _get_inv_h(grids[d], indices[d]) * oneunit(first(grids[d]))
+    end
+    dLs = ntuple(Val(N)) do d
+        @inbounds (_coord_value(q_evals[d]) - Ls[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
     end
     return hs, inv_hs, dLs
 end
@@ -1266,7 +1385,13 @@ end
 
 # Pooled value-matched wrap (cubic/quadratic PreCompute scalar backends).
 @generated function _cache_axes_pooled(pool, grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
-    exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    if isconcretetype(Tg)
+        exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is an abstract promotion tag —
+        # wrap each axis at its OWN eltype (mirrors `_convert_cache_axes`).
+        exprs = [:(_cache_axis_pooled(pool, grids[$i], eltype(grids[$i]))) for i in 1:N]
+    end
     return :(($(exprs...),))
 end
 
@@ -1279,7 +1404,17 @@ end
 # Owned cached wrap (PreCompute/adjoint inner ctors): cache + `_convert_copy`
 # per axis. Closure-map forms of this are banned — see the store-policy lint.
 @generated function _convert_cache_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
-    exprs = [:(_convert_copy(_cache_axis(grids[$i], bcs[$i], Tg), Tg)) for i in 1:N]
+    if isconcretetype(Tg)
+        exprs = [:(_convert_copy(_cache_axis(grids[$i], bcs[$i], Tg), Tg)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is an abstract promotion tag —
+        # wrap + own each axis at its OWN eltype (mirrors `_store_axes`;
+        # `oneunit(abstract)` is undefined).
+        exprs = [
+            :(_convert_copy(_cache_axis(grids[$i], bcs[$i], eltype(grids[$i])), eltype(grids[$i])))
+                for i in 1:N
+        ]
+    end
     return :(($(exprs...),))
 end
 

@@ -305,7 +305,7 @@ end
     ) where {Tg, Tv, N}
     zref = _sample_data(itp)
     @inbounds for k in 1:_query_length(queries)
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), itp.grids)
         # `extraps_eff` carries per-axis `InBounds()` from `_validate_nd_domain`
         # when all batch queries on that axis are in-bounds (1D `_check_domain`
         # union-split per axis via the heterogeneous `map`). `_try_fill_oob` and

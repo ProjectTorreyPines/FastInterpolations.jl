@@ -71,9 +71,11 @@ function _cubic_interp_nd(
         coeffs::AbstractCoeffStrategy = PreCompute(),
         store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
+    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-reparameterizable
+    # duck Number would die deep inside `_nd_promote_grids` otherwise.
+    _check_nd_reparam_grid(grids)
     # Zero-allocation type promotion + grid conversion
-    grids_typed, Tg_p, Tv, _ = _nd_promote_grids(grids, data)
-    _check_nd_solver_grid(Tg_p)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
 
     # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
@@ -109,13 +111,13 @@ end
 Build CubicInterpolantND with precomputed coefficients.
 """
 function _build_nd_interpolant(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ::PreCompute
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Extend grids/data for exclusive periodic axes; periodic bcs are
     # promoted to `:extended` per axis (via `_bc_after_extend` inside the
     # helper) so downstream dispatch reflects the closed-cycle layout.

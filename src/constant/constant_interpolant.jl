@@ -133,6 +133,9 @@ end
     # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     x_eff = _policy_axis(x_ext, bc_eff, Tg, store)
+    # Constant returns data values verbatim, so the fill lives in `Tv`: it is
+    # promoted there at construction, and one that `Tv` cannot represent (a NaN
+    # beside Int data) is rejected up front rather than at eval.
     extrap_p = _promote_extrap(extrap_eff, Tv)
     return ConstantInterpolant(x_eff, y_ext, extrap_p, side, search; bc = bc_eff, store = store)
 end

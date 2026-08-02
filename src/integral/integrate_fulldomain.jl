@@ -586,12 +586,42 @@ end
 @inline _nd_int_zero(::Type{Tout}, payload) where {Tout <: Number} = zero(Tout)
 @inline _nd_int_zero(::Type{Tout}, payload) where {Tout} = 0 * @inbounds(payload[begin])
 
+# Scaled-store families (cubic/quadratic ND) integrate on their exact
+# dimensionless axis twins — the [Y]-scaled partials pair with dimensionless
+# weights, and the volume element Π oneunit(axis) restores ∫…dx from ∫…dt.
+# Native-unit engines return `nothing` (fold), as does the Real arm of the
+# scaled families (dispatch on the promotion tag).
+@inline _integrate_reparam(::AbstractInterpolantND) = nothing
+@inline _integrate_reparam(
+    itp::Union{CubicInterpolantND{Tg}, QuadraticInterpolantND{Tg}}
+) where {Tg} = _integrate_reparam(Tg, itp)
+@inline _integrate_reparam(::Type{<:Real}, _itp) = nothing
+@inline _integrate_reparam(::Type, itp) =
+    (_reparam_grids(itp.grids), _nd_volume_scale(itp.grids))
+@inline _nd_volume_scale(::Tuple{}) = true
+@inline _nd_volume_scale(grids::Tuple) =
+    oneunit(eltype(first(grids))) * _nd_volume_scale(Base.tail(grids))
+# Dimensionless coordinate tuples (bounds) — per-axis `_deriv_oneunit` scaling.
+@inline _reparam_coords(::Tuple{}, ::Tuple{}) = ()
+@inline _reparam_coords(qs::Tuple, grids::Tuple) = (
+    first(qs) * _deriv_oneunit(first(first(grids)), DerivOp(1)),
+    _reparam_coords(Base.tail(qs), Base.tail(grids))...,
+)
+
 @inline function integrate(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     tags, payload = _separable_spec(itp)
-    # Per-axis span-product fold (∫∫ f dx dy :: Tv·X₁·X₂) — see _integrate_nd_out_grids.
-    Tout = _integrate_nd_out_grids(Tv, itp.grids)
-    z = _nd_int_zero(Tout, payload)
-    return _integrate_separable_nd_fulldomain(tags, itp.grids, payload, Tout, z)
+    reparam = _integrate_reparam(itp)
+    if reparam === nothing
+        # Per-axis span-product fold (∫∫ f dx dy :: Tv·X₁·X₂) — see _integrate_nd_out_grids.
+        Tout = _integrate_nd_out_grids(Tv, itp.grids)
+        z = _nd_int_zero(Tout, payload)
+        return _integrate_separable_nd_fulldomain(tags, itp.grids, payload, Tout, z)
+    else
+        axes_t, vol = reparam
+        Tout_t = _integrate_nd_out_grids(Tv, axes_t)
+        z_t = _nd_int_zero(Tout_t, payload)
+        return _integrate_separable_nd_fulldomain(tags, axes_t, payload, Tout_t, z_t) * vol
+    end
 end
 
 @inline function integrate(
@@ -605,12 +635,25 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.extraps, lo, hi, search, hint
     )
-    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    z = _nd_int_zero(Tout, payload)
-    sign == 0 && return z
-    specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
-    total = _integrate_separable_nd_bounded(tags, specs, itp.grids, payload, Tout, z)
-    return sign * total
+    reparam = _integrate_reparam(itp)
+    if reparam === nothing
+        Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+        z = _nd_int_zero(Tout, payload)
+        sign == 0 && return z
+        specs = _nd_bounded_axis_specs(itp.grids, lo2, hi2, idx_lo, idx_hi)
+        total = _integrate_separable_nd_bounded(tags, specs, itp.grids, payload, Tout, z)
+        return sign * total
+    else
+        axes_t, vol = reparam
+        lo_t = _reparam_coords(lo2, itp.grids)
+        hi_t = _reparam_coords(hi2, itp.grids)
+        Tout_t = _integrate_nd_output_type(Tv, Tg, lo_t, hi_t)
+        z_t = _nd_int_zero(Tout_t, payload)
+        sign == 0 && return z_t * vol
+        specs = _nd_bounded_axis_specs(axes_t, lo_t, hi_t, idx_lo, idx_hi)
+        total = _integrate_separable_nd_bounded(tags, specs, axes_t, payload, Tout_t, z_t)
+        return sign * (total * vol)
+    end
 end
 
 # Scalar bounds on an ND interpolant → point at the tuple form (otherwise the 1D

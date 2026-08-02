@@ -348,3 +348,65 @@ end
         @test itp(2.2) isa ComplexF64
     end
 end
+
+@testitem "cubic unit native: bare-PointBC + Series-array Real-zero payloads rehydrate" begin
+    using Unitful
+
+    # The scalar `BCPair` 3-arg normalize rehydrates structural Real zeros, but two
+    # sibling arms skipped it: (A) the solve-side `_normalize_bc_array` overload for
+    # `Vector{<:BCPair}` delegated to the type-only path; (B) the 3-arg catch-all
+    # dropped (x, y) for bare `PointBC`s. Pin all shapes to the ZeroCurvBC mint.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    xu = xf .* u"m"
+    yw = [sin(xi) for xi in xf] .* u"K"
+    q = 2.2u"m"
+    ref = cubic_interp(xu, yw; bc = ZeroCurvBC())
+    S = Series(reshape(yw, :, 1))
+
+    @testset "plain 1D: scalar bare Deriv2(0.0) ≡ ZeroCurvBC" begin
+        itp = cubic_interp(xu, yw; bc = Deriv2(0.0))
+        @test itp(q) === ref(q)
+    end
+
+    @testset "Series: scalar bare Deriv2(0.0)" begin
+        sitp = cubic_interp(xu, S; bc = Deriv2(0.0))
+        @test sitp(q)[1] === ref(q)
+    end
+
+    @testset "Series: [Deriv2(0.0)] vector (general grid-aware arm)" begin
+        sitp = cubic_interp(xu, S; bc = [Deriv2(0.0)])
+        @test sitp(q)[1] === ref(q)
+    end
+
+    @testset "Series: [BCPair(Deriv2(0.0), Deriv2(0.0))] (Vector{BCPair} solve arm)" begin
+        sitp = cubic_interp(xu, S; bc = [BCPair(Deriv2(0.0), Deriv2(0.0))])
+        @test sitp(q)[1] === ref(q)
+    end
+
+    @testset "nonzero unitless payloads keep the actionable rejection on the new arms" begin
+        @test_throws ArgumentError cubic_interp(xu, yw; bc = Deriv2(0.3))
+        @test_throws ArgumentError cubic_interp(xu, S; bc = [BCPair(Deriv2(0.3), Deriv2(0.3))])
+    end
+end
+
+@testitem "cubic unit native: inference pins — rehydrated builds + FillExtrap" begin
+    using Unitful
+    using Test: @inferred
+
+    # The rehydration arms and unit FillExtrap must keep eval concretely inferred
+    # (fill values normalize into the value space at build, so OOB == in-domain type).
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    xu = xf .* u"m"
+    yw = [sin(v) for v in xf] .* u"K"
+    TK = typeof(1.0u"K")
+
+    itp = cubic_interp(xu, yw; bc = Deriv2(0.0))
+    @test (@inferred itp(2.2u"m")) isa TK
+
+    sitp = cubic_interp(xu, Series(reshape(yw, :, 1)); bc = [BCPair(Deriv2(0.0), Deriv2(0.0))])
+    @test (@inferred sitp(2.2u"m")) isa Vector{TK}
+
+    itpf = cubic_interp(xu, yw; extrap = FillExtrap(NaN * u"K"))
+    @test (@inferred itpf(2.2u"m")) isa TK
+    @test (@inferred itpf(9.9u"m")) isa TK
+end

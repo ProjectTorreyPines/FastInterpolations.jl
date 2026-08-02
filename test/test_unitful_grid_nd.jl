@@ -67,8 +67,11 @@ end
         @test integrate(itp) ≈ integrate(tw) * u"W*s*m"
     end
 
-    @testset "solver families: friendly error (deferred)" begin
-        @test_throws ArgumentError interp((xs, ym), data; method = CubicInterp())
+    @testset "solver families on mixed-unit axes: quadratic builds (scaled store)" begin
+        # Both solver persistents admit unit axes now; quadratic is the probe
+        # here (3-point axis-1 — cubic's PolyFit min-points needs 4, covered by
+        # the dedicated P-testitems below).
+        @test interp((xs, ym), data; method = QuadraticInterp()) isa QuadraticInterpolantND
     end
 end
 
@@ -95,6 +98,42 @@ end
         @test (@inferred integrate(itp)) isa typeof(1.0u"W*s*m")
         g = @inferred gradient(itp, (1.5u"s", 0.75u"m"))
         @test g isa Tuple{typeof(1.0u"W/s"), typeof(1.0u"W/m")}
+    end
+
+    # Scaled-store families: the dimensionless-twin machinery (build/eval/restore/
+    # integrate/one-shot) must stay concretely inferred end to end.
+    xs4 = [0.0, 1.0, 2.5, 3.0] .* u"s"
+    ym4 = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    F4 = [Float64(i + j) for i in 1:4, j in 1:4] .* u"W"
+    q4 = (1.5u"s", 0.75u"m")
+    d10 = (DerivOp(1), DerivOp(0))
+
+    @testset "solver families (scaled store): eval / deriv / integrate / one-shot" begin
+        itp = cubic_interp((xs4, ym4), F4)
+        @test (@inferred itp(q4)) isa TW
+        @test (@inferred itp(q4; deriv = d10)) isa typeof(1.0u"W/s")
+        @test (@inferred integrate(itp)) isa typeof(1.0u"W*s*m")
+        @test (@inferred integrate(itp, (0.5u"s", 0.25u"m"), (2.5u"s", 3.0u"m"))) isa
+            typeof(1.0u"W*s*m")
+        @test (@inferred quadratic_interp((xs4, ym4), F4)(q4)) isa TW
+        @test (@inferred cubic_interp((xs4, ym4), F4, q4)) isa TW
+        @test (@inferred cubic_interp((xs4, ym4), F4, q4; coeffs = PreCompute())) isa TW
+        @test (@inferred cubic_interp((xs4, ym4), F4, q4; deriv = d10)) isa typeof(1.0u"W/s")
+        @test (@inferred cubic_interp((xs4, ym4), F4, [q4, q4])) isa Vector{TW}
+    end
+
+    @testset "FillExtrap keeps the value type concrete (in-domain + OOB + deriv)" begin
+        q_oob = (9.9u"s", 0.75u"m")
+        itpf = cubic_interp((xs4, ym4), F4; extrap = FillExtrap(NaN * u"W"))
+        @test (@inferred itpf(q4)) isa TW
+        @test (@inferred itpf(q_oob)) isa TW
+        @test (@inferred itpf(q_oob; deriv = d10)) isa typeof(1.0u"W/s")
+        @test (
+            @inferred cubic_interp(
+                (xs4, ym4), F4, q_oob;
+                extrap = FillExtrap(NaN * u"W"), coeffs = PreCompute()
+            )
+        ) isa TW
     end
 end
 
@@ -181,7 +220,479 @@ end
             e
         end
         @test err isa ArgumentError
-        @test occursin("unit-carrying", sprint(showerror, err))
+        # The gate condition is `Tg <: Real` — the message must name that, with
+        # units as the canonical example (not the condition itself).
+        @test occursin("non-Real", sprint(showerror, err))
+    end
+end
+
+@testitem "ND gates: units-free duck Number grid gets the accurate refusal" begin
+    # A units-free duck Number hits the same `<: Real` gate — the error must be
+    # the actionable ArgumentError naming the actual eltype, not a units claim.
+    # (Testitem name must NOT contain the pinned phrase: ReTestItems derives the
+    # module name from it, and qualified type names would smuggle it into `msg`.)
+    struct _OrderedDuckNum <: Number
+        v::Float64
+    end
+    Base.isless(a::_OrderedDuckNum, b::_OrderedDuckNum) = isless(a.v, b.v)
+    xd = [_OrderedDuckNum(0.0), _OrderedDuckNum(1.0), _OrderedDuckNum(2.0), _OrderedDuckNum(3.0)]
+    F = [Float64(i + j) for i in 1:4, j in 1:4]
+
+    for build in (
+            () -> cubic_interp((xd, xd), F),        # solver gate (cubic entry)
+            () -> quadratic_interp((xd, xd), F),    # solver gate (quadratic entry)
+            () -> pchip_interp((xd, xd), F),        # hetero gate
+        )
+        err = try
+            build()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        msg = sprint(showerror, err)
+        @test occursin("non-Real", msg)
+        @test occursin("_OrderedDuckNum", msg)
+    end
+
+    # `*`/`inv`-complete but `oneunit`-less: the `_coeff_op` probe inferred Real
+    # and let the build die deep in the twin transform (MethodError) — the gate
+    # must reject upfront, matching its own "needs `oneunit`, `inv`, `*`" promise.
+    struct _NoOneUnitLen <: Number
+        v::Float64
+    end
+    struct _NoOneUnitInv <: Number
+        v::Float64
+    end
+    Base.isless(a::_NoOneUnitLen, b::_NoOneUnitLen) = isless(a.v, b.v)
+    Base.inv(a::_NoOneUnitLen) = _NoOneUnitInv(inv(a.v))
+    Base.:*(a::_NoOneUnitLen, b::_NoOneUnitInv) = a.v * b.v
+    Base.:*(a::_NoOneUnitInv, b::_NoOneUnitLen) = a.v * b.v
+    xn = _NoOneUnitLen.([0.0, 1.0, 2.0, 3.0])
+
+    for build in (
+            () -> cubic_interp((xn, xn), F),
+            () -> quadratic_interp((xn, xn), F),
+            () -> cubic_interp((xn, xn), F, (_NoOneUnitLen(1.5), _NoOneUnitLen(1.5))),
+        )
+        err = try
+            build()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("oneunit", sprint(showerror, err))
+    end
+end
+
+@testitem "Unitful ND: cubic PreCompute build — scaled [Y]-homogeneous store (P1)" begin
+    using Unitful
+    using ForwardDiff: Dual
+
+    # Store contract: slot p holds ∂ᵏf · Π oneunit(axisᵢ)ᵏ — every 2^N slot in
+    # the value space [Y], so the single homogeneous partials array survives
+    # unit grids. Axis reparameterization is exact (t = x·inv(oneunit)), so the
+    # fiber solves are the SAME arithmetic as the 1D unit-native path.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    F = [
+        (
+                sin(ustrip(u"s", xi)) + 2.0 * ustrip(u"m", yj) +
+                0.4 * ustrip(u"s", xi) * ustrip(u"m", yj)
+            ) * u"W"
+            for xi in x, yj in y
+    ]
+
+    itp = cubic_interp((x, y), F)
+    P = itp.nodal_derivs.partials
+    @test eltype(P) === typeof(1.0u"W")
+
+    @testset "slot 1 = f verbatim" begin
+        @test all(P[1, i, j] === F[i, j] for i in eachindex(x), j in eachindex(y))
+    end
+
+    @testset "slot 2/3 = axis-fiber nodal derivative × oneunit(axis)" begin
+        for j in eachindex(y)
+            itp1 = cubic_interp(x, F[:, j])
+            for i in eachindex(x)
+                @test P[2, i, j] ≈ itp1(x[i]; deriv = DerivOp(1)) * oneunit(eltype(x)) rtol = 1.0e-12
+            end
+        end
+        for i in eachindex(x)
+            itp2 = cubic_interp(y, F[i, :])
+            for j in eachindex(y)
+                @test P[3, i, j] ≈ itp2(y[j]; deriv = DerivOp(1)) * oneunit(eltype(y)) rtol = 1.0e-12
+            end
+        end
+    end
+
+    @testset "slot 4 = mixed partial, [Y]-typed finite" begin
+        @test all(isfinite, ustrip.(P[4, :, :]))
+    end
+
+    @testset "payload-free zero BCs mint unit-correct boundary rows" begin
+        itp_z = cubic_interp((x, y), F; bc = (ZeroSlopeBC(), ZeroCurvBC()))
+        Pz = itp_z.nodal_derivs.partials
+        @test iszero(Pz[2, 1, 1]) && iszero(Pz[2, end, 1])   # ∂f/∂x₁ = 0 at both x-edges
+        @test Pz[2, 1, 1] isa typeof(1.0u"W")
+    end
+
+    @testset "typed per-axis payload BC scales into the store" begin
+        itp_p = cubic_interp((x, y), F; bc = (Deriv1(0.25u"W/s"), ZeroCurvBC()))
+        Pp = itp_p.nodal_derivs.partials
+        for j in eachindex(y)
+            @test Pp[2, 1, j] ≈ 0.25u"W/s" * oneunit(eltype(x)) rtol = 1.0e-12
+        end
+    end
+
+    @testset "Dual grids stay on the Real passthrough (no reparameterization)" begin
+        xd = Dual.(ustrip.(u"s", x), 1.0)
+        yd = Dual.(ustrip.(u"m", y), 0.0)
+        Fd = ustrip.(u"W", F)
+        itp_d = cubic_interp((xd, yd), Fd)
+        Pd = itp_d.nodal_derivs.partials
+        @test eltype(Pd) <: Dual
+        itp_d1 = cubic_interp(xd, Fd[:, 2])
+        @test Pd[2, 3, 2] ≈ itp_d1(xd[3]; deriv = DerivOp(1)) rtol = 1.0e-12
+    end
+end
+
+@testitem "Unitful ND: cubic PreCompute eval/deriv/OOB (P2)" setup = [AllocConstants] begin
+    using Unitful
+    using Test: @inferred
+
+    # The dimensionless solve runs the SAME arithmetic as the Float64 twin, so
+    # unit results are the twin's values re-tagged: value [Y], deriv [Y/Xᵏ] via
+    # the canonical `_nd_deriv_scale` restoration at the cell surface.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    xf = ustrip.(u"s", x)
+    yf = ustrip.(u"m", y)
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    Ff = ustrip.(u"W", F)
+    itp = cubic_interp((x, y), F)
+    tw = cubic_interp((xf, yf), Ff)
+    q = (2.2u"s", 1.3u"m")
+    qf = (2.2, 1.3)
+
+    @testset "value ≡ Float64 twin × unit" begin
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test (@inferred itp(q)) isa typeof(1.0u"W")
+        @test itp((0.0u"s", 0.0u"m")) ≈ tw((0.0, 0.0)) * u"W" rtol = 1.0e-14
+        @test itp((4.5u"s", 3.5u"m")) ≈ tw((4.5, 3.5)) * u"W" rtol = 1.0e-14
+    end
+
+    @testset "deriv orders restore per-axis grid⁻ᵏ units" begin
+        @test itp(q; deriv = (DerivOp(1), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(0), DerivOp(1))) ≈
+            tw(qf; deriv = (DerivOp(0), DerivOp(1))) * u"W/m" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(1))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(1))) * u"W/(s*m)" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(2), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(2), DerivOp(0))) * u"W/s^2" rtol = 1.0e-14
+    end
+
+    @testset "vector calculus unlocks (mixed: grad/hess ✓, laplacian guarded)" begin
+        g = gradient(itp, q)
+        gt = gradient(tw, qf)
+        @test g[1] ≈ gt[1] * u"W/s" rtol = 1.0e-14
+        @test g[2] ≈ gt[2] * u"W/m" rtol = 1.0e-14
+        H = hessian(itp, q)
+        Ht = hessian(tw, qf)
+        @test H[1, 2] ≈ Ht[1, 2] * u"W/(s*m)" rtol = 1.0e-13
+        @test_throws ArgumentError laplacian(itp, q)
+    end
+
+    @testset "same-unit axes: laplacian works" begin
+        ys = [0.0, 1.0, 2.0, 3.5] .* u"s"
+        itp_s = cubic_interp((x, ys), F)
+        tw_s = cubic_interp((xf, yf), Ff)
+        @test laplacian(itp_s, (2.2u"s", 1.3u"s")) ≈
+            laplacian(tw_s, (2.2, 1.3)) * u"W/s^2" rtol = 1.0e-13
+    end
+
+    @testset "OOB: NoExtrap DomainError / Clamp value / Fill-NaN rule" begin
+        @test_throws DomainError itp((9.9u"s", 1.0u"m"))
+        itp_c = cubic_interp((x, y), F; extrap = ClampExtrap())
+        tw_c = cubic_interp((xf, yf), Ff; extrap = ClampExtrap())
+        @test itp_c((9.9u"s", 1.0u"m")) ≈ tw_c((9.9, 1.0)) * u"W" rtol = 1.0e-14
+        itp_f = cubic_interp((x, y), F; extrap = FillExtrap(NaN * u"W"))
+        @test isnan(itp_f((9.9u"s", 1.0u"m")))
+        @test isnan(itp_f((9.9u"s", 1.0u"m"); deriv = (DerivOp(1), DerivOp(0))))
+    end
+
+    @testset "unit Range axes + batch SoA" begin
+        xr = (0.0:1.0:4.0) .* u"s"
+        yr = (0.0:1.0:3.0) .* u"m"
+        Fr = [(xi + 2.0 * yj) * u"W" for xi in 0.0:1.0:4.0, yj in 0.0:1.0:3.0]
+        itp_r = cubic_interp((xr, yr), Fr)
+        tw_r = cubic_interp((0.0:1.0:4.0, 0.0:1.0:3.0), ustrip.(u"W", Fr))
+        @test itp_r((2.2u"s", 1.3u"m")) ≈ tw_r((2.2, 1.3)) * u"W" rtol = 1.0e-14
+        out = itp(([1.1, 2.2] .* u"s", [0.5, 1.5] .* u"m"))
+        @test eltype(out) === typeof(1.0u"W")
+        @test out[2] ≈ itp((2.2u"s", 1.5u"m")) rtol = 1.0e-14
+    end
+
+    @testset "alloc: unit scalar eval hot path" begin
+        # Function barriers: the testitem-global `itp` boxes the KWARG call form
+        # under `@allocated` (16 B measurement artifact, not a path allocation).
+        measure_val(itp, q) = @allocated itp(q)
+        measure_der(itp, q) = @allocated itp(q; deriv = (DerivOp(1), DerivOp(0)))
+        measure_val(itp, q)
+        measure_der(itp, q)
+        @test measure_val(itp, q) <= ND_ALLOC_THRESHOLD
+        @test measure_der(itp, q) <= ND_ALLOC_THRESHOLD
+    end
+end
+
+@testitem "Unitful ND: quadratic PreCompute build+eval (P3 mirror)" begin
+    using Unitful
+
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    xf = ustrip.(u"s", x)
+    yf = ustrip.(u"m", y)
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    Ff = ustrip.(u"W", F)
+    itp = quadratic_interp((x, y), F)
+    tw = quadratic_interp((xf, yf), Ff)
+    q = (2.2u"s", 1.3u"m")
+    qf = (2.2, 1.3)
+
+    @testset "store slots in [Y]; axis-fiber oracle" begin
+        P = itp.nodal_derivs.partials
+        @test eltype(P) === typeof(1.0u"W")
+        itp1 = quadratic_interp(x, F[:, 2])
+        @test P[2, 3, 2] ≈ itp1(x[3]; deriv = DerivOp(1)) * oneunit(eltype(x)) rtol = 1.0e-12
+    end
+
+    @testset "eval/deriv ≡ twin with restored units" begin
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(1))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(1))) * u"W/(s*m)" rtol = 1.0e-14
+        g = gradient(itp, q)
+        gt = gradient(tw, qf)
+        @test g[1] ≈ gt[1] * u"W/s" rtol = 1.0e-14
+        @test g[2] ≈ gt[2] * u"W/m" rtol = 1.0e-14
+    end
+
+    @testset "Left/Right payload BCs scale in" begin
+        bcp = (Left(Deriv1(0.25u"W/s")), MinCurvFit())
+        itp_p = quadratic_interp((x, y), F; bc = bcp)
+        itp1p = quadratic_interp(x, F[:, 2]; bc = Left(Deriv1(0.25u"W/s")))
+        @test itp_p.nodal_derivs.partials[2, 1, 2] ≈
+            itp1p(x[1]; deriv = DerivOp(1)) * oneunit(eltype(x)) rtol = 1.0e-12
+    end
+end
+
+@testitem "Unitful ND: solver-family integrate — full + bounded (P4)" begin
+    using Unitful
+
+    # The separable engine runs on the exact dimensionless twins; the volume
+    # element Π oneunit(axis) restores ∫…dx from ∫…dt, so unit results are the
+    # Float64 twin's values re-tagged with [Y·X₁·X₂].
+    x = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
+    y = [0.0, 1.0, 2.0, 3.5] .* u"m"
+    xf = ustrip.(u"s", x)
+    yf = ustrip.(u"m", y)
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    Ff = ustrip.(u"W", F)
+    lo = (0.5u"s", 0.5u"m")
+    hi = (3.5u"s", 3.0u"m")
+    lof = (0.5, 0.5)
+    hif = (3.5, 3.0)
+    TWSM = typeof(1.0u"W*s*m")
+
+    for (name, mk) in (("cubic", cubic_interp), ("quadratic", quadratic_interp))
+        @testset "$name: vec axes" begin
+            itp = mk((x, y), F)
+            tw = mk((xf, yf), Ff)
+            @test integrate(itp) ≈ integrate(tw) * u"W*s*m" rtol = 1.0e-13
+            @test integrate(itp) isa TWSM
+            @test integrate(itp, lo, hi) ≈ integrate(tw, lof, hif) * u"W*s*m" rtol = 1.0e-13
+        end
+    end
+
+    @testset "cubic: unit-Range axes" begin
+        xr = (0.0:1.0:4.0) .* u"s"
+        yr = (0.0:1.0:3.0) .* u"m"
+        Fr = [(xi + 2.0 * yj) * u"W" for xi in 0.0:1.0:4.0, yj in 0.0:1.0:3.0]
+        itp_r = cubic_interp((xr, yr), Fr)
+        tw_r = cubic_interp((0.0:1.0:4.0, 0.0:1.0:3.0), ustrip.(u"W", Fr))
+        @test integrate(itp_r) ≈ integrate(tw_r) * u"W*s*m" rtol = 1.0e-13
+        @test integrate(itp_r, lo, (3.5u"s", 2.5u"m")) ≈
+            integrate(tw_r, lof, (3.5, 2.5)) * u"W*s*m" rtol = 1.0e-13
+    end
+
+    @testset "bounded degenerate + reversed bounds on the reparam arm" begin
+        # `sign == 0` (point domain) short-circuits to `z_t * vol` — the zero must
+        # still live in [Y·X₁·X₂], same concrete type as a nondegenerate result.
+        itp = cubic_interp((x, y), F)
+        full = integrate(itp, lo, hi)
+        deg = integrate(itp, (2.0u"s", 1.5u"m"), (2.0u"s", 1.5u"m"))
+        @test iszero(deg)
+        @test typeof(deg) === typeof(full)
+        @test deg isa TWSM
+        # One flipped axis → sign == -1 rides `sign * (total * vol)`.
+        @test integrate(itp, (3.5u"s", 0.5u"m"), (0.5u"s", 3.0u"m")) === -full
+    end
+end
+
+@testitem "Unitful ND: composition gaps — 3D, PolyFit{4}, Real-zero BCPair, periodic, in-place" begin
+    using Unitful
+
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    x = xf .* u"s"
+    y = yf .* u"m"
+    F2 = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    F2f = ustrip.(u"W", F2)
+
+    @testset "3D mixed-unit: build/eval/deriv/integrate vs twin" begin
+        zf = [0.0, 0.5, 1.0, 2.0]
+        z = zf .* u"kg"
+        F3 = [
+            (sin(xi) + 2.0 * yj + 0.3 * zk + 0.1 * xi * yj * zk) * u"W"
+                for xi in xf, yj in yf, zk in zf
+        ]
+        F3f = ustrip.(u"W", F3)
+        itp = cubic_interp((x, y, z), F3)
+        tw = cubic_interp((xf, yf, zf), F3f)
+        q = (2.2u"s", 1.3u"m", 0.7u"kg")
+        qf = (2.2, 1.3, 0.7)
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(0), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(0), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+        @test itp(q; deriv = (DerivOp(1), DerivOp(1), DerivOp(0))) ≈
+            tw(qf; deriv = (DerivOp(1), DerivOp(1), DerivOp(0))) * u"W/(s*m)" rtol = 1.0e-13
+        @test integrate(itp) ≈ integrate(tw) * u"W*s*m*kg" rtol = 1.0e-13
+        @test integrate(itp, (0.5u"s", 0.5u"m", 0.2u"kg"), (3.5u"s", 3.0u"m", 1.5u"kg")) ≈
+            integrate(tw, (0.5, 0.5, 0.2), (3.5, 3.0, 1.5)) * u"W*s*m*kg" rtol = 1.0e-13
+    end
+
+    @testset "per-axis PolyFit{4} on unit axes ≡ twin" begin
+        itp = cubic_interp((x, y), F2; bc = (PolyFit{4}(), CubicFit()))
+        tw = cubic_interp((xf, yf), F2f; bc = (PolyFit{4}(), CubicFit()))
+        @test itp((2.2u"s", 1.3u"m")) ≈ tw((2.2, 1.3)) * u"W" rtol = 1.0e-14
+        @test itp((0.2u"s", 3.3u"m")) ≈ tw((0.2, 3.3)) * u"W" rtol = 1.0e-14
+    end
+
+    @testset "Real-zero BCPair payloads beside unit ND data (rehydrate composition)" begin
+        bcs = (BCPair(Deriv2(0.0), Deriv2(0.0)), ZeroCurvBC())
+        itp = cubic_interp((x, y), F2; bc = bcs)
+        tw = cubic_interp((xf, yf), F2f; bc = bcs)
+        @test itp((2.2u"s", 1.3u"m")) ≈ tw((2.2, 1.3)) * u"W" rtol = 1.0e-14
+        # structurally ≡ the payload-free zero-curvature axis
+        ref = cubic_interp((x, y), F2; bc = (ZeroCurvBC(), ZeroCurvBC()))
+        @test itp((2.2u"s", 1.3u"m")) === ref((2.2u"s", 1.3u"m"))
+    end
+
+    @testset "exclusive periodic unit axis composes with the twin build" begin
+        xpf = [0.0, 1.0, 2.0, 3.0]
+        xp = xpf .* u"s"
+        Fp = [(sin(2π * xi / 4.0) + 2.0 * yj) * u"W" for xi in xpf, yj in yf]
+        Fpf = ustrip.(u"W", Fp)
+        itp = cubic_interp(
+            (xp, y), Fp;
+            bc = (PeriodicBC(endpoint = :exclusive, period = 4.0u"s"), ZeroCurvBC())
+        )
+        tw = cubic_interp(
+            (xpf, yf), Fpf;
+            bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), ZeroCurvBC())
+        )
+        @test itp((3.7u"s", 1.3u"m")) ≈ tw((3.7, 1.3)) * u"W" rtol = 1.0e-14
+        @test itp((0.3u"s", 1.3u"m")) ≈ tw((0.3, 1.3)) * u"W" rtol = 1.0e-14
+    end
+
+    @testset "gradient! into an eltype-compatible store" begin
+        itp = cubic_interp((x, y), F2)
+        q = (2.2u"s", 1.3u"m")
+        g_ref = gradient(itp, q)
+        buf = Vector{Any}(undef, 2)
+        gradient!(buf, itp, q)
+        @test buf[1] === g_ref[1] && buf[2] === g_ref[2]
+    end
+end
+
+@testitem "Unitful ND: one-shot solver families mirror the persistent build (P5b)" begin
+    using Unitful
+
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    x = xf .* u"s"
+    y = yf .* u"m"
+    F = [(sin(xi) + 2.0 * yj + 0.4 * xi * yj) * u"W" for xi in xf, yj in yf]
+    q = (2.2u"s", 1.3u"m")
+    qs = [(2.2u"s", 1.3u"m"), (0.4u"s", 3.1u"m")]
+    d10 = (DerivOp(1), DerivOp(0))
+    d01 = (DerivOp(0), DerivOp(1))
+
+    # The persistent interpolant is the reference — its unit forward path is pinned above.
+    ref = cubic_interp((x, y), F)
+
+    @testset "cubic scalar one-shot (AutoCoeffs → pool + explicit PreCompute)" begin
+        @test cubic_interp((x, y), F, q) ≈ ref(q) rtol = 1.0e-14
+        @test cubic_interp((x, y), F, q; coeffs = PreCompute()) ≈ ref(q) rtol = 1.0e-14
+        r10 = cubic_interp((x, y), F, q; deriv = d10)
+        @test unit(r10) === u"W/s"
+        @test r10 ≈ ref(q; deriv = d10) rtol = 1.0e-13
+        r11 = cubic_interp((x, y), F, q; deriv = (DerivOp(1), DerivOp(1)))
+        @test unit(r11) === u"W" / (u"s" * u"m")
+        @test r11 ≈ ref(q; deriv = (DerivOp(1), DerivOp(1))) rtol = 1.0e-13
+    end
+
+    @testset "cubic batch one-shot: op-aware output eltype + in-place" begin
+        out = cubic_interp((x, y), F, qs)
+        @test eltype(out) === typeof(ref(q))
+        @test out[1] ≈ ref(qs[1]) rtol = 1.0e-14
+        @test out[2] ≈ ref(qs[2]) rtol = 1.0e-14
+        outd = cubic_interp((x, y), F, qs; deriv = d10)
+        @test eltype(outd) === typeof(ref(q; deriv = d10))
+        @test outd[2] ≈ ref(qs[2]; deriv = d10) rtol = 1.0e-13
+        buf = Vector{typeof(ref(q))}(undef, 2)
+        cubic_interp!(buf, (x, y), F, qs)
+        @test buf[2] ≈ ref(qs[2]) rtol = 1.0e-14
+    end
+
+    @testset "quadratic scalar + batch one-shot" begin
+        refq = quadratic_interp((x, y), F)
+        @test quadratic_interp((x, y), F, q) ≈ refq(q) rtol = 1.0e-14
+        @test quadratic_interp((x, y), F, q; coeffs = PreCompute()) ≈ refq(q) rtol = 1.0e-14
+        rq = quadratic_interp((x, y), F, q; deriv = d01)
+        @test unit(rq) === u"W/m"
+        @test rq ≈ refq(q; deriv = d01) rtol = 1.0e-13
+        outq = quadratic_interp((x, y), F, qs)
+        @test eltype(outq) === typeof(refq(q))
+        @test outq[1] ≈ refq(qs[1]) rtol = 1.0e-14
+        outqd = quadratic_interp((x, y), F, qs; deriv = d01)
+        @test eltype(outqd) === typeof(refq(q; deriv = d01))
+        @test outqd[2] ≈ refq(qs[2]; deriv = d01) rtol = 1.0e-13
+    end
+
+    @testset "same-unit axes (concrete Tg) + unit Range axis" begin
+        ys = yf .* u"s"
+        Fs = [(xi + 2.0 * yj) * u"W" for xi in xf, yj in yf]
+        qsame = (2.2u"s", 1.3u"s")
+        @test cubic_interp((x, ys), Fs, qsame) ≈ cubic_interp((x, ys), Fs)(qsame) rtol = 1.0e-14
+        @test quadratic_interp((x, ys), Fs, qsame) ≈
+            quadratic_interp((x, ys), Fs)(qsame) rtol = 1.0e-14
+        xr = (0.0:1.0:4.0) * u"s"   # unit StepRangeLen → pooled _CachedRange arm
+        Fr = [(xi + 2.0 * yj) * u"W" for xi in 0.0:1.0:4.0, yj in yf]
+        @test cubic_interp((xr, y), Fr, q) ≈ cubic_interp((xr, y), Fr)(q) rtol = 1.0e-14
+    end
+
+    @testset "exclusive periodic unit axis through the pooled one-shot" begin
+        xpf = [0.0, 1.0, 2.0, 3.0]
+        xp = xpf .* u"s"
+        Fp = [(sin(2π * xi / 4.0) + 2.0 * yj) * u"W" for xi in xpf, yj in yf]
+        bcs = (PeriodicBC(endpoint = :exclusive, period = 4.0u"s"), ZeroCurvBC())
+        refp = cubic_interp((xp, y), Fp; bc = bcs)
+        @test cubic_interp((xp, y), Fp, (3.7u"s", 1.3u"m"); bc = bcs, coeffs = PreCompute()) ≈
+            refp((3.7u"s", 1.3u"m")) rtol = 1.0e-14
     end
 end
 
@@ -200,6 +711,66 @@ end
     integrate(itp)   # warmup
     @test (@allocated itp(q)) <= ND_ALLOC_THRESHOLD
     @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
+end
+
+@testitem "Unitful ND: scaled-store twins cost no allocation (one-shot + integrate)" setup = [AllocConstants] begin
+    using Unitful
+
+    # The dimensionless twin is a per-call transform, not a stored array: the
+    # solver one-shot and the reparam integrate arm must hold the same alloc
+    # contract as their Real siblings (Range axes already did — Base's range
+    # broadcast keeps them isbits).
+    # Function barriers: measuring a testitem-global through a kwarg call form
+    # boxes the kwargs (16 B measurement artifact, not a path allocation).
+    oneshot_c(g, d, q) = @allocated cubic_interp(g, d, q; coeffs = PreCompute())
+    oneshot_q(g, d, q) = @allocated quadratic_interp(g, d, q; coeffs = PreCompute())
+    alloc_full(itp) = @allocated integrate(itp)
+    alloc_bnd(itp, lo, hi) = @allocated integrate(itp, lo, hi)
+
+    xf = collect(range(0.0, 4.0, 9))
+    yf = collect(range(0.0, 3.0, 7))
+    F = [sin(a) + 2.0 * b for a in xf, b in yf]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    Fw = F .* u"W"
+    q = (2.2u"s", 1.3u"m")
+    lo, hi = (0.5u"s", 0.5u"m"), (3.5u"s", 2.5u"m")
+
+    @testset "unit Vector axes: one-shot scalar" begin
+        gv = (xs, ym)
+        oneshot_c(gv, Fw, q)
+        oneshot_q(gv, Fw, q)
+        @test oneshot_c(gv, Fw, q) <= ND_ALLOC_THRESHOLD
+        @test oneshot_q(gv, Fw, q) <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "unit Vector axes: persistent integrate (full + bounded)" begin
+        for mk in (cubic_interp, quadratic_interp)
+            itp = mk((xs, ym), Fw)
+            alloc_full(itp)
+            alloc_bnd(itp, lo, hi)
+            @test alloc_full(itp) <= ND_ALLOC_THRESHOLD
+            @test alloc_bnd(itp, lo, hi) <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "unit Range axes + Real axes stay put" begin
+        xr = range(0.0, 4.0, 9) .* u"s"
+        yr = range(0.0, 3.0, 7) .* u"m"
+        itr = cubic_interp((xr, yr), Fw)
+        alloc_full(itr)
+        oneshot_c((xr, yr), Fw, q)
+        @test alloc_full(itr) <= ND_ALLOC_THRESHOLD
+        @test oneshot_c((xr, yr), Fw, q) <= ND_ALLOC_THRESHOLD
+
+        itf = cubic_interp((xf, yf), F)
+        alloc_full(itf)
+        alloc_bnd(itf, (0.5, 0.5), (3.5, 2.5))
+        oneshot_c((xf, yf), F, (2.2, 1.3))
+        @test alloc_full(itf) <= ND_ALLOC_THRESHOLD
+        @test alloc_bnd(itf, (0.5, 0.5), (3.5, 2.5)) <= ND_ALLOC_THRESHOLD
+        @test oneshot_c((xf, yf), F, (2.2, 1.3)) <= ND_ALLOC_THRESHOLD
+    end
 end
 
 @testitem "Unitful ND: zero-alloc hot path, same-unit concrete-Tg (review pin F21)" setup = [AllocConstants] begin
@@ -285,11 +856,10 @@ end
 @testitem "Unitful ND: one-shot builders reject unit grids with a friendly error (review pin F17)" begin
     using Unitful
 
-    # The persistent 2-arg builders gate unit-carrying solver/hetero ND grids with an
-    # actionable ArgumentError (`_check_nd_solver_grid` / `_check_nd_hetero_grid`). The
-    # one-shot 3-arg entries skipped the guard and fell into deep, non-actionable errors
-    # (`TypeError: Quantity … is not a valid key`, `MethodError: _collapse_dims(::Type{Quantity…})`).
-    # Both paths fail (unit ND solver/hetero builds are unsupported); this pins error *quality*.
+    # Hetero ND one-shots (pchip/akima/cardinal) gate unit-carrying grids with an
+    # actionable ArgumentError (`_check_nd_hetero_grid`) instead of deep, non-actionable
+    # errors (`TypeError: Quantity … is not a valid key`). Cubic/quadratic one-shots
+    # reparameterize and are pinned in the P5b mirror testitem above.
     xs = collect(1.0:5.0) .* u"s"
     ys = collect(1.0:5.0) .* u"m"
     data = [Float64(i + j) for i in 1:5, j in 1:5] .* u"W"
@@ -298,8 +868,6 @@ end
 
     # (name, scalar one-shot, batch one-shot)
     fams = [
-        ("cubic", () -> cubic_interp((xs, ys), data, qsc), () -> cubic_interp((xs, ys), data, qb)),
-        ("quadratic", () -> quadratic_interp((xs, ys), data, qsc), () -> quadratic_interp((xs, ys), data, qb)),
         ("pchip", () -> pchip_interp((xs, ys), data, qsc), () -> pchip_interp((xs, ys), data, qb)),
         ("akima", () -> akima_interp((xs, ys), data, qsc), () -> akima_interp((xs, ys), data, qb)),
         ("cardinal", () -> cardinal_interp((xs, ys), data, qsc), () -> cardinal_interp((xs, ys), data, qb)),
@@ -309,6 +877,47 @@ end
             @test_throws ArgumentError fsc()
             @test_throws ArgumentError fb()
         end
+    end
+end
+
+@testitem "Unitful ND: Hermite ND rejects unit grids with the friendly refusal" begin
+    using Unitful
+
+    # Hermite ND has no scaled-store/reparam seam (user partials live per-axis in
+    # [Y/Xᵈ]) — unit axes died in deep MethodErrors (`_pack_and_extend_nodal_derivs`,
+    # abstract-Tv coerce) on persistent AND one-shot entries. Pin the gate refusal.
+    xf = [0.0, 1.0, 2.0, 3.0]
+    yfv = [0.0, 1.0, 2.0, 3.0]
+    xs = xf .* u"s"
+    ym = yfv .* u"m"
+    F = [sin(a) + 2.0 * b for a in xf, b in yfv]
+    pR = HermitePartials(
+        (1, 0) => [cos(a) for a in xf, b in yfv],
+        (0, 1) => [2.0 for a in xf, b in yfv],
+        (1, 1) => zeros(4, 4),
+    )
+
+    @testset "persistent + one-shot → ArgumentError" begin
+        @test_throws ArgumentError hermite_interp((xs, ym), F, pR)
+        @test_throws ArgumentError hermite_interp((xs, yfv), F, pR)   # mixed Real×unit
+        @test_throws ArgumentError hermite_interp((xs, ym), F, pR, (1.5u"s", 1.5u"m"))
+        @test_throws ArgumentError hermite_interp((xs, ym), F, pR, [(1.5u"s", 1.5u"m")])
+    end
+
+    @testset "unit data + true-unit partials → same refusal (not a size/coerce error)" begin
+        Fw = F .* u"W"
+        pW = HermitePartials(
+            (1, 0) => [cos(a) for a in xf, b in yfv] .* u"W/s",
+            (0, 1) => [2.0 for a in xf, b in yfv] .* u"W/m",
+            (1, 1) => zeros(4, 4) .* u"W/(s*m)",
+        )
+        @test_throws ArgumentError hermite_interp((xs, ym), Fw, pW)
+        @test_throws ArgumentError hermite_interp((xs, ym), Fw, pW, (1.5u"s", 1.5u"m"))
+    end
+
+    @testset "Real axes stay served" begin
+        @test hermite_interp((xf, yfv), F, pR)((1.5, 1.5)) isa Float64
+        @test hermite_interp((xf, yfv), F, pR, (1.5, 1.5)) isa Float64
     end
 end
 
@@ -326,10 +935,14 @@ end
     q = (2.5u"s", 1.5u"s")
 
     @testset "solver families (Cubic/Quadratic): persistent + one-shot" begin
-        @test_throws ArgumentError cubic_interp((xs, xs2), data)
-        @test_throws ArgumentError quadratic_interp((xs, xs2), data)
-        @test_throws ArgumentError cubic_interp((xs, xs2), data, q)
-        @test_throws ArgumentError quadratic_interp((xs, xs2), data, q)
+        # Solver persistents admit unit axes since the scaled-store build; the
+        # concrete-Tg dispatch pins flip to build-success, and the one-shot
+        # mirrors (P5b) now agree with the persistent reference.
+        @test cubic_interp((xs, xs2), data) isa CubicInterpolantND
+        @test quadratic_interp((xs, xs2), data) isa QuadraticInterpolantND
+        @test cubic_interp((xs, xs2), data, q) ≈ cubic_interp((xs, xs2), data)(q) rtol = 1.0e-14
+        @test quadratic_interp((xs, xs2), data, q) ≈
+            quadratic_interp((xs, xs2), data)(q) rtol = 1.0e-14
     end
 
     @testset "hetero families (PCHIP): persistent + one-shot" begin
@@ -393,5 +1006,201 @@ end
         ir = linear_interp((0.0:1.0:2.0, 0.0:1.0:2.0), dataf; bc = bcx)
         @test iu((0.5u"s", 0.5u"s")) ≈ ir((0.5, 0.5)) * u"W"
         @test (@inferred iu((0.5u"s", 0.5u"s"))) isa typeof(1.0u"W")   # concrete grid ⇒ no box
+    end
+end
+
+@testitem "Unitful ND: Real BC payloads validate in their true derivative space" begin
+    using Unitful
+
+    # Real data on unit axes: a nonzero Real `Deriv1` payload is dimensionally
+    # incomplete ([Y/X] carries axis units) — the 1D builders reject it with an
+    # actionable error, and the reparam scale-in must match. The structural zero
+    # keeps minting in the true space before scaling into the [Y] store.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    Freal = [(sin(xi) + 2.0 * yj) for xi in xf, yj in yf]
+    q = (2.2u"s", 1.3u"m")
+
+    @testset "nonzero Real payload beside Real data + unit axes → ArgumentError" begin
+        err = try
+            cubic_interp((xs, ym), Freal; bc = (BCPair(Deriv1(0.25), Deriv1(0.25)), ZeroCurvBC()))
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("derivative space", sprint(showerror, err))
+    end
+
+    @testset "structural zero still mints (Real data + unit axes)" begin
+        ref = cubic_interp((xs, ym), Freal; bc = (ZeroCurvBC(), ZeroCurvBC()))
+        itp = cubic_interp((xs, ym), Freal; bc = (BCPair(Deriv2(0.0), Deriv2(0.0)), ZeroCurvBC()))
+        @test itp(q) === ref(q)
+    end
+
+    @testset "typed payloads in the true [Y/X] space stay accepted" begin
+        itp = cubic_interp(
+            (xs, ym), Freal;
+            bc = (BCPair(Deriv1(0.25u"s^-1"), Deriv1(0.25u"s^-1")), ZeroCurvBC())
+        )
+        @test itp(q) isa Float64
+    end
+end
+
+@testitem "Unitful ND: promotable data floats on unit axes (fill-space parity with Real axes)" begin
+    using Unitful
+
+    # Real axes float Int data at the entry, so `FillExtrap(0.5)` lives in the
+    # float value space. The unit-axis arm kept promotable data raw → the fill
+    # normalized into Int and threw InexactError. Pin parity across families.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    Fint = [i + j for i in 1:5, j in 1:4]
+    q = (2.2u"s", 1.3u"m")
+    q_oob = (9.9u"s", 1.3u"m")
+
+    @testset "Int data + FillExtrap(0.5): linear + cubic persistent + cubic one-shot" begin
+        itl = interp((xs, ym), Fint; method = LinearInterp(), extrap = FillExtrap(0.5))
+        @test itl(q_oob) === 0.5
+        itc = cubic_interp((xs, ym), Fint; extrap = FillExtrap(0.5))
+        @test itc(q_oob) === 0.5
+        @test cubic_interp(
+            (xs, ym), Fint, q_oob;
+            extrap = FillExtrap(0.5), coeffs = PreCompute()
+        ) === 0.5
+    end
+
+    @testset "in-domain Real-axes parity (value + type)" begin
+        itc = cubic_interp((xs, ym), Fint; extrap = FillExtrap(0.5))
+        twc = cubic_interp((xf, yf), Fint; extrap = FillExtrap(0.5))
+        @test itc(q) === twc((2.2, 1.3))
+    end
+
+    @testset "quadratic one-shot mirrors the cubic fill space (unit + Real axes)" begin
+        itq = quadratic_interp((xs, ym), Fint; extrap = FillExtrap(0.5))
+        twq = quadratic_interp((xf, yf), Fint; extrap = FillExtrap(0.5))
+        @test itq(q_oob) === 0.5
+        @test itq(q) === twq((2.2, 1.3))
+        # One-shot entries resolve the fill eagerly — raw-Int space threw
+        # InexactError even for in-domain queries. Scalar + batch, unit + Real.
+        @test quadratic_interp((xs, ym), Fint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+        @test quadratic_interp(
+            (xs, ym), Fint, q;
+            extrap = FillExtrap(0.5), coeffs = PreCompute()
+        ) === itq(q)
+        @test quadratic_interp((xf, yf), Fint, (9.9, 1.3); extrap = FillExtrap(0.5)) === 0.5
+        @test quadratic_interp((xs, ym), Fint, [q, q_oob]; extrap = FillExtrap(0.5))[2] === 0.5
+    end
+end
+
+@testitem "Unitful ND: GridIdx queries resolve on unit axes" begin
+    using Unitful
+
+    # `_resolve_grididx` rebuilds the wrapper at the AXIS eltype — the payload
+    # constraint must admit Number, else every unit-axis GridIdx query dies in
+    # the constructor (TypeError) before evaluation.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    F = [(sin(xi) + 2.0 * yj) for xi in xf, yj in yf] .* u"W"
+    itp = cubic_interp((xs, ym), F)
+
+    @testset "persistent: all-GridIdx + mixed coordinate/GridIdx" begin
+        @test itp((GridIdx(2), GridIdx(3))) === itp((xs[2], ym[3]))
+        @test itp((2.2u"s", GridIdx(3))) === itp((2.2u"s", ym[3]))
+        itl = interp((xs, ym), F; method = LinearInterp())
+        @test itl((GridIdx(2), GridIdx(3))) === itl((xs[2], ym[3]))
+    end
+
+    @testset "one-shot mirrors (PreCompute / mixed-tuple Auto)" begin
+        @test cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)); coeffs = PreCompute()) ≈
+            itp((xs[2], ym[3])) rtol = 1.0e-14
+        @test quadratic_interp((xs, ym), F, (2.2u"s", GridIdx(3))) ≈
+            quadratic_interp((xs, ym), F)((2.2u"s", ym[3])) rtol = 1.0e-14
+    end
+
+    @testset "all-GridIdx + AutoCoeffs keeps the hetero-collapse refusal" begin
+        # The wrapper subtypes Real, so an all-GridIdx tuple matches the OnTheFly
+        # Real-tuple arm; its collapse engine refuses non-Real grids with the
+        # actionable error — explicit PreCompute above is the supported form.
+        @test_throws ArgumentError cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)))
+    end
+
+    @testset "every unit-axis family consumes a resolved GridIdx" begin
+        # The wrapper cannot ride promotion on a unit axis (nested Quantity), so
+        # each family's coordinate seam must read the payload. Constant ND was
+        # uncovered — value AND derivative, all-GridIdx and mixed.
+        d10 = (DerivOp(1), DerivOp(0))
+        xr = range(0.0, 4.0, 5) .* u"s"
+        yr = range(0.0, 3.0, 4) .* u"m"
+        Fr = [(a + 2.0 * b) for a in range(0.0, 4.0, 5), b in range(0.0, 3.0, 4)] .* u"W"
+        for (itp, ref) in (
+                (interp((xs, ym), F; method = LinearInterp()), (xs[2], ym[3])),
+                (interp((xs, ym), F; method = ConstantInterp()), (xs[2], ym[3])),
+                (interp((xr, yr), Fr; method = ConstantInterp()), (xr[2], yr[3])),
+                (cubic_interp((xs, ym), F), (xs[2], ym[3])),
+                (quadratic_interp((xs, ym), F), (xs[2], ym[3])),
+            )
+            @test itp((GridIdx(2), GridIdx(3))) === itp(ref)
+            @test itp((2.2u"s", GridIdx(3))) === itp((2.2u"s", ref[2]))
+            @test itp((GridIdx(2), GridIdx(3)); deriv = d10) === itp(ref; deriv = d10)
+        end
+    end
+
+    @testset "deriv × GridIdx: the coordinate seam feeds the dLs scaling" begin
+        # `Base.:-(g::GridIdx, x::Number)` is the one value-consuming seam; its
+        # result is scaled by `_deriv_oneunit` in the reparam dLs — pin against
+        # the flat-coordinate equivalents (same cell → bit-identical, [Y/Xᵈ]).
+        d10 = (DerivOp(1), DerivOp(0))
+        d01 = (DerivOp(0), DerivOp(1))
+        @test itp((GridIdx(2), GridIdx(3)); deriv = d10) ===
+            itp((xs[2], ym[3]); deriv = d10)
+        @test itp((2.2u"s", GridIdx(3)); deriv = d01) ===
+            itp((2.2u"s", ym[3]); deriv = d01)
+        @test unit(itp((GridIdx(2), GridIdx(3)); deriv = d10)) == u"W/s"
+        itq = quadratic_interp((xs, ym), F)
+        @test itq((GridIdx(2), GridIdx(3)); deriv = d10) ===
+            itq((xs[2], ym[3]); deriv = d10)
+    end
+end
+
+@testitem "Unitful ND: GriddedQuery on unit axes serves through the pointwise core" begin
+    using Unitful
+
+    # The cubic/quadratic gridded fast path stores PHYSICAL h/inv_h/dL anchors and
+    # calls the cell kernels directly — on non-Real axes the store is [Y]-scaled
+    # (dimensionless frame), so the fast path must decline and the restore-aware
+    # pointwise core serve instead.
+    xf = [0.0, 1.0, 2.5, 3.0, 4.5]
+    yf = [0.0, 1.0, 2.0, 3.5]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    F = [(sin(xi) + 2.0 * yj) for xi in xf, yj in yf] .* u"W"
+    qx = [1.2, 2.2] .* u"s"
+    qy = [0.6, 1.3] .* u"m"
+    gq = GriddedQuery((qx, qy))
+    itp = cubic_interp((xs, ym), F)
+    itq = quadratic_interp((xs, ym), F)
+    d10 = (DerivOp(1), DerivOp(0))
+
+    @testset "persistent cubic/quadratic: value + deriv match pointwise" begin
+        g = itp(gq)
+        @test size(g) == (2, 2)
+        @test g[2, 2] === itp((qx[2], qy[2]))
+        # Deriv crosses two FP orderings (batch core vs scalar locate) — ≈, not ===.
+        gd = itp(gq; deriv = d10)
+        @test gd[1, 2] ≈ itp((qx[1], qy[2]); deriv = d10) rtol = 1.0e-14
+        g2 = itq(gq)
+        @test g2[2, 1] === itq((qx[2], qy[1]))
+    end
+
+    @testset "unified one-shot GriddedQuery (method = CubicInterp)" begin
+        g = interp((xs, ym), F, gq; method = CubicInterp())
+        @test g[2, 2] ≈ itp((qx[2], qy[2])) rtol = 1.0e-14
     end
 end

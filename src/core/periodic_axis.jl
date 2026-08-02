@@ -302,7 +302,7 @@ end
 # interior cells. At the seam, the wrapper's `search_interval` returns
 # `xR = g._x_max` by direct field read — bit-equal to the comparand here.
 @inline _alpha_of(q, L, R, g::_ExclusivePeriodicAxis) =
-    R == g._x_max ? (q - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
+    R == g._x_max ? (_coord_value(q) - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
 
 # ========================================
 # View specialization: preserve wrapper for full-virtual range

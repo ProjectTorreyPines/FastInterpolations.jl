@@ -61,8 +61,9 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
-    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
-    extrap_p = _resolve_extrap(extrap, cache.x, Tv)
+    # 3-arg form: promote the FillExtrap value into the solved value space
+    # (`cache.x` is the float axis) — no-op for other extraps.
+    extrap_p = _resolve_extrap(extrap, cache.x, _value_type(Tv, eltype(cache.x)))
     return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search; store = store)
 end
 
@@ -230,8 +231,9 @@ so the pool memory can be safely reused after this function returns.
         return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search; store = store)
     end
 
-    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
-    extrap_p = _resolve_extrap(extrap, cache.x, Tv)
+    # 3-arg form: promote the FillExtrap value into the solved value space
+    # (`cache.x` is the float axis) — no-op for other extraps.
+    extrap_p = _resolve_extrap(extrap, cache.x, _value_type(Tv, eltype(cache.x)))
     return CubicInterpolant(cache, y, tmp_z, bc_solve, extrap_p, search; store = store)
 end
 

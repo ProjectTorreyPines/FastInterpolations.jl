@@ -96,7 +96,9 @@ end
     # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
     # `_compute_all_local_params` uses the spacings-free overload (cached h/inv_h).
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
+    # Non-Real axes: the scaled store is [Y]-homogeneous, so the kernel consumes
+    # dimensionless local params (the width-tag dispatch routes; Real = exact old width).
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls, Tg)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
@@ -105,14 +107,17 @@ end
 # N=2, so a hand-destructured 2D variant is equal-or-slower (verified via
 # same-process method-swap A/B).
 
-# Evaluate kernel at a pre-located cell with given derivative ops
+# Evaluate kernel at a pre-located cell with given derivative ops. Non-Real axes
+# run dimensionless over the [Y]-scaled store — `_restore_nd_deriv_scale`
+# re-attaches the per-axis grid⁻ᵏ units at this single seam.
 @inline function _eval_at_cell(
-        ::QuadraticInterpolantND,
+        itp::QuadraticInterpolantND{Tg},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
-    ) where {N}
+    ) where {Tg, N}
     partials, indices, _, inv_hs, dLs = cell   # `hs` in the cell tuple is unused by quadratic
-    return _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+    r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+    return _restore_nd_deriv_scale(r, itp.grids, ops)
 end
 
 # Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).

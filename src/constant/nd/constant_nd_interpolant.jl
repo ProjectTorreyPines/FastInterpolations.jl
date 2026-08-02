@@ -76,6 +76,7 @@ function constant_interp(
     grids_typed = _policy_axes(grids_typed, bcs_post, store)
 
     # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
+    # The fill lives in `Tv` — Constant returns data verbatim (1D mirror).
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return ConstantInterpolantND(grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post, store = store)

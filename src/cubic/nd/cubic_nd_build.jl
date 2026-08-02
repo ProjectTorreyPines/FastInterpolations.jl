@@ -580,23 +580,32 @@ Compute all partial derivatives for N-dimensional Hermite interpolation.
 - `_NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Validate periodic BCs and PolyFit requirements (runs once at construction time)
     _validate_nd_bcs!(grids, bcs, data, Val(N))
 
+    # Non-Real axes solve on their dimensionless twins t = x·inv(oneunit(x)), so the
+    # single 2^N store stays [Y]-homogeneous (= ∂ᵏf·Πoneunit(axis)ᵏ); Real axes pass
+    # through untouched. BC payloads scale [Y/Xᵏ]→[Y] inside the frame helper.
+    _check_nd_reparam_grid(grids)
+    grids_solve, bcs_solve = _reparam_solve_frame(grids, bcs, data)
+
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
-    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    _check_nd_solver_grid(Tg)
-    Tz = _promote_eltype(_coeff_op2, Tg, Tv)
+    # Tz widens Tv with the solve-grid eltype: Dual grids → Dual-typed derivatives;
+    # unit grids solve dimensionless → Tz stays in the value space.
+    Tz = _promote_eltype(_coeff_op2, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
     partials = Array{Tz, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
-    _compute_nd_partials!(partials, grids, data, bcs)
+    _compute_nd_partials!(partials, grids_solve, data, bcs_solve)
 
     return _NodalDerivativesND{Tz, N, N + 1}(partials)
 end
+
+# `_reparam_grids` / `_scale_bc_reparam` (shared with quadratic ND) live in
+# core/nd_utils.jl next to the reparam local-params.

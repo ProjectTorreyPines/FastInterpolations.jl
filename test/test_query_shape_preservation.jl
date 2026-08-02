@@ -641,3 +641,25 @@ end
         @test mC(ov, x, y, q12) <= ALLOC_THRESHOLD
     end
 end
+
+@testitem "query shape: KNOWN BROKEN — SoA with a pinned scalar axis" begin
+    # A mixed SoA tuple (`(coords_vector, scalar)`) has no protocol arm: it falls
+    # to the container fallbacks, so `_query_length` reports the TUPLE arity and
+    # extraction hands the kernel the wrong point. Present in v0.4.17 and earlier
+    # — recorded, not fixed, because the legitimate pinned-axis form is the
+    # NoInterp pre-slice entry (`interp!(out, grids, data, (xq, GridIdx(k));
+    # method = (…, NoInterp()))`), which a blanket rejection would break too.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5]
+    y = [0.0, 1.0, 2.0, 3.5]
+    F = [(sin(a) + 2.0 * b) for a in x, b in y]
+    itp = interp((x, y), F; method = LinearInterp())
+    qs = [0.5, 1.5, 2.5]
+
+    # Root cause: three query points, but the tuple reports its own arity.
+    @test_broken FastInterpolations._query_length((qs, 0.5)) == 3
+    # User-visible: allocating form cannot type the output; in-place rejects the
+    # size. (When `length(qs) == N` the size check passes and the kernel reads
+    # past a scalar under `@inbounds` — the narrow silent window.)
+    @test_broken itp((qs, 0.5)) == [itp((q, 0.5)) for q in qs]
+    @test_broken itp(zeros(3), (qs, 0.5)) == [itp((q, 0.5)) for q in qs]
+end

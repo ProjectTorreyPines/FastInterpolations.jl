@@ -41,18 +41,20 @@ Zero-allocation after warmup (pool reuse).
 
     # 1. Value-matched grid float (Int/OneTo grid + Float32 data → Float32) shared by the pooled
     # per-axis cache and the partials type, so the pool buffer + output follow natural promote_type.
-    # `map` dispatches per-element on the concrete axis type (Range vs Vector).
+    # Non-Real axes wrap at their OWN eltype (abstract-tag arm of the @generated map).
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     grids_c = _cache_axes_pooled(pool, grids, Tg)  # @generated static-Tg unroll (no Type-captured closure)
 
-    # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv with Tg
-    # (Dual grid → Dual derivs); `_coeff_op` floats Int.
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv
+    # with the solve-grid eltype (Dual grid → Dual derivs); `_coeff_op` floats Int.
+    # Non-Real axes solve on the dimensionless twins; search/params keep reading `grids_c`.
+    grids_solve, bcs_solve = _reparam_solve_frame(grids_c, bcs, data)
+    Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
     # 3. Compute all partial derivatives in-place
-    _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
+    _compute_nd_partials_quadratic!(partials, grids_solve, data, bcs_solve)
 
     # 4. Per-axis extrap passthrough against the (possibly extended) grid.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
@@ -60,10 +62,11 @@ Zero-allocation after warmup (pool reuse).
     # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints, extraps_eff)
-    _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
+    _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls, Tg)
 
-    # 6. Tensor-product kernel evaluation (quadratic uses only inv_h/dL)
-    return _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+    # 6. Tensor-product kernel evaluation ([Y]-scaled partials → grid⁻ᵏ restore at the seam)
+    r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+    return _restore_nd_deriv_scale(r, grids_c, ops)
 end
 
 """
@@ -73,9 +76,12 @@ Pool-based in-place batch one-shot ND quadratic evaluation.
 Computes partials ONCE, then evaluates at all query points into `output`.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
 """
+# `grids` is NOT pinned to one shared axis eltype: mixed-unit grids (`s` × `m`)
+# reach this backend as a heterogeneous per-axis-float tuple — requiring a common
+# `Tg` excluded them from the batch path entirely (the linear sibling relaxed first).
 @with_pool pool function _quadratic_interp_nd_oneshot_batch!(
         output::AbstractArray,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -83,38 +89,42 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         ops::NTuple{N, AbstractEvalOp},
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     _check_query_output_size(output, queries)
     _query_validate(queries)
+    Tg_raw = _promote_grid_eltype(grids)
 
     # Pool-backed per-axis cache — build phase + eval loop reuse h/inv_h.
     # `map` over the tuple dispatches per-element on concrete axis type;
     # `ntuple(d -> grids[d], ...)` would Union-box heterogeneous tuples.
     grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
 
-    # Build phase (done once)
-    Tz = _promote_eltype(_coeff_op, Tg, Tv)
+    # Build phase (done once). Non-Real axes solve on the dimensionless twins
+    # (persistent scaled-store mirror); the eval loop keeps reading `grids_c`.
+    grids_solve, bcs_solve = _reparam_solve_frame(grids_c, bcs, data)
+    Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
-    _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
+    _compute_nd_partials_quadratic!(partials, grids_solve, data, bcs_solve)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
     # Validate + batch-level InBounds promotion (see cubic_nd_oneshot.jl): all-in-bounds axes get
     # `InBounds()`, eliding per-query wrap/clamp/fill branches.
     extraps_eff = _validate_nd_domain(grids_c, queries, extraps_eff)
 
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_c)
         oob_val = _try_fill_oob(query_k, grids_c, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_c, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints, extraps_eff)
-        _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
-        output[k] = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+        _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls, Tg_raw)
+        r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+        output[k] = _restore_nd_deriv_scale(r, grids_c, ops)
     end
     return output
 end
@@ -133,6 +143,9 @@ end
 
 One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
+
+Non-Real (unit-carrying) axes mirror the persistent scaled-store build (dimensionless
+twin solve + grid⁻ᵏ restore); the twins are lazy views, so zero-alloc holds there too.
 
 # Strategy selection (`coeffs`)
 - `AutoCoeffs()` (default): shared `_resolve_coeffs_nd_oneshot` policy, same as cubic —
@@ -155,25 +168,33 @@ function quadratic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Scalar one-shot: raw grids — both PreCompute and OnTheFly accept them
-    # (`_compute_all_local_params` floats the cell width). `Tg` value-matched (Int/OneTo grid +
-    # Float32 data → Float32) so eval + witness `Tr` agree. Batch keeps eager-convert.
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    # (`_compute_all_local_params` floats the cell width). Batch keeps eager-convert.
+    Tg_raw = _promote_grid_eltype(grids)
+    # Fill payload space mirrors the cubic scalar entry (raw Int data must not
+    # pin the fill: `FillExtrap(0.5)` + Int data threw at the eager resolve).
+    Tv_p = _oneshot_fill_eltype(_coeff_op, _promote_grid_float(Tg_raw, Tv), Tv)
     _validate_nd_grids(grids, data)
-    # PreCompute/OnTheFly ND quadratic solve does not support unit-carrying grids —
-    # match the persistent builder's actionable error instead of a deep MethodError.
-    _check_nd_solver_grid(_promote_grid_eltype(grids))
-    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
+    # Reparameterizable axes only (Real or unit-carrying) — the persistent builder's gate.
+    _check_nd_reparam_grid(grids)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    # `ops` folds into the witness BEFORE the assertion (linear canonical): a derivative
+    # query lands in value/coordᴺ — identity on Real grids and on `DerivOp{0}`.
+    Tr = _deriv_eltype_nd(
+        _nd_value_eltype(_interp_op, Tv, grids, promote_type(typeof.(query)...)), grids, ops
+    )
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    ops = _resolve_deriv_nd(deriv, Val(N))
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
 
     # Central policy (same as cubic): scalar AutoCoeffs → OnTheFly. Bit-exact parity
     # with the persistent interpolant stays available via explicit coeffs=PreCompute().
+    # Non-Real queries resolve PreCompute by dispatch (Real-tuple arm); an explicit
+    # OnTheFly rides the hetero collapse, whose gate keeps the refusal friendly.
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> QuadraticInterp(), Val(N)))
     if coeffs_resolved isa OnTheFly
+        _check_nd_hetero_grid(Tg_raw)
         sample = @inbounds first(data)
         methods = map(bc_i -> QuadraticInterp(_to_quadratic_bc(bc_i, sample)), bcs)
         return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hint)::Tr
@@ -201,9 +222,11 @@ function quadratic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
+    # Same fold as the scalar entry (linear canonical): the buffer must be sized in
+    # ∂-units, else a unit-grid derivative batch throws on the first store.
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _deriv_eltype_nd(_nd_value_eltype(_interp_op, Tv, grids, Tq), grids, ops)
     output = _alloc_query_output(Tr, queries)
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
@@ -233,12 +256,13 @@ function quadratic_interp!(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))
-    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
+    _check_nd_reparam_grid(grids)
+    # `Tv_p` (3rd return) is the promoted fill space — the cubic in-place mirror.
+    grids_typed, _, Tv_p, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    _check_nd_solver_grid(_promote_grid_eltype(grids))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, ops, search, hint)
 end

@@ -136,6 +136,35 @@ struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector
     end
 end
 
+# ─────────────────────────────────────────────────────────────────────────────
+# _ReparamAxis — lazy dimensionless twin of a non-Real axis
+# ─────────────────────────────────────────────────────────────────────────────
+"""
+    _ReparamAxis{T, X<:AbstractVector, W, U} <: AbstractVector{T}
+
+Lazy `_reparam_op` view of a unit-carrying axis: element `i` is
+`inner[i] * scale` with `scale = inv(oneunit(eltype(inner)))`.
+
+The solver-family scaled store keeps `[Y]`-homogeneous partials, which pair
+with DIMENSIONLESS cell widths — and both consumers (the fiber solve and the
+separable integrate engine) only ever ask an axis for `getindex` and
+`_get_h`/`_get_inv_h`. So the twin needs no array of its own: it is a view,
+and its widths come from the parent's cache times a scalar.
+
+Methods + the outer ctor live in `nd_utils.jl` beside `_reparam_grids`, the
+only producer.
+
+# Fields
+- `inner::X` — the physical axis (possibly itself wrapped).
+- `scale::W` — the canonical `_deriv_oneunit(…, DerivOp(1))` witness.
+- `unit::U` — `oneunit(eltype(inner))`; restores `inv_h` without a division.
+"""
+struct _ReparamAxis{T, X <: AbstractVector, W, U} <: AbstractVector{T}
+    inner::X
+    scale::W
+    unit::U
+end
+
 # Convenience outer ctor — type params inferred from inputs. The element type
 # must hold the virtual seam point `inner[1] + period`, so widen a narrow grid
 # eltype against the period type before wrapping (an Int grid with a float period

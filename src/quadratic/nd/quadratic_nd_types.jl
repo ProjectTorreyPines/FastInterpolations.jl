@@ -83,13 +83,16 @@ struct QuadraticInterpolantND{
     # BC tuple (Quadratic accepts Left/Right/MinCurvFit as well as ZeroCurvBC,
     # PolyFit{D}, etc — all `<: AbstractBC`).
     function QuadraticInterpolantND(
-            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            grids::Tuple{Vararg{AbstractVector, N}},
             nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
             bcs::Tuple{Vararg{AbstractBC, N}},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}}
-        ) where {Tg, Tv, N, NP1}
+        ) where {Tv, N, NP1}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
+        # Promotion-tag Tg (mixed-unit axes → abstract tag, mirrors the cubic/
+        # linear ctors); Real axes keep the concrete common eltype.
+        Tg = _promote_grid_eltype(grids)
         grids_c = _convert_cache_axes(grids, bcs, Tg)
         return new{Tg, Tv, N, NP1, typeof(grids_c), typeof(bcs), typeof(extraps), typeof(searches)}(
             grids_c, nodal_derivs, bcs, extraps, searches

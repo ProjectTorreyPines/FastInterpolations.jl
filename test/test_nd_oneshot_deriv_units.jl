@@ -10,9 +10,10 @@
 # an abstract `Quantity{Float64}`, the assertion becomes vacuous and the bug
 # hides — the "less broken" case is the one that reports it.
 #
-# Linear is the only family this reaches: cubic/quadratic/hetero ND one-shots
-# refuse unit grids up front (`_check_nd_solver_grid` / `_check_nd_hetero_grid`)
-# and Constant already folds through `_interp_nd_output_eltype`.
+# Linear/Constant are the value-native families this pins: Constant folds through
+# `_interp_nd_output_eltype`, cubic/quadratic one-shots reparameterize (pinned in
+# test_unitful_grid_nd.jl), and hetero ND one-shots refuse unit grids up front
+# (`_check_nd_hetero_grid`).
 
 @testitem "ND one-shot: derivative queries keep the grid's derivative units" begin
     using Unitful

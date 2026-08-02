@@ -127,10 +127,12 @@ Base.promote_rule(::Type{GridIdx{T}}, ::Type{S}) where {T, S <: Real} = promote_
 Base.convert(::Type{T}, g::GridIdx) where {T <: Number} = convert(T, g.val)
 Base.float(g::GridIdx) = float(g.val)
 (::Type{T})(g::GridIdx) where {T <: AbstractFloat} = T(g.val)
-# The one value-consuming seam: every kernel reads a resolved coordinate as
-# `q - L` (dL / α). A direct method keeps Number payloads (unit axes) out of
-# the promotion machinery entirely; identical folds for Real payloads.
-Base.:-(g::GridIdx, x::Number) = g.val - x
+# Coordinate accessor for the one value-consuming seam (`q - L` → dL / α).
+# Real axes let the wrapper ride its own `Real`-ness through promotion; a unit
+# axis cannot (see the promote_rule note), so the seam reads the payload
+# directly. Identity for every non-GridIdx query — no Real-path cost.
+@inline _coord_value(q) = q
+@inline _coord_value(g::GridIdx) = g.val
 
 """
     _resolve_grididx(q, grid) -> resolved coordinate

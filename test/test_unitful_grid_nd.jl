@@ -1131,7 +1131,28 @@ end
         @test_throws ArgumentError cubic_interp((xs, ym), F, (GridIdx(2), GridIdx(3)))
     end
 
-    @testset "deriv × GridIdx: the `-` seam feeds the dLs scaling" begin
+    @testset "every unit-axis family consumes a resolved GridIdx" begin
+        # The wrapper cannot ride promotion on a unit axis (nested Quantity), so
+        # each family's coordinate seam must read the payload. Constant ND was
+        # uncovered — value AND derivative, all-GridIdx and mixed.
+        d10 = (DerivOp(1), DerivOp(0))
+        xr = range(0.0, 4.0, 5) .* u"s"
+        yr = range(0.0, 3.0, 4) .* u"m"
+        Fr = [(a + 2.0 * b) for a in range(0.0, 4.0, 5), b in range(0.0, 3.0, 4)] .* u"W"
+        for (itp, ref) in (
+                (interp((xs, ym), F; method = LinearInterp()), (xs[2], ym[3])),
+                (interp((xs, ym), F; method = ConstantInterp()), (xs[2], ym[3])),
+                (interp((xr, yr), Fr; method = ConstantInterp()), (xr[2], yr[3])),
+                (cubic_interp((xs, ym), F), (xs[2], ym[3])),
+                (quadratic_interp((xs, ym), F), (xs[2], ym[3])),
+            )
+            @test itp((GridIdx(2), GridIdx(3))) === itp(ref)
+            @test itp((2.2u"s", GridIdx(3))) === itp((2.2u"s", ref[2]))
+            @test itp((GridIdx(2), GridIdx(3)); deriv = d10) === itp(ref; deriv = d10)
+        end
+    end
+
+    @testset "deriv × GridIdx: the coordinate seam feeds the dLs scaling" begin
         # `Base.:-(g::GridIdx, x::Number)` is the one value-consuming seam; its
         # result is scaled by `_deriv_oneunit` in the reparam dLs — pin against
         # the flat-coordinate equivalents (same cell → bit-identical, [Y/Xᵈ]).

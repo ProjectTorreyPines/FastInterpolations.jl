@@ -1293,7 +1293,7 @@ Base.IndexStyle(::Type{<:_ReparamAxis}) = IndexLinear()
         @inbounds _get_inv_h(grids[d], indices[d]) * oneunit(first(grids[d]))
     end
     dLs = ntuple(Val(N)) do d
-        @inbounds (q_evals[d] - Ls[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
+        @inbounds (_coord_value(q_evals[d]) - Ls[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
     end
     return hs, inv_hs, dLs
 end

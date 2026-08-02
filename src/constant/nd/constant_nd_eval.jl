@@ -149,10 +149,11 @@ paths share this signature.
         push!(exprs, :($h_sym = @inbounds hs[$d]))
     end
 
-    # dL_d = q_eval[d] - Ls[d]
+    # dL_d = q_eval[d] - Ls[d]  (`_coord_value` unwraps a resolved GridIdx —
+    # identity otherwise; the search already consumed its index)
     for d in 1:N
         dL_sym = Symbol("dL_", d)
-        push!(exprs, :($dL_sym = @inbounds q_eval[$d] - Ls[$d]))
+        push!(exprs, :($dL_sym = @inbounds _coord_value(q_eval[$d]) - Ls[$d]))
     end
 
     # offset_d = _compute_single_offset(sides[d], h_d, dL_d)

@@ -143,8 +143,10 @@ end
 @inline _nd_deriv_scale(samples::Tuple, ops::Tuple) =
     _deriv_oneunit(first(samples), first(ops)) * _nd_deriv_scale(Base.tail(samples), Base.tail(ops))
 
-# FillExtrap OOB form: axis samples from the grid eltypes; a scalar op
-# broadcasts to every axis.
+# Grid-sample adapter for the fold above (axis samples from the grid eltypes; a
+# scalar op broadcasts to every axis). Despite the historical "fill" name it
+# serves BOTH the FillExtrap OOB zeros and the scaled-store in-domain restore
+# seam (`_restore_nd_deriv_scale`) — eval correctness rides on it.
 @inline _nd_fill_deriv_scale(grids::Tuple, op::AbstractEvalOp) = _nd_fill_deriv_scale(grids, map(_ -> op, grids))
 @inline _nd_fill_deriv_scale(grids::Tuple, ops::Tuple) =
     _nd_deriv_scale(map(g -> oneunit(eltype(g)), grids), ops)

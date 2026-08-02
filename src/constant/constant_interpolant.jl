@@ -133,6 +133,9 @@ end
     # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     x_eff = _policy_axis(x_ext, bc_eff, Tg, store)
-    extrap_p = _promote_extrap(extrap_eff, Tv)
+    # Storage stays raw, but the kernel's `* one(dL)` returns the float value
+    # space — the fill must be promoted there (linear's spelling), else an Int
+    # `y` rejects a float fill at construction.
+    extrap_p = _promote_extrap(extrap_eff, _value_type(Tv, _promote_grid_float(Tg, Tv)))
     return ConstantInterpolant(x_eff, y_ext, extrap_p, side, search; bc = bc_eff, store = store)
 end

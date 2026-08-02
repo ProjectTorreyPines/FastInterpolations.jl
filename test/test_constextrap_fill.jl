@@ -729,3 +729,38 @@
         end
     end
 end
+
+@testitem "FillExtrap: a float fill on integer data lives in the output space" begin
+    # The kernels already float Int data against a float grid (`itp(2.2)::Float64`),
+    # but several persistent entries promoted the fill against the RAW data eltype
+    # → `convert(Int, 0.5)` InexactError at construction. Real axes, plain Int data.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5]
+    y = [0.0, 1.0, 2.0, 3.5]
+    yint = [1, 2, 3, 4, 5]
+    Zint = [i + j for i in 1:5, j in 1:4]
+    q_oob, q_in = 9.9, 2.2
+
+    @testset "1D persistent: every family accepts it" begin
+        for mk in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp)
+            itp = mk(x, yint; extrap = FillExtrap(0.5))
+            @test itp(q_oob) === 0.5
+            @test itp(q_in) isa Float64
+        end
+    end
+
+    @testset "1D one-shot mirrors" begin
+        @test cubic_interp(x, yint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+        @test linear_interp(x, yint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+        @test constant_interp(x, yint, q_oob; extrap = FillExtrap(0.5)) === 0.5
+    end
+
+    @testset "ND persistent + gridded" begin
+        for m in (LinearInterp(), ConstantInterp())
+            itp = interp((x, y), Zint; method = m, extrap = FillExtrap(0.5))
+            @test itp((q_oob, 1.0)) === 0.5
+            # Gridded (axis-target) path shares the fill promotion.
+            @test itp(([q_oob], [1.0]))[1] === 0.5
+        end
+        @test cubic_interp((x, y), Zint; extrap = FillExtrap(0.5))((q_oob, 1.0)) === 0.5
+    end
+end

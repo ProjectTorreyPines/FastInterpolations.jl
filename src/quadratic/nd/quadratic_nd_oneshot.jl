@@ -115,7 +115,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     extraps_eff = _validate_nd_domain(grids_c, queries, extraps_eff)
 
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_c)
         oob_val = _try_fill_oob(query_k, grids_c, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue

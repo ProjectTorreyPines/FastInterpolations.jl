@@ -100,7 +100,7 @@ end
 
     # Eval loop (per query) — axis-only helpers read `h`/`inv_h` from `grids_p`
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_p)
         oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val
@@ -373,7 +373,7 @@ end
         # (follow-up).
         searches = _resolve_search_nd(search, Val(N))
         @inbounds for k in 1:nq
-            query_k = _extract_query_point(queries, k, Val(N))
+            query_k = _extract_query_point(queries, k, Val(N), grids)
             output[k] = _interp_nd_oneshot_onthefly(grids, data, query_k, methods, extraps_val, searches, ops, hints)
         end
         return output

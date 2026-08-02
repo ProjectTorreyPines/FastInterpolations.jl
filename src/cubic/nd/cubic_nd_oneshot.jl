@@ -242,7 +242,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # Eval loop: search + kernel per query point. Axis-only helpers read
     # `h`/`inv_h` directly from `grids_p` (no transient pool spacings).
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_p)
         oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val; continue

@@ -70,6 +70,14 @@ end
 @inline _extract_query_point(q, k, ::Val{N}) where {N} =
     _as_ntuple(_query_extract(q, k), Val(N))
 
+# Grid-aware form for the batch loops: a bare `GridIdx(k)` carries no coordinate
+# (`val = NaN` poison) until it meets its axis, and the scalar entries resolve at
+# the door. Batch points must resolve too — an unresolved index on an
+# INTERPOLATING axis silently evaluates the kernel at NaN. Identity for every
+# non-GridIdx element, so Real batches keep their codegen.
+@inline _extract_query_point(q, k, ::Val{N}, grids::Tuple{Vararg{AbstractVector, N}}) where {N} =
+    map(_resolve_grididx, _extract_query_point(q, k, Val(N)), grids)
+
 @inline _as_ntuple(x::NTuple{N, <:Real}, ::Val{N}) where {N} = x
 @inline _as_ntuple(x, ::Val{N}) where {N} = ntuple(d -> @inbounds(x[d]), Val(N))
 

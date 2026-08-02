@@ -1,8 +1,7 @@
 @inline function _normalize_bounds_nd(lo::Tuple{Vararg{Number, N}}, hi::Tuple{Vararg{Number, N}}) where {N}
-    nflips = 0
-    @inbounds for d in 1:N
-        nflips += (lo[d] > hi[d])
-    end
+    # Static unroll like the `ntuple`s below: a runtime-`d` index into a
+    # heterogeneous (mixed-unit) bounds tuple leaks the element Union → boxing.
+    nflips = sum(ntuple(d -> @inbounds(lo[d] > hi[d]), Val(N)))
     sign = iseven(nflips) ? 1 : -1
     lo2 = ntuple(d -> @inbounds(min(lo[d], hi[d])), Val(N))
     hi2 = ntuple(d -> @inbounds(max(lo[d], hi[d])), Val(N))

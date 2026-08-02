@@ -1204,15 +1204,33 @@ end
 # gate's promise (`oneunit`, `inv`, `*`) is what it actually checks.
 @inline _reparam_op(x) = x * _deriv_oneunit(x, DerivOp(1))
 
+# Lazy twin (see `_ReparamAxis` in axis_types.jl): `_reparam_op` applied per
+# access. The eltype comes from the same op that the gate probes and the view
+# applies — one witness, three uses.
+@inline function _ReparamAxis(inner::AbstractVector)
+    scale = _deriv_oneunit(first(inner), DerivOp(1))
+    return _ReparamAxis{_promote_eltype(_reparam_op, eltype(inner)), typeof(inner), typeof(scale), typeof(oneunit(eltype(inner)))}(
+        inner, scale, oneunit(eltype(inner))
+    )
+end
+
+@inline Base.size(a::_ReparamAxis) = size(a.inner)
+Base.IndexStyle(::Type{<:_ReparamAxis}) = IndexLinear()
+@inline Base.@propagate_inbounds Base.getindex(a::_ReparamAxis, i::Int) = a.inner[i] * a.scale
+# Widths pass through the parent's cache — a scalar multiply, no re-subtraction.
+@inline Base.@propagate_inbounds _get_h(a::_ReparamAxis, i::Int) = _get_h(a.inner, i) * a.scale
+@inline Base.@propagate_inbounds _get_inv_h(a::_ReparamAxis, i::Int) = _get_inv_h(a.inner, i) * a.unit
+
 # Dimensionless axis twins for the solver-family ND builds — the
 # `_float_grids_peraxis` peel idiom (build paths ban closure-maps over axis
-# wraps); `_reparam_op` spelled `.*` with a hoisted witness so Ranges stay
-# ranges.
+# wraps). Ranges keep the arithmetic form: Base's range broadcast already
+# yields an isbits range (no array) and preserves the `_CachedRange` objectid
+# fast path in the solve cache banks. Everything else takes the lazy view.
+@inline _reparam_axis(x::AbstractRange) = x .* _deriv_oneunit(first(x), DerivOp(1))
+@inline _reparam_axis(x::AbstractVector) = _ReparamAxis(x)
 @inline _reparam_grids(::Tuple{}) = ()
-@inline _reparam_grids(grids::Tuple) = (
-    first(grids) .* _deriv_oneunit(first(first(grids)), DerivOp(1)),
-    _reparam_grids(Base.tail(grids))...,
-)
+@inline _reparam_grids(grids::Tuple) =
+    (_reparam_axis(first(grids)), _reparam_grids(Base.tail(grids))...)
 
 # Typed PointBC payloads live in [Y/Xᵏ] → scale by oneunit(axis)ᵏ onto the
 # dimensionless axis ([Y]). Structural Real payloads rehydrate via the canonical

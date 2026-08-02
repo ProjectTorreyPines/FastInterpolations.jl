@@ -16,8 +16,8 @@ One-shot ND cubic interpolation at a single point.
 Zero-allocation after warmup: uses pool-based partials instead of constructing an Interpolant.
 
 Non-Real (unit-carrying) axes mirror the persistent scaled-store build: the solve runs
-on dimensionless axis twins and the result is restored to grid⁻ᵏ units. The zero-alloc
-contract is the Real-axis path's; the unit arm allocates its per-call twins.
+on dimensionless axis twins (lazy `_ReparamAxis` views — no per-call array) and the
+result is restored to grid⁻ᵏ units, so the zero-alloc contract holds there too.
 
 # Keywords
 - `deriv`: `DerivOp` or `NTuple{N,DerivOp}` for mixed partials

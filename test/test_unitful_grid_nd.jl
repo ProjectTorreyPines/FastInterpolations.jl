@@ -713,6 +713,66 @@ end
     @test (@allocated integrate(itp)) <= ND_ALLOC_THRESHOLD
 end
 
+@testitem "Unitful ND: scaled-store twins cost no allocation (one-shot + integrate)" setup = [AllocConstants] begin
+    using Unitful
+
+    # The dimensionless twin is a per-call transform, not a stored array: the
+    # solver one-shot and the reparam integrate arm must hold the same alloc
+    # contract as their Real siblings (Range axes already did — Base's range
+    # broadcast keeps them isbits).
+    # Function barriers: measuring a testitem-global through a kwarg call form
+    # boxes the kwargs (16 B measurement artifact, not a path allocation).
+    oneshot_c(g, d, q) = @allocated cubic_interp(g, d, q; coeffs = PreCompute())
+    oneshot_q(g, d, q) = @allocated quadratic_interp(g, d, q; coeffs = PreCompute())
+    alloc_full(itp) = @allocated integrate(itp)
+    alloc_bnd(itp, lo, hi) = @allocated integrate(itp, lo, hi)
+
+    xf = collect(range(0.0, 4.0, 9))
+    yf = collect(range(0.0, 3.0, 7))
+    F = [sin(a) + 2.0 * b for a in xf, b in yf]
+    xs = xf .* u"s"
+    ym = yf .* u"m"
+    Fw = F .* u"W"
+    q = (2.2u"s", 1.3u"m")
+    lo, hi = (0.5u"s", 0.5u"m"), (3.5u"s", 2.5u"m")
+
+    @testset "unit Vector axes: one-shot scalar" begin
+        gv = (xs, ym)
+        oneshot_c(gv, Fw, q)
+        oneshot_q(gv, Fw, q)
+        @test oneshot_c(gv, Fw, q) <= ND_ALLOC_THRESHOLD
+        @test oneshot_q(gv, Fw, q) <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "unit Vector axes: persistent integrate (full + bounded)" begin
+        for mk in (cubic_interp, quadratic_interp)
+            itp = mk((xs, ym), Fw)
+            alloc_full(itp)
+            alloc_bnd(itp, lo, hi)
+            @test alloc_full(itp) <= ND_ALLOC_THRESHOLD
+            @test alloc_bnd(itp, lo, hi) <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "unit Range axes + Real axes stay put" begin
+        xr = range(0.0, 4.0, 9) .* u"s"
+        yr = range(0.0, 3.0, 7) .* u"m"
+        itr = cubic_interp((xr, yr), Fw)
+        alloc_full(itr)
+        oneshot_c((xr, yr), Fw, q)
+        @test alloc_full(itr) <= ND_ALLOC_THRESHOLD
+        @test oneshot_c((xr, yr), Fw, q) <= ND_ALLOC_THRESHOLD
+
+        itf = cubic_interp((xf, yf), F)
+        alloc_full(itf)
+        alloc_bnd(itf, (0.5, 0.5), (3.5, 2.5))
+        oneshot_c((xf, yf), F, (2.2, 1.3))
+        @test alloc_full(itf) <= ND_ALLOC_THRESHOLD
+        @test alloc_bnd(itf, (0.5, 0.5), (3.5, 2.5)) <= ND_ALLOC_THRESHOLD
+        @test oneshot_c((xf, yf), F, (2.2, 1.3)) <= ND_ALLOC_THRESHOLD
+    end
+end
+
 @testitem "Unitful ND: zero-alloc hot path, same-unit concrete-Tg (review pin F21)" setup = [AllocConstants] begin
     using Unitful
 

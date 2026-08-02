@@ -145,7 +145,7 @@ One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
 
 Non-Real (unit-carrying) axes mirror the persistent scaled-store build (dimensionless
-twin solve + grid⁻ᵏ restore); the zero-alloc contract is the Real-axis path's.
+twin solve + grid⁻ᵏ restore); the twins are lazy views, so zero-alloc holds there too.
 
 # Strategy selection (`coeffs`)
 - `AutoCoeffs()` (default): shared `_resolve_coeffs_nd_oneshot` policy, same as cubic —

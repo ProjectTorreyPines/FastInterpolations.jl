@@ -254,6 +254,36 @@ end
         @test occursin("non-Real", msg)
         @test occursin("_OrderedDuckNum", msg)
     end
+
+    # `*`/`inv`-complete but `oneunit`-less: the `_coeff_op` probe inferred Real
+    # and let the build die deep in the twin transform (MethodError) — the gate
+    # must reject upfront, matching its own "needs `oneunit`, `inv`, `*`" promise.
+    struct _NoOneUnitLen <: Number
+        v::Float64
+    end
+    struct _NoOneUnitInv <: Number
+        v::Float64
+    end
+    Base.isless(a::_NoOneUnitLen, b::_NoOneUnitLen) = isless(a.v, b.v)
+    Base.inv(a::_NoOneUnitLen) = _NoOneUnitInv(inv(a.v))
+    Base.:*(a::_NoOneUnitLen, b::_NoOneUnitInv) = a.v * b.v
+    Base.:*(a::_NoOneUnitInv, b::_NoOneUnitLen) = a.v * b.v
+    xn = _NoOneUnitLen.([0.0, 1.0, 2.0, 3.0])
+
+    for build in (
+            () -> cubic_interp((xn, xn), F),
+            () -> quadratic_interp((xn, xn), F),
+            () -> cubic_interp((xn, xn), F, (_NoOneUnitLen(1.5), _NoOneUnitLen(1.5))),
+        )
+        err = try
+            build()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("oneunit", sprint(showerror, err))
+    end
 end
 
 @testitem "Unitful ND: cubic PreCompute build — scaled [Y]-homogeneous store (P1)" begin

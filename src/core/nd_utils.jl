@@ -1197,10 +1197,15 @@ end
     ::Type,
 ) where {N} = _compute_all_local_params_reparam(q_evals, grids, indices, Ls)
 
+# Canonical per-element reparam transform (axis element → dimensionless twin).
+# The solver gate (`_check_nd_reparam_eltype`) probes exactly this op, so the
+# gate's promise (`oneunit`, `inv`, `*`) is what it actually checks.
+@inline _reparam_op(x) = x * _deriv_oneunit(x, DerivOp(1))
+
 # Dimensionless axis twins for the solver-family ND builds — the
 # `_float_grids_peraxis` peel idiom (build paths ban closure-maps over axis
-# wraps); scaling spelled with the canonical `_deriv_oneunit` witness
-# (= inv(oneunit(axis))). Ranges stay ranges.
+# wraps); `_reparam_op` spelled `.*` with a hoisted witness so Ranges stay
+# ranges.
 @inline _reparam_grids(::Tuple{}) = ()
 @inline _reparam_grids(grids::Tuple) = (
     first(grids) .* _deriv_oneunit(first(first(grids)), DerivOp(1)),

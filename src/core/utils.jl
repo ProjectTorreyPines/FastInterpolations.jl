@@ -123,9 +123,10 @@ end
 end
 
 # Solver-family axes must be Real or dimensionless-reparameterizable (unit-carrying).
-# Probed PER AXIS with the canonical `_coeff_op` witness — a mixed-unit promoted Tg
-# is an abstract tag no witness may run on. Missing `oneunit`/`inv` arithmetic
-# infers `Union{}`/non-Real → friendly refusal; `Real` folds away.
+# Probed PER AXIS with the canonical `_reparam_op` witness — the exact transform the
+# twin build applies (a mixed-unit promoted Tg is an abstract tag no witness may run
+# on). Missing `oneunit`/`inv`/`*` infers `Union{}`/non-Real → friendly refusal;
+# `Real` folds away.
 @inline _check_nd_reparam_grid(::Tuple{}) = nothing
 @inline function _check_nd_reparam_grid(grids::Tuple)
     _check_nd_reparam_eltype(eltype(first(grids)))
@@ -133,7 +134,7 @@ end
 end
 @inline _check_nd_reparam_eltype(::Type{<:Real}) = nothing
 @inline function _check_nd_reparam_eltype(::Type{Tg}) where {Tg}
-    Tt = Base.promote_op(_coeff_op, Tg, Tg)
+    Tt = Base.promote_op(_reparam_op, Tg)
     return (Tt !== Union{} && Tt <: Real) ? nothing : _throw_nd_reparam_grid(Tg)
 end
 @noinline _throw_nd_reparam_grid(::Type{Tg}) where {Tg} = throw(

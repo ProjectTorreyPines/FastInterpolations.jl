@@ -47,13 +47,32 @@ Fritsch–Carlson weighted harmonic mean of two secants, single-division form.
 Algebraically `(w1+w2)/(w1/δp + w2/δc) == (w1+w2)·δp·δc / (w1·δc + w2·δp)`, which
 trades 3 divisions for 1. Called only from the monotone branch where
 `sign(δp) == sign(δc)`, so the denominator is nonzero unless both secants are
-exactly zero (flat data) — the `iszero(den)` guard maps that 0·0/0 case to `0`,
+exactly zero (flat data) — the zero-denominator guard maps that 0·0/0 case to `0`,
 matching the old form's `Inf`-arithmetic limit (and avoiding a NaN).
+
+The guard tests the PRIMAL (`_extract_primal`, as in `_constant_kernel`): `iszero` on a
+`ForwardDiff.Dual` inspects the partials too, so a seeded flat stretch — `den` with value `0`
+but a nonzero partial — would skip the guard and evaluate the 0·0/0 it exists to prevent,
+returning `Dual(NaN, NaN)`. That is a NaN in the VALUE, not merely in the derivative.
 """
 @inline function _pchip_harmonic_mean(w1, w2, δp, δc)
     den = w1 * δc + w2 * δp
-    return iszero(den) ? zero(den) : (w1 + w2) * δp * δc / den
+    # Use primal value for comparison (supports ForwardDiff.Dual)
+    return iszero(_extract_primal(den)) ? zero(den) : (w1 + w2) * δp * δc / den
 end
+
+"""
+    _flat_secants(δp, δc)
+
+Is this the flat-data case the harmonic mean guards against — both secants exactly zero?
+
+Equivalent to the `iszero(den)` test in [`_pchip_harmonic_mean`](@ref) on the monotone branch
+(`w1, w2 > 0` and `sign(δp) == sign(δc)`, so `den` vanishes only when both secants do), stated in
+terms of the secants so the reverse-mode adjoint — which builds `D = w1/δp + w2/δc` rather than
+`den` — can select the same branch as the forward pass. Tests the PRIMAL, as the forward guard
+does.
+"""
+@inline _flat_secants(δp, δc) = iszero(_extract_primal(δp)) && iszero(_extract_primal(δc))
 
 """
     _pchip_slopes!(dy, x, y)

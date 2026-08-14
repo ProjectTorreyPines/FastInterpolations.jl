@@ -161,8 +161,12 @@ end
     @inbounds δ_curr = _forward_secant(x, y, 2)
 
     @inbounds for k in 2:(n - 1)
-        if sign(δ_prev) != sign(δ_curr)
-            # Clamped: dy[k] = 0 → all derivatives zero, skip
+        # Flat data (both secants exactly zero) takes the forward's zero-denominator guard in
+        # `_pchip_harmonic_mean`, i.e. dy[k] = 0 → this node contributes nothing. Without the
+        # `_flat_secants` test the active branch below divides by δ² == 0 and writes NaN into
+        # `f_bar` — on plain `Float64` input, no AD required.
+        if sign(δ_prev) != sign(δ_curr) || _flat_secants(δ_prev, δ_curr)
+            # Clamped or flat: dy[k] = 0 → all derivatives zero, skip
         else
             # Active: weighted harmonic mean
             # dy[k] = S / D where S = w1+w2, D = w1/δ_prev + w2/δ_curr
@@ -311,6 +315,9 @@ end
 
         # Zero-clamped branch: dy[k] = 0 → all derivatives zero, skip.
         sign(δ_prev) != sign(δ_curr) && return nothing
+        # Flat branch: the forward's zero-denominator guard also returns dy[k] = 0, and the
+        # active branch below would divide by δ² == 0. See `_flat_secants`.
+        _flat_secants(δ_prev, δ_curr) && return nothing
 
         # Active branch: harmonic mean dy[k] = S/D where
         #   S = w1+w2,  D = w1/δ_prev + w2/δ_curr,

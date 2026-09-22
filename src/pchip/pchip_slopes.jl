@@ -47,12 +47,17 @@ Fritsch–Carlson weighted harmonic mean of two secants, single-division form.
 Algebraically `(w1+w2)/(w1/δp + w2/δc) == (w1+w2)·δp·δc / (w1·δc + w2·δp)`, which
 trades 3 divisions for 1. Called only from the monotone branch where
 `sign(δp) == sign(δc)`, so the denominator is nonzero unless both secants are
-exactly zero (flat data) — the `iszero(den)` guard maps that 0·0/0 case to `0`,
+exactly zero (flat data) — the zero-denominator guard maps that 0·0/0 case to `0`,
 matching the old form's `Inf`-arithmetic limit (and avoiding a NaN).
+
+The guard tests the PRIMAL (as `_constant_kernel` does): `iszero` on a `ForwardDiff.Dual`
+inspects the partials too, so a seeded flat stretch would skip it and evaluate the 0·0/0,
+returning `Dual(NaN, NaN)` — a NaN in the VALUE, not merely in the derivative.
 """
 @inline function _pchip_harmonic_mean(w1, w2, δp, δc)
     den = w1 * δc + w2 * δp
-    return iszero(den) ? zero(den) : (w1 + w2) * δp * δc / den
+    # Use primal value for comparison (supports ForwardDiff.Dual)
+    return iszero(_extract_primal(den)) ? zero(den) : (w1 + w2) * δp * δc / den
 end
 
 """

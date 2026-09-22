@@ -161,13 +161,16 @@ end
     @inbounds δ_curr = _forward_secant(x, y, 2)
 
     @inbounds for k in 2:(n - 1)
-        if sign(δ_prev) != sign(δ_curr)
-            # Clamped: dy[k] = 0 → all derivatives zero, skip
+        # `den` is the forward's single-division denominator, rebuilt so the flat-data guard
+        # below is the SAME test: there dy[k] = 0, while `D` would divide by δ² == 0 → NaN.
+        w1 = 2 * h_curr + h_prev
+        w2 = h_curr + 2 * h_prev
+        den = w1 * δ_curr + w2 * δ_prev
+        if sign(δ_prev) != sign(δ_curr) || iszero(_extract_primal(den))
+            # Clamped or flat: dy[k] = 0 → all derivatives zero, skip
         else
             # Active: weighted harmonic mean
             # dy[k] = S / D where S = w1+w2, D = w1/δ_prev + w2/δ_curr
-            w1 = 2 * h_curr + h_prev
-            w2 = h_curr + 2 * h_prev
             S = w1 + w2
             D = w1 / δ_prev + w2 / δ_curr
             D2 = D * D
@@ -317,6 +320,8 @@ end
         #   w1 = 2*h_curr+h_prev,  w2 = h_curr+2*h_prev.
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
+        # Flat branch: the forward's own denominator, so the same zero guard (dy[k] = 0).
+        iszero(_extract_primal(w1 * δ_curr + w2 * δ_prev)) && return nothing
         S = w1 + w2
         D = w1 / δ_prev + w2 / δ_curr
         D2 = D * D

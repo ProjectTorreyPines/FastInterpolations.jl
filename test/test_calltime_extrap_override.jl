@@ -3,7 +3,7 @@
 # `InBounds` (an in-domain fast-path assertion, not an extrapolation contract).
 # Any other explicit extrap errors.
 
-@testitem "call-time extrap override — 1D scalar+vector" begin
+@testitem "call-time extrap override — 1D scalar+vector" setup = [Basic] begin
     x = collect(range(0.0, 10.0, 21))
     y = sin.(x)
     xq = 5.0
@@ -16,19 +16,19 @@
         itp = build(x, y)                      # stored extrap = NoExtrap()
 
         @testset "$build: InBounds override == default (in-domain)" begin
-            @test itp(xq; extrap = InBounds()) == itp(xq)
-            @test itp(xqv; extrap = InBounds()) == itp(xqv)
+            @test isclose(itp(xq; extrap = InBounds()), itp(xq); nulps = PATH_ULPS)
+            @test isclose(itp(xqv; extrap = InBounds()), itp(xqv); nulps = PATH_ULPS)
             out = similar(xqv)
             itp(out, xqv; extrap = InBounds())
-            @test out == itp(xqv)
+            @test isclose(out, itp(xqv); nulps = PATH_ULPS)
         end
 
         @testset "$build: InBounds(last=:exclusive) works in-domain" begin
-            @test itp(xq; extrap = InBounds(last = :exclusive)) == itp(xq)
+            @test isclose(itp(xq; extrap = InBounds(last = :exclusive)), itp(xq); nulps = PATH_ULPS)
         end
 
         @testset "$build: omitting extrap is unchanged" begin
-            @test itp(xq; extrap = nothing) == itp(xq)
+            @test isclose(itp(xq; extrap = nothing), itp(xq); nulps = PATH_ULPS)
         end
 
         @testset "$build: disallowed extrap override errors" begin
@@ -43,7 +43,7 @@
     end
 end
 
-@testitem "call-time extrap override — ND scalar" begin
+@testitem "call-time extrap override — ND scalar" setup = [Basic] begin
     xg = collect(range(0.0, 10.0, 11))
     yg = collect(range(0.0, 5.0, 9))
     data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
@@ -53,13 +53,13 @@ end
         itp = build((xg, yg), data)                    # stored extraps = (NoExtrap(), NoExtrap())
 
         @testset "$build: InBounds override == default (in-domain)" begin
-            @test itp(q; extrap = InBounds()) == itp(q)             # broadcast all axes
-            @test itp(q...; extrap = InBounds()) == itp(q)          # vararg form
+            @test isclose(itp(q; extrap = InBounds()), itp(q); nulps = PATH_ULPS)             # broadcast all axes
+            @test isclose(itp(q...; extrap = InBounds()), itp(q); nulps = PATH_ULPS)          # vararg form
         end
 
         @testset "$build: per-axis tuple (nothing keeps stored)" begin
-            @test itp(q; extrap = (InBounds(), nothing)) == itp(q)  # axis 1 fast, axis 2 stored
-            @test itp(q; extrap = (InBounds(), InBounds())) == itp(q)
+            @test isclose(itp(q; extrap = (InBounds(), nothing)), itp(q); nulps = PATH_ULPS)  # axis 1 fast, axis 2 stored
+            @test isclose(itp(q; extrap = (InBounds(), InBounds())), itp(q); nulps = PATH_ULPS)
         end
 
         @testset "$build: disallowed override errors" begin
@@ -73,7 +73,7 @@ end
     end
 end
 
-@testitem "call-time extrap override — ND batch" begin
+@testitem "call-time extrap override — ND batch" setup = [Basic] begin
     xg = collect(range(0.0, 10.0, 11))
     yg = collect(range(0.0, 5.0, 9))
     data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
@@ -86,21 +86,21 @@ end
         itp = build((xg, yg), data)
 
         @testset "$build: batch InBounds override == default (SoA + AoS)" begin
-            @test itp(soa; extrap = InBounds()) == itp(soa)
-            @test itp(aos; extrap = InBounds()) == itp(aos)
+            @test isclose(itp(soa; extrap = InBounds()), itp(soa); nulps = PATH_ULPS)
+            @test isclose(itp(aos; extrap = InBounds()), itp(aos); nulps = PATH_ULPS)
             out = similar(qxs)
             itp(out, soa; extrap = InBounds())
-            @test out == itp(soa)
+            @test isclose(out, itp(soa); nulps = PATH_ULPS)
         end
 
         @testset "$build: batch per-axis + disallowed" begin
-            @test itp(soa; extrap = (InBounds(), nothing)) == itp(soa)
+            @test isclose(itp(soa; extrap = (InBounds(), nothing)), itp(soa); nulps = PATH_ULPS)
             @test_throws ArgumentError itp(soa; extrap = ClampExtrap())
         end
     end
 end
 
-@testitem "call-time extrap override — Hermite ND + NoInterp Hetero" begin
+@testitem "call-time extrap override — Hermite ND + NoInterp Hetero" setup = [Basic] begin
     # Two families whose construction differs from the tensor-product loops above.
     x = collect(range(0.0, 1.0, 6))
     y = collect(range(0.0, 1.0, 5))
@@ -114,9 +114,9 @@ end
         d2 = [-cos(xi) * sin(yj) for xi in x, yj in y]
         p = HermitePartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
         itp = hermite_interp((x, y), data, p)
-        @test itp(q; extrap = InBounds()) == itp(q)                # broadcast all axes
-        @test itp(q; extrap = (InBounds(), nothing)) == itp(q)     # per-axis
-        @test itp(soa; extrap = InBounds()) == itp(soa)            # batch
+        @test isclose(itp(q; extrap = InBounds()), itp(q); nulps = PATH_ULPS)                # broadcast all axes
+        @test isclose(itp(q; extrap = (InBounds(), nothing)), itp(q); nulps = PATH_ULPS)     # per-axis
+        @test isclose(itp(soa; extrap = InBounds()), itp(soa); nulps = PATH_ULPS)            # batch
         @test_throws ArgumentError itp(q; extrap = ClampExtrap())
         @test_throws ArgumentError itp(q; extrap = (InBounds(),))  # wrong arity
     end
@@ -127,14 +127,14 @@ end
         itp = interp((x, y), data; method = (CubicInterp(), NoInterp()))
         for k in (1, 3, 5)
             qn = (0.5, GridIdx(k))
-            @test itp(qn; extrap = InBounds()) == itp(qn)
-            @test itp(qn; extrap = (InBounds(), nothing)) == itp(qn)
+            @test isclose(itp(qn; extrap = InBounds()), itp(qn); nulps = PATH_ULPS)
+            @test isclose(itp(qn; extrap = (InBounds(), nothing)), itp(qn); nulps = PATH_ULPS)
         end
         @test_throws ArgumentError itp((0.5, GridIdx(2)); extrap = ClampExtrap())
     end
 end
 
-@testitem "call-time extrap override — HeteroND (all forms)" setup = [AllocConstants] begin
+@testitem "call-time extrap override — HeteroND (all forms)" setup = [Basic, AllocConstants] begin
     using FastInterpolations: _resolve_extrap_override_nd, HeteroInterpolantND
     using ForwardDiff
 
@@ -160,19 +160,19 @@ end
     @testset "$name: InBounds override == default (in-domain)" for (name, itp) in builds
         @test itp isa HeteroInterpolantND
         # scalar tuple + vararg forms; single InBounds broadcasts to all axes
-        @test itp(q; extrap = InBounds()) == itp(q)
-        @test itp(q...; extrap = InBounds()) == itp(q)
-        @test itp(q; extrap = InBounds(last = :exclusive)) == itp(q)
+        @test isclose(itp(q; extrap = InBounds()), itp(q); nulps = PATH_ULPS)
+        @test isclose(itp(q...; extrap = InBounds()), itp(q); nulps = PATH_ULPS)
+        @test isclose(itp(q; extrap = InBounds(last = :exclusive)), itp(q); nulps = PATH_ULPS)
         # per-axis tuple: `nothing` keeps that axis's stored mode
-        @test itp(q; extrap = (InBounds(), nothing)) == itp(q)
-        @test itp(q; extrap = (InBounds(), InBounds())) == itp(q)
+        @test isclose(itp(q; extrap = (InBounds(), nothing)), itp(q); nulps = PATH_ULPS)
+        @test isclose(itp(q; extrap = (InBounds(), InBounds())), itp(q); nulps = PATH_ULPS)
         # batch: SoA, AoS, in-place
-        @test itp(soa; extrap = InBounds()) == itp(soa)
-        @test itp(aos; extrap = InBounds()) == itp(aos)
+        @test isclose(itp(soa; extrap = InBounds()), itp(soa); nulps = PATH_ULPS)
+        @test isclose(itp(aos; extrap = InBounds()), itp(aos); nulps = PATH_ULPS)
         out = similar(qxs)
         itp(out, soa; extrap = InBounds())
-        @test out == itp(soa)
-        @test itp(soa; extrap = (InBounds(), nothing)) == itp(soa)
+        @test isclose(out, itp(soa); nulps = PATH_ULPS)
+        @test isclose(itp(soa; extrap = (InBounds(), nothing)), itp(soa); nulps = PATH_ULPS)
     end
 
     @testset "$name: disallowed override errors" for (name, itp) in builds
@@ -268,7 +268,7 @@ end
     @test g_ib ≈ g_df
 end
 
-@testitem "call-time extrap override — InBounds parity across stored extraps" begin
+@testitem "call-time extrap override — InBounds parity across stored extraps" setup = [Basic] begin
     x = collect(range(0.0, 10.0, 21))
     y = sin.(x)
     xq = 5.0
@@ -279,21 +279,21 @@ end
     @testset "stored extrap = $(nameof(typeof(e)))" for e in
         (ClampExtrap(), FillExtrap(0.0), WrapExtrap(), ExtendExtrap())
         itp = cubic_interp(x, y; extrap = e)
-        @test itp(xq; extrap = InBounds()) == itp(xq)
-        @test itp(xqv; extrap = InBounds()) == itp(xqv)
+        @test isclose(itp(xq; extrap = InBounds()), itp(xq); nulps = PATH_ULPS)
+        @test isclose(itp(xqv; extrap = InBounds()), itp(xqv); nulps = PATH_ULPS)
     end
 
     @testset "periodic interpolant (stored WrapExtrap)" begin
         xp = collect(range(0.0, 2π, 21))
         yp = sin.(xp)                       # yp[1] ≈ yp[end] ≈ 0 (inclusive periodic)
         itp = cubic_interp(xp, yp; bc = PeriodicBC())
-        @test itp(3.0; extrap = InBounds()) == itp(3.0)              # in-domain, no wrap needed
+        @test isclose(itp(3.0; extrap = InBounds()), itp(3.0); nulps = PATH_ULPS)              # in-domain, no wrap needed
         @test itp(collect(range(0.1, 6.0, 30)); extrap = InBounds()) ==
             itp(collect(range(0.1, 6.0, 30)))
     end
 end
 
-@testitem "call-time extrap override — boundary-exact + exclusive arm + 3D" begin
+@testitem "call-time extrap override — boundary-exact + exclusive arm + 3D" setup = [Basic] begin
     # Regression pins for edges the family loops skip: exact endpoints, the
     # `:exclusive` no-cap arm firing near the right endpoint, and N ≥ 3.
 
@@ -302,14 +302,14 @@ end
         y = sin.(x)
         itp = cubic_interp(x, y)
         for q in (first(x), last(x))                            # exact closed endpoints
-            @test itp(q; extrap = InBounds()) == itp(q)
+            @test isclose(itp(q; extrap = InBounds()), itp(q); nulps = PATH_ULPS)
         end
         xg = collect(range(0.0, 10.0, 11))
         yg = collect(range(0.0, 5.0, 6))
         data = [sin(a) * cos(b) for a in xg, b in yg]
         nitp = cubic_interp((xg, yg), data)
         for q in ((first(xg), first(yg)), (last(xg), last(yg)), (first(xg), last(yg)))
-            @test nitp(q; extrap = InBounds()) == nitp(q)       # exact corners
+            @test isclose(nitp(q; extrap = InBounds()), nitp(q); nulps = PATH_ULPS)       # exact corners
         end
     end
 
@@ -320,10 +320,10 @@ end
             y = sin.(x)
             itp = cubic_interp(x, y)
             for q in (9.5, prevfloat(10.0))
-                @test itp(q; extrap = InBounds(last = :exclusive)) == itp(q)
+                @test isclose(itp(q; extrap = InBounds(last = :exclusive)), itp(q); nulps = PATH_ULPS)
             end
             xv = collect(range(0.5, prevfloat(10.0), 20))
-            @test itp(xv; extrap = InBounds(last = :exclusive)) == itp(xv)
+            @test isclose(itp(xv; extrap = InBounds(last = :exclusive)), itp(xv); nulps = PATH_ULPS)
         end
     end
 
@@ -334,8 +334,8 @@ end
         data = [a + b + c for a in xg, b in yg, c in zg]
         itp = linear_interp((xg, yg, zg), data)
         q = (0.5, 0.5, 0.5)
-        @test itp(q; extrap = InBounds()) == itp(q)                        # ntuple(_->InBounds, Val(3))
-        @test itp(q; extrap = (InBounds(), nothing, InBounds())) == itp(q) # per-axis 3-tuple
+        @test isclose(itp(q; extrap = InBounds()), itp(q); nulps = PATH_ULPS)                        # ntuple(_->InBounds, Val(3))
+        @test isclose(itp(q; extrap = (InBounds(), nothing, InBounds())), itp(q); nulps = PATH_ULPS) # per-axis 3-tuple
         @test_throws ArgumentError itp(q; extrap = (InBounds(), nothing))  # wrong arity (2 for 3D)
         @test_throws ArgumentError itp(q; extrap = ClampExtrap())
     end

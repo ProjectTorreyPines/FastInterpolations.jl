@@ -511,19 +511,19 @@ Uses @generated to avoid closure boxing when iterating over heterogeneous grid t
 @generated function _validate_nd_grids(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}) where {N}
     checks = [
         quote
-                ng = length(grids[$i])
-                nd = size(data, $i)
-                if ng != nd
-                    throw(
-                        DimensionMismatch(
-                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
-                        )
+            ng = length(grids[$i])
+            nd = size(data, $i)
+            if ng != nd
+                throw(
+                    DimensionMismatch(
+                        "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
                     )
+                )
             end
-                if ng < 2
-                    throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+            if ng < 2
+                throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
             end
-            end for i in 1:N
+        end for i in 1:N
     ]
 
     return quote

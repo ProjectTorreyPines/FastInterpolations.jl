@@ -38,9 +38,9 @@
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
         q_dv = [
             (
-                    ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
-                    ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
-                ) for i in 1:5
+                ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
+            ) for i in 1:5
         ]
         @test (@inferred linear_interp((xg, yg), data_sv)(q_dv)) isa Vector{SVector{3, D}}
         @test (@inferred cubic_interp((xg, yg), data_sv)(q_dv)) isa Vector{SVector{3, D}}
@@ -103,9 +103,9 @@ end
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
         q_dv = [
             (
-                    ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
-                    ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
-                ) for i in 1:5
+                ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
+            ) for i in 1:5
         ]
         @test (@inferred linear_interp((xg, yg), data_sv, q_dv)) isa Vector{SVector{3, D}}
         @test (@inferred cubic_interp((xg, yg), data_sv, q_dv)) isa Vector{SVector{3, D}}
@@ -615,9 +615,9 @@ end
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
         q_dv = [
             (
-                    ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
-                    ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
-                ) for i in 1:5
+                ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
+            ) for i in 1:5
         ]
         let l = linear_interp((xg, yg), data_sv), c = cubic_interp((xg, yg), data_sv),
                 k = constant_interp((xg, yg), data_sv)

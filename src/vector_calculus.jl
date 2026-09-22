@@ -119,9 +119,9 @@ end
     ) where {Tg, Tv, N}
     deriv_calls = [
         begin
-                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
+            ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+            :(_eval_at_cell(itp, cell, $ops))
+        end for i in 1:N
     ]
     # Gradient component i is ∂f/∂xᵢ — the FILL value carries the zero (a NaN
     # fill poisons OOB derivatives, matching the 1D/ND eval rule; interior data
@@ -206,9 +206,9 @@ end
     ) where {Tg, Tv, N}
     stmts = [
         begin
-                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
-                :(G[$i] = _eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
+            ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+            :(G[$i] = _eval_at_cell(itp, cell, $ops))
+        end for i in 1:N
     ]
 
     return quote
@@ -308,9 +308,9 @@ end
 
     deriv_calls = [
         begin
-                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
+            ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+            :(_eval_at_cell(itp, cell, $ops))
+        end for i in 1:N
     ]
     # Gradient component i is ∂f/∂xᵢ — scale the value-space zero by `inv(gridᵢ unit)`
     # so a unit-grid FillExtrap OOB returns `value/gridᵢ` (identity on Real grids).
@@ -436,10 +436,10 @@ end
     # stores, where `zero(eltype(H))` has no method.
     oob_stmts = [
         :(
-                H[$i, $j] = 0 * zref *
+            H[$i, $j] = 0 * zref *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1)) *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$j])), DerivOp(1))
-            )
+        )
             for i in 1:N for j in 1:N
     ]
 
@@ -556,10 +556,10 @@ end
     # no method for abstract-eltype stores (`Matrix{Any}`), which are accepted.
     oob_stmts = [
         :(
-                H[$i, $j] = 0 * zref *
+            H[$i, $j] = 0 * zref *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$i])), DerivOp(1)) *
                 _deriv_oneunit(oneunit(eltype(itp.grids[$j])), DerivOp(1))
-            )
+        )
             for i in 1:N for j in 1:N
     ]
 
@@ -655,9 +655,9 @@ end
     ) where {Tg, Tv, N}
     deriv_calls = [
         begin
-                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
+            ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+            :(_eval_at_cell(itp, cell, $ops))
+        end for i in 1:N
     ]
 
     return quote

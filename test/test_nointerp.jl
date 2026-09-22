@@ -474,9 +474,9 @@ end
         )
         ref = [
             interp(
-                    (x, z), data_3d[:, 10, :], (xq_batch[i], zq_batch[i]);
-                    method = (CubicInterp(), LinearInterp())
-                )
+                (x, z), data_3d[:, 10, :], (xq_batch[i], zq_batch[i]);
+                method = (CubicInterp(), LinearInterp())
+            )
                 for i in 1:30
         ]
         @test output ≈ ref rtol = 1.0e-13
@@ -1529,9 +1529,9 @@ end
         )
         ref = [
             interp(
-                    (x, y), data_2d, (xqi, y[10]);
-                    method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
-                ) for xqi in xq_b
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
         @test any(!iszero, out)  # must NOT be all zeros
@@ -1546,9 +1546,9 @@ end
         )
         ref = [
             interp(
-                    (x, y), data_2d, (xqi, y[10]);
-                    method = (CubicInterp(), CubicInterp())
-                ) for xqi in xq_b
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp())
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
     end
@@ -1563,9 +1563,9 @@ end
         )
         ref = [
             interp(
-                    (x, y), data_2d, (xqi, y[10]);
-                    method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
-                ) for xqi in xq_b
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
     end
@@ -1582,10 +1582,10 @@ end
         )
         ref = [
             interp(
-                    (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
-                    method = (CubicInterp(), NoInterp(), LinearInterp()),
-                    deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
-                ) for xqi in xq_b
+                (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
+                method = (CubicInterp(), NoInterp(), LinearInterp()),
+                deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-12
     end

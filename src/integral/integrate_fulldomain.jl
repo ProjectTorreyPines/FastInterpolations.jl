@@ -325,14 +325,14 @@ end
     ) where {N}
     exprs = [
         quote
-                let g = grids[$d], il = idx_lo[$d], ih = idx_hi[$d]
-                    xLl = @inbounds g[il]
-                    xLh = @inbounds g[ih]
-                    xRh = @inbounds g[ih + 1]
-                    u0, u1 = promote(max(lo2[$d], xLl) - xLl, min(hi2[$d], xRh) - xLh)
-                    _BoundedAxisSpec(il, ih, u0, u1)
+            let g = grids[$d], il = idx_lo[$d], ih = idx_hi[$d]
+                xLl = @inbounds g[il]
+                xLh = @inbounds g[ih]
+                xRh = @inbounds g[ih + 1]
+                u0, u1 = promote(max(lo2[$d], xLl) - xLl, min(hi2[$d], xRh) - xLh)
+                _BoundedAxisSpec(il, ih, u0, u1)
             end
-            end for d in 1:N
+        end for d in 1:N
     ]
     return :(($(exprs...),))
 end

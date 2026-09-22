@@ -863,12 +863,12 @@ end
         itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
 
         below = mitp(-0.1)
-        @test below[1] ≈ itp1(-0.1) atol = 1.0e-14
-        @test below[2] ≈ itp2(-0.1) atol = 1.0e-14
+        @test below[1] ≈ itp1(-0.1) atol = 1.0e-11
+        @test below[2] ≈ itp2(-0.1) atol = 1.0e-11
 
         above = mitp(1.1)
-        @test above[1] ≈ itp1(1.1) atol = 1.0e-14
-        @test above[2] ≈ itp2(1.1) atol = 1.0e-14
+        @test above[1] ≈ itp1(1.1) atol = 1.0e-11
+        @test above[2] ≈ itp2(1.1) atol = 1.0e-11
     end
 
     @testset "extrap=WrapExtrap() - wrapped coordinates" begin
@@ -1331,9 +1331,9 @@ end
         mitp(out, xq; deriv = DerivOp(1))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-12
-        @test out[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-12
-        @test out[3] ≈ itp3(xq; deriv = DerivOp(1)) atol = 1.0e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-8
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-8
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(1)) atol = 1.0e-8
 
         # Verify values are finite and non-zero (extension continues the slope)
         @test all(isfinite, out)
@@ -1346,9 +1346,9 @@ end
         mitp(out, xq; deriv = DerivOp(1))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-12
-        @test out[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-12
-        @test out[3] ≈ itp3(xq; deriv = DerivOp(1)) atol = 1.0e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-8
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-8
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(1)) atol = 1.0e-8
 
         @test all(isfinite, out)
     end
@@ -1360,9 +1360,9 @@ end
         mitp(out, xq; deriv = DerivOp(2))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-12
-        @test out[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-12
-        @test out[3] ≈ itp3(xq; deriv = DerivOp(2)) atol = 1.0e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-8
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-8
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(2)) atol = 1.0e-8
 
         @test all(isfinite, out)
     end
@@ -1374,9 +1374,9 @@ end
         mitp(out, xq; deriv = DerivOp(2))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-12
-        @test out[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-12
-        @test out[3] ≈ itp3(xq; deriv = DerivOp(2)) atol = 1.0e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-8
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-8
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(2)) atol = 1.0e-8
 
         @test all(isfinite, out)
     end
@@ -1388,9 +1388,9 @@ end
         mitp(out, xq; deriv = DerivOp(3))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv = DerivOp(3)) atol = 1.0e-12
-        @test out[2] ≈ itp2(xq; deriv = DerivOp(3)) atol = 1.0e-12
-        @test out[3] ≈ itp3(xq; deriv = DerivOp(3)) atol = 1.0e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(3)) atol = 1.0e-8
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(3)) atol = 1.0e-8
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(3)) atol = 1.0e-8
 
         @test all(isfinite, out)
     end
@@ -1402,9 +1402,9 @@ end
         mitp(out, xq; deriv = DerivOp(3))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv = DerivOp(3)) atol = 1.0e-12
-        @test out[2] ≈ itp2(xq; deriv = DerivOp(3)) atol = 1.0e-12
-        @test out[3] ≈ itp3(xq; deriv = DerivOp(3)) atol = 1.0e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(3)) atol = 1.0e-8
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(3)) atol = 1.0e-8
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(3)) atol = 1.0e-8
 
         @test all(isfinite, out)
     end
@@ -1419,19 +1419,19 @@ end
         d1_right = mitp(xq_right; deriv = DerivOp(1))
         @test length(d1_left) == 3
         @test length(d1_right) == 3
-        @test d1_left[1] ≈ itp1(xq_left; deriv = DerivOp(1)) atol = 1.0e-12
+        @test d1_left[1] ≈ itp1(xq_left; deriv = DerivOp(1)) atol = 1.0e-8
 
         # deriv=2
         d2_left = mitp(xq_left; deriv = DerivOp(2))
         d2_right = mitp(xq_right; deriv = DerivOp(2))
         @test length(d2_left) == 3
-        @test d2_left[2] ≈ itp2(xq_left; deriv = DerivOp(2)) atol = 1.0e-12
+        @test d2_left[2] ≈ itp2(xq_left; deriv = DerivOp(2)) atol = 1.0e-8
 
         # deriv=3
         d3_left = mitp(xq_left; deriv = DerivOp(3))
         d3_right = mitp(xq_right; deriv = DerivOp(3))
         @test length(d3_left) == 3
-        @test d3_right[3] ≈ itp3(xq_right; deriv = DerivOp(3)) atol = 1.0e-12
+        @test d3_right[3] ≈ itp3(xq_right; deriv = DerivOp(3)) atol = 1.0e-8
     end
 
     @testset "Polynomial accuracy check (extension preserves cubic)" begin

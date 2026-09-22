@@ -80,11 +80,11 @@ end
     ) where {T1, Trest, N}
     exprs = [
         :(
-                _axis_anchors_pooled(
-                    pool, methods[$d], grids[$d], targets[$d], extraps[$d], $d,
-                    ops[$d], $(d == 1 ? :T1 : :Trest)
-                )
+            _axis_anchors_pooled(
+                pool, methods[$d], grids[$d], targets[$d], extraps[$d], $d,
+                ops[$d], $(d == 1 ? :T1 : :Trest)
             )
+        )
             for d in 1:N
     ]
     return :(($(exprs...),))

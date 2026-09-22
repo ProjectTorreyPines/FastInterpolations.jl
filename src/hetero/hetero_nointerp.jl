@@ -35,9 +35,9 @@ Example: `data` is 3D, `query = (0.5, GridIdx(5), 0.3)` → `@view data[:, 5, :]
     idx_exprs = [d in grididx_dims ? :(query[$d].idx) : :(:) for d in 1:N]
     bounds_checks = [
         :(
-                1 <= query[$d].idx <= size(data, $d) ||
+            1 <= query[$d].idx <= size(data, $d) ||
                 _throw_grididx_oob($d, query[$d].idx, size(data, $d))
-            )
+        )
             for d in grididx_dims
     ]
     return quote
@@ -225,9 +225,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     # Use grid length as the canonical size (works for both _HeteroPartials and raw Array)
     bounds_checks = [
         :(
-                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+            1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                 _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-            )
+        )
             for d in nointerp_dims
     ]
 
@@ -645,9 +645,9 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
         # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
         bounds_checks = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         return quote
@@ -705,9 +705,9 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
         # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
         bounds_checks = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         return quote
@@ -775,9 +775,9 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
         # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
         bounds_checks = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         return quote
@@ -821,18 +821,18 @@ Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated ax
 
     terms = [
         begin
-                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
-                :(_eval_nointerp(itp, query, $ops, itp.searches, hint))
-            end for i in 1:N if !(i in nointerp_dims)
+            ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+            :(_eval_nointerp(itp, query, $ops, itp.searches, hint))
+        end for i in 1:N if !(i in nointerp_dims)
     ]
 
     if isempty(terms)
         # All-NoInterp: validate query before returning zero
         bounds_checks_lap = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         # Use promoted type for zero (handles Float32 data + Float64 query)
@@ -874,9 +874,9 @@ expand to standard batch format and let the normal path handle them.
     N = fieldcount(Q)
     exprs = [
         if fieldtype(Q, d) <: GridIdx && !(fieldtype(M, d) <: NoInterp)
-                :(fill(grids[$d][queries[$d].idx], nq))
+            :(fill(grids[$d][queries[$d].idx], nq))
         else
-                :(queries[$d])
+            :(queries[$d])
         end
             for d in 1:N
     ]

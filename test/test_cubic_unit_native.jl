@@ -5,10 +5,12 @@
 # the NATIVE build/solve seam directly (internal-path RED strategy). After the
 # twin is deleted, `cubic_interp` itself lands on these paths.
 #
-# Unit conventions: SI-coherent u"s"/u"W" so stripped-vs-native mantissas are
-# bit-identical (conversion factor exactly 1.0) — pins use `===` on ustrip.
+# Unit conventions: SI-coherent u"s"/u"W", so the conversion factor is exactly 1.0
+# and both paths do the same arithmetic on the same mantissas. Still `isclose`, not
+# `===`: the shared kernel's `muladd` contracts to an FMA per target and inlining
+# context (that changed between Julia 1.12 and 1.13).
 
-@testitem "cubic unit native: derivative-BC builder + solve (internal seam)" begin
+@testitem "cubic unit native: derivative-BC builder + solve (internal seam)" setup = [Basic] begin
     using Unitful
     const FI = FastInterpolations
 
@@ -45,12 +47,12 @@
             zf = Vector{Float64}(undef, length(yf))
             FI._solve_system!(zf, cache_f, yf, FI.BCPair(lf, rf))
 
-            @test all(i -> ustrip(u"W/s^2", zu[i]) === zf[i], eachindex(zf))
+            @test all(i -> isclose(ustrip(u"W/s^2", zu[i]), zf[i]; nulps = SOLVE_ULPS), eachindex(zf))
         end
     end
 end
 
-@testitem "cubic unit native: impl seam end-to-end (normalized + payload BCs)" begin
+@testitem "cubic unit native: impl seam end-to-end (normalized + payload BCs)" setup = [Basic] begin
     using Unitful
     const FI = FastInterpolations
 
@@ -74,9 +76,9 @@ end
             ref = cubic_interp(xf, yf; bc = bcf, autocache = false)
 
             @test eltype(itp_u.cache.x) === typeof(1.0u"s")
-            @test all(i -> ustrip(u"W/s^2", itp_u.z[i]) === ref.z[i], eachindex(ref.z))
-            @test itp_u(2.2u"s") === ref(2.2) * u"W"
-            @test itp_u(0.35u"s") === ref(0.35) * u"W"
+            @test all(i -> isclose(ustrip(u"W/s^2", itp_u.z[i]), ref.z[i]; nulps = SOLVE_ULPS), eachindex(ref.z))
+            @test isclose(itp_u(2.2u"s"), ref(2.2) * u"W"; nulps = PATH_ULPS)
+            @test isclose(itp_u(0.35u"s"), ref(0.35) * u"W"; nulps = PATH_ULPS)
         end
     end
 
@@ -94,13 +96,12 @@ end
     end
 end
 
-@testitem "cubic Real release-parity pins (per BC)" begin
-    # Literals generated from the pre-Phase-2 branch (Real path proven
-    # bit-identical to the v0.4.17 release by the Phase 1 A/B). The z pins stay
-    # `===`: the solve is plain arithmetic, bit-stable across Julia versions and
-    # platforms. The EVAL kernels are muladd chains whose fma/SIMD lowering
-    # shifts a few tens of ULPs per Julia/LLVM version and ISA, so the eval
-    # pins assert rtol (the bit-level eval A/B lives on the minting machine).
+@testitem "cubic Real release-parity pins (per BC)" setup = [Basic] begin
+    # Literals generated from the pre-Phase-2 branch (Real path matched the v0.4.17
+    # release by the Phase 1 A/B). The z pins use `SOLVE_ULPS`, not `===`: the moment
+    # solve is a muladd chain, so contraction differences accumulate along the sweep
+    # (Julia 1.13 shifted these on x86_64 where 1.12 had not). The eval kernels move
+    # further still, hence rtol there.
     xf = [0.0, 1.0, 2.5, 3.0, 4.5]
     yf = [1.0, 2.0, 0.5, 3.0, 2.5]
 
@@ -145,14 +146,14 @@ end
     for (bc, z_pin, v22, v035) in pins
         @testset "$(typeof(bc))" begin
             itp = cubic_interp(xf, yf; bc = bc, autocache = false)
-            @test all(i -> itp.z[i] === z_pin[i], eachindex(z_pin))
+            @test all(i -> isclose(itp.z[i], z_pin[i]; nulps = SOLVE_ULPS), eachindex(z_pin))
             @test itp(2.2) ≈ v22 rtol = 1.0e-13
             @test itp(0.35) ≈ v035 rtol = 1.0e-13
         end
     end
 end
 
-@testitem "cubic unit one-shot ≡ persistent (fork-free contract)" begin
+@testitem "cubic unit one-shot ≡ persistent (fork-free contract)" setup = [Basic] begin
     using Unitful
     const FI = FastInterpolations
 
@@ -172,31 +173,31 @@ end
         )
         @testset "$nm" begin
             itp = cubic_interp(xu, yw; bc = bc)
-            @test cubic_interp(xu, yw, q; bc = bc) === itp(q)
+            @test isclose(cubic_interp(xu, yw, q; bc = bc), itp(q); nulps = PATH_ULPS)
             vv = cubic_interp(xu, yw, qv; bc = bc)
             pv = itp(qv)
-            @test all(i -> vv[i] === pv[i], eachindex(pv))
+            @test all(i -> isclose(vv[i], pv[i]; nulps = PATH_ULPS), eachindex(pv))
             out = similar(pv)
             cubic_interp!(out, xu, yw, qv; bc = bc)
-            @test all(i -> out[i] === pv[i], eachindex(pv))
+            @test all(i -> isclose(out[i], pv[i]; nulps = PATH_ULPS), eachindex(pv))
         end
     end
 
     @testset "PeriodicBC one-shot" begin
         ywp = [1.0, 2.0, 0.5, 3.0, 1.0] .* u"W"
         itp = cubic_interp(xu, ywp; bc = PeriodicBC())
-        @test cubic_interp(xu, ywp, q; bc = PeriodicBC()) === itp(q)
+        @test isclose(cubic_interp(xu, ywp, q; bc = PeriodicBC()), itp(q); nulps = PATH_ULPS)
     end
 
     @testset "Series one-shot" begin
         sitp = cubic_interp(xu, Series(yw, y2))
         sv = cubic_interp(xu, Series(yw, y2), q)
         sp = sitp(q)
-        @test all(i -> sv[i] === sp[i], eachindex(sp))
+        @test all(i -> isclose(sv[i], sp[i]; nulps = PATH_ULPS), eachindex(sp))
     end
 end
 
-@testitem "cubic Series unit native: self-consistent cache + payload spaces + periodic" begin
+@testitem "cubic Series unit native: self-consistent cache + payload spaces + periodic" setup = [Basic] begin
     using Unitful
     const FI = FastInterpolations
 
@@ -212,8 +213,8 @@ end
         ref = cubic_interp(xf, Series(yf, y2f))
         v = sitp(2.2u"s")
         vr = ref(2.2)
-        @test v[1] === vr[1] * u"W"
-        @test v[2] === vr[2] * u"W"
+        @test isclose(v[1], vr[1] * u"W"; nulps = PATH_ULPS)
+        @test isclose(v[2], vr[2] * u"W"; nulps = PATH_ULPS)
         @test eltype(sitp.z) === typeof(1.0u"W/s^2")
         # The cache must be self-consistent: a unit axis carries a unit-typed
         # factorization (the twin paired a Float64 thomas with a unit axis and
@@ -229,8 +230,8 @@ end
         # correctly-spaced zeros.
         sitp = cubic_interp(xu, Series(yw, y2); bc = ZeroCurvBC())
         ref = cubic_interp(xf, Series(yf, y2f); bc = ZeroCurvBC())
-        @test sitp(0.35u"s")[1] === ref(0.35)[1] * u"W"
-        @test sitp(2.2u"s")[2] === ref(2.2)[2] * u"W"
+        @test isclose(sitp(0.35u"s")[1], ref(0.35)[1] * u"W"; nulps = PATH_ULPS)
+        @test isclose(sitp(2.2u"s")[2], ref(2.2)[2] * u"W"; nulps = PATH_ULPS)
     end
 
     @testset "per-series BC array (unit payloads)" begin
@@ -246,8 +247,8 @@ end
         ref = cubic_interp(xf, Series(yf, y2f); bc = bcs_f)
         v = sitp(2.2u"s")
         vr = ref(2.2)
-        @test v[1] === vr[1] * u"W"
-        @test v[2] === vr[2] * u"W"
+        @test isclose(v[1], vr[1] * u"W"; nulps = PATH_ULPS)
+        @test isclose(v[2], vr[2] * u"W"; nulps = PATH_ULPS)
     end
 
     @testset "PeriodicBC Series (new capability — twin rejected this)" begin
@@ -266,7 +267,7 @@ end
     end
 end
 
-@testitem "cubic unit native: periodic S-M build + solve" begin
+@testitem "cubic unit native: periodic S-M build + solve" setup = [Basic] begin
     using Unitful
     const FI = FastInterpolations
 
@@ -287,9 +288,9 @@ end
         @test eltype(itp_u.cache.q) === typeof(inv(1.0u"s"))
         @test eltype(itp_u.cache.thomas.dl) === Float64
         @test eltype(itp_u.cache.thomas.inv_d) === typeof(inv(1.0u"s"))
-        @test all(i -> ustrip(u"W/s^2", itp_u.z[i]) === ref.z[i], eachindex(ref.z))
-        @test itp_u(2.2u"s") === ref(2.2) * u"W"
-        @test itp_u(6.0u"s") === ref(6.0) * u"W"   # wrap extrapolation
+        @test all(i -> isclose(ustrip(u"W/s^2", itp_u.z[i]), ref.z[i]; nulps = SOLVE_ULPS), eachindex(ref.z))
+        @test isclose(itp_u(2.2u"s"), ref(2.2) * u"W"; nulps = PATH_ULPS)
+        @test isclose(itp_u(6.0u"s"), ref(6.0) * u"W"; nulps = PATH_ULPS)   # wrap extrapolation
     end
 
     @testset "exclusive: explicit unit period" begin
@@ -297,8 +298,8 @@ end
         ye = [1.0, 2.0, 0.5, 3.0] .* u"W"
         itp_u = cubic_interp(xe, ye; bc = PeriodicBC(endpoint = :exclusive, period = 4.5u"s"), autocache = false)
         ref = cubic_interp([0.0, 1.0, 2.5, 3.0], [1.0, 2.0, 0.5, 3.0]; bc = PeriodicBC(endpoint = :exclusive, period = 4.5), autocache = false)
-        @test itp_u(2.2u"s") === ref(2.2) * u"W"
-        @test itp_u(4.0u"s") === ref(4.0) * u"W"   # seam cell
+        @test isclose(itp_u(2.2u"s"), ref(2.2) * u"W"; nulps = PATH_ULPS)
+        @test isclose(itp_u(4.0u"s"), ref(4.0) * u"W"; nulps = PATH_ULPS)   # seam cell
     end
 
     @testset "periodic bank: unit grids hit" begin
@@ -309,7 +310,7 @@ end
     end
 end
 
-@testitem "cubic unit native: structural Real-zero BC payloads rehydrate (cache + BCPair)" begin
+@testitem "cubic unit native: structural Real-zero BC payloads rehydrate (cache + BCPair)" setup = [Basic] begin
     using Unitful
 
     xu = [0.0, 1.0, 2.5, 3.0, 4.5] .* u"s"
@@ -326,14 +327,14 @@ end
             )
             cache = CubicSplineCache(xu; bc = bc)
             itp = cubic_interp(cache, yw)
-            @test itp(q) === ref(q)
+            @test isclose(itp(q), ref(q); nulps = PATH_ULPS)
         end
     end
 
     @testset "main path: BCPair with structural Real zeros" begin
         ref = cubic_interp(xu, yw; bc = ZeroCurvBC())
         itp = cubic_interp(xu, yw; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
-        @test itp(q) === ref(q)
+        @test isclose(itp(q), ref(q); nulps = PATH_ULPS)
     end
 
     @testset "nonzero unitless payload stays rejected (actionable error)" begin
@@ -349,7 +350,7 @@ end
     end
 end
 
-@testitem "cubic unit native: bare-PointBC + Series-array Real-zero payloads rehydrate" begin
+@testitem "cubic unit native: bare-PointBC + Series-array Real-zero payloads rehydrate" setup = [Basic] begin
     using Unitful
 
     # The scalar `BCPair` 3-arg normalize rehydrates structural Real zeros, but two
@@ -365,22 +366,22 @@ end
 
     @testset "plain 1D: scalar bare Deriv2(0.0) ≡ ZeroCurvBC" begin
         itp = cubic_interp(xu, yw; bc = Deriv2(0.0))
-        @test itp(q) === ref(q)
+        @test isclose(itp(q), ref(q); nulps = PATH_ULPS)
     end
 
     @testset "Series: scalar bare Deriv2(0.0)" begin
         sitp = cubic_interp(xu, S; bc = Deriv2(0.0))
-        @test sitp(q)[1] === ref(q)
+        @test isclose(sitp(q)[1], ref(q); nulps = PATH_ULPS)
     end
 
     @testset "Series: [Deriv2(0.0)] vector (general grid-aware arm)" begin
         sitp = cubic_interp(xu, S; bc = [Deriv2(0.0)])
-        @test sitp(q)[1] === ref(q)
+        @test isclose(sitp(q)[1], ref(q); nulps = PATH_ULPS)
     end
 
     @testset "Series: [BCPair(Deriv2(0.0), Deriv2(0.0))] (Vector{BCPair} solve arm)" begin
         sitp = cubic_interp(xu, S; bc = [BCPair(Deriv2(0.0), Deriv2(0.0))])
-        @test sitp(q)[1] === ref(q)
+        @test isclose(sitp(q)[1], ref(q); nulps = PATH_ULPS)
     end
 
     @testset "nonzero unitless payloads keep the actionable rejection on the new arms" begin

@@ -5,11 +5,14 @@
 # baseline and green after. Two assertions carry real signal for the refactor:
 #   1. value/deriv match an INDEPENDENT manual multilinear reference (catches any
 #      idx/α/stencil mistake in the fast path), and
-#   2. the InBounds path is BIT-IDENTICAL (`===`) to the NoExtrap path on the same
-#      `_UnitStep` grid for in-domain queries — this fails the moment the fast
-#      path's arithmetic deviates by even one ULP from the generic path.
+#   2. the InBounds path agrees with NoExtrap on the same `_UnitStep` grid to
+#      within `PATH_ULPS`. They share one kernel, so anything larger means a
+#      different idx/α/stencil. Not `===`: the kernel's `muladd` may or may not
+#      contract to an FMA per target and inlining context (it flipped between
+#      Julia 1.12 and 1.13). Search-stage pins below stay `===` — integer and
+#      exactly-representable arithmetic really is deterministic.
 
-@testitem "UnitStep InBounds locate — 2D matches reference, bit-identical to NoExtrap" begin
+@testitem "UnitStep InBounds locate — 2D matches reference, ULP-identical to NoExtrap" setup = [Basic] begin
     using FastInterpolations: InBounds, DerivOp, GridIdx
 
     # Independent bilinear reference on unit-step axes (node index == position).
@@ -32,7 +35,7 @@
     @testset "value: matches reference and === NoExtrap" begin
         for q in qs
             @test inb(q) ≈ ref_bilin(axx, axy, data, q...)
-            @test inb(q) === nox(q)          # bit-identical to the generic path
+            @test isclose(inb(q), nox(q); nulps = PATH_ULPS)   # same kernel as the generic path
         end
     end
 
@@ -52,14 +55,14 @@
                 αx * (data[ix + 1, iy + 1] - data[ix + 1, iy])
             @test inb(q; deriv = DerivOp(1, 0)) ≈ dvdx
             @test inb(q; deriv = DerivOp(0, 1)) ≈ dvdy
-            @test inb(q; deriv = DerivOp(1, 0)) === nox(q; deriv = DerivOp(1, 0))
-            @test inb(q; deriv = DerivOp(0, 1)) === nox(q; deriv = DerivOp(0, 1))
+            @test isclose(inb(q; deriv = DerivOp(1, 0)), nox(q; deriv = DerivOp(1, 0)); nulps = PATH_ULPS)
+            @test isclose(inb(q; deriv = DerivOp(0, 1)), nox(q; deriv = DerivOp(0, 1)); nulps = PATH_ULPS)
         end
     end
 
     @testset "GridIdx queries === NoExtrap" begin
-        @test inb((GridIdx(7), 8.5)) === nox((GridIdx(7), 8.5))
-        @test inb((3.25, GridIdx(8))) === nox((3.25, GridIdx(8)))
+        @test isclose(inb((GridIdx(7), 8.5)), nox((GridIdx(7), 8.5)); nulps = PATH_ULPS)
+        @test isclose(inb((3.25, GridIdx(8))), nox((3.25, GridIdx(8))); nulps = PATH_ULPS)
         @test inb((GridIdx(1), GridIdx(1))) === data[1, 1]
     end
 
@@ -80,7 +83,7 @@
     end
 end
 
-@testitem "UnitStep InBounds locate — 3D matches reference, bit-identical to NoExtrap" begin
+@testitem "UnitStep InBounds locate — 3D matches reference, ULP-identical to NoExtrap" setup = [Basic] begin
     using FastInterpolations: InBounds
 
     function ref_trilin(ax, data, qx, qy, qz)
@@ -103,14 +106,14 @@ end
 
     for q in ((1.0, 1.0, 1.0), (2.3, 4.1, 5.9), (4.999, 5.5, 6.001), (5.0, 6.0, 7.0))
         @test inb(q) ≈ ref_trilin(ax, data, q...)
-        @test inb(q) === nox(q)
+        @test isclose(inb(q), nox(q); nulps = PATH_ULPS)
     end
 end
 
-@testitem "per-axis extrap: lean search applies per axis (mixed InBounds/Clamp)" begin
+@testitem "per-axis extrap: lean search applies per axis (mixed InBounds/Clamp)" setup = [Basic] begin
     # The lean InBounds search is threaded per-axis through `_search_axis_adaptive`, so a
     # mixed `(InBounds, ClampExtrap)` interpolant leans ONLY the InBounds axis while the
-    # Clamp axis keeps its domain handling. In-domain queries must stay bit-identical.
+    # Clamp axis keeps its domain handling. In-domain queries must agree to a few ULP.
     using FastInterpolations: InBounds, ClampExtrap
 
     data = [0.1i + 0.3j + 0.01i * j for i in 1:7, j in 1:8]
@@ -121,18 +124,18 @@ end
 
     @testset "in-domain: InBounds (lean) axis === domain-checked paths" begin
         for q in ((1.5, 3.5), (4.25, 6.75), (7.0, 9.0))
-            @test mixed(q) === nox(q)
-            @test mixed(q) === allclamp(q)
+            @test isclose(mixed(q), nox(q); nulps = PATH_ULPS)
+            @test isclose(mixed(q), allclamp(q); nulps = PATH_ULPS)
         end
     end
 
     @testset "Clamp axis still clamps while InBounds axis stays in-domain" begin
         # y above the grid → Clamp axis pins to last; x (InBounds) in-domain, no check.
-        @test mixed((3.5, 100.0)) === allclamp((3.5, 100.0))
+        @test isclose(mixed((3.5, 100.0)), allclamp((3.5, 100.0)); nulps = PATH_ULPS)
     end
 end
 
-@testitem "1D InBounds lean vs ExtendExtrap OOB — lean only the genuinely-in-domain path" begin
+@testitem "1D InBounds lean vs ExtendExtrap OOB — lean only the genuinely-in-domain path" setup = [Basic] begin
     # RED pin for the 1D lean search. The lean `_search_direct_inbounds` uses a ONE-SIDED
     # clamp (no lower `max(·,1)`), valid ONLY when the query is in-domain. `ExtendExtrap`
     # reaches the eval core with an OOB query and extrapolates off the *boundary cell* — it
@@ -148,12 +151,12 @@ end
     q_left = 0.4                                  # OOB-left  (< x[1] = 1)
     q_right = 13.7                                # OOB-right (> x[end] = 12)
 
-    @testset "genuine InBounds === NoExtrap in-domain (lean is bit-identical)" begin
+    @testset "genuine InBounds === NoExtrap in-domain (lean changes no value)" begin
         for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
             itp_ib = f(x, y; extrap = InBounds())
             itp_ne = f(x, y)
             for q in qs_in
-                @test itp_ib(q) === itp_ne(q)
+                @test isclose(itp_ib(q), itp_ne(q); nulps = PATH_ULPS)
             end
         end
     end
@@ -177,7 +180,7 @@ end
         hib = hermite_interp(x, y, dy; extrap = InBounds())
         hne = hermite_interp(x, y, dy)
         for q in qs_in
-            @test hib(q) === hne(q)
+            @test isclose(hib(q), hne(q); nulps = PATH_ULPS)
         end
         hext = hermite_interp(x, y, dy; extrap = ExtendExtrap())
         @test isfinite(hext(q_left))
@@ -240,10 +243,10 @@ end
     end
 end
 
-@testitem "one-shot InBounds lean search === NoExtrap (all methods, scalar + batch)" begin
+@testitem "one-shot InBounds lean search === NoExtrap (all methods, scalar + batch)" setup = [Basic] begin
     # The one-shot path threads `extraps` into its search (`_search_all_axis_intervals`
     # for linear/constant, `_search_all_intervals` for cubic/quad), so an InBounds range
-    # axis takes the lean `_search_direct_inbounds`. This must be bit-identical to the
+    # axis takes the lean `_search_direct_inbounds`. This must agree to a few ULP with the
     # generic NoExtrap one-shot for in-domain queries — a characterization test (green
     # before and after; the win is perf, verified by benchmark).
     using FastInterpolations: InBounds
@@ -255,21 +258,21 @@ end
     qys = Float64[q[2] for q in qs]
     IBt = (InBounds(), InBounds())
 
-    @testset "scalar one-shot: InBounds === NoExtrap (bit-identical)" begin
+    @testset "scalar one-shot: InBounds === NoExtrap (to a few ULP)" begin
         for oneshot in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
             for q in qs
-                @test oneshot((axx, axy), data, q; extrap = IBt) === oneshot((axx, axy), data, q)
+                @test isclose(oneshot((axx, axy), data, q; extrap = IBt), oneshot((axx, axy), data, q); nulps = PATH_ULPS)
             end
         end
     end
 
-    @testset "batch one-shot: InBounds === NoExtrap (bit-identical)" begin
+    @testset "batch one-shot: InBounds === NoExtrap (to a few ULP)" begin
         for oneshot! in (linear_interp!, cubic_interp!, quadratic_interp!, constant_interp!)
             o_ib = similar(qxs)
             o_ne = similar(qxs)
             oneshot!(o_ib, (axx, axy), data, (qxs, qys); extrap = IBt)
             oneshot!(o_ne, (axx, axy), data, (qxs, qys))
-            @test o_ib == o_ne
+            @test isclose(o_ib, o_ne; nulps = PATH_ULPS)
         end
     end
 end
@@ -332,7 +335,7 @@ end
     end
 end
 
-@testitem "vector (non-uniform) grid InBounds lean === standard (boundary-guard skip)" begin
+@testitem "vector (non-uniform) grid InBounds lean === standard (boundary-guard skip)" setup = [Basic] begin
     # A non-uniform vector grid uses binary search; InBounds drops the `_le(xq,first)` /
     # `_ge(xq,last)` boundary guards (`_search_binary_inbounds`). Bit-identical to NoExtrap
     # for in-domain queries INCLUDING the exact endpoints (where the guards would have
@@ -345,15 +348,15 @@ end
     y = [sin(0.3i) + 0.1i for i in 1:length(xv)]
     qs = (1.0, 2.7, 5.5, 9.5, 12.0)             # in-domain incl. both exact endpoints
 
-    @testset "InBounds === NoExtrap (bit-identical), scalar + vector" begin
+    @testset "InBounds === NoExtrap (to a few ULP), scalar + vector" begin
         for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
             itp_ib = f(xv, y; extrap = InBounds())
             itp_ne = f(xv, y)
             for q in qs
-                @test itp_ib(q) === itp_ne(q)
+                @test isclose(itp_ib(q), itp_ne(q); nulps = PATH_ULPS)
             end
             qv = collect(range(xv[1], xv[end]; length = 16))
-            @test itp_ib(qv) == itp_ne(qv)
+            @test isclose(itp_ib(qv), itp_ne(qv); nulps = PATH_ULPS)
         end
     end
 
@@ -372,7 +375,7 @@ end
     end
 end
 
-@testitem "InBounds at the exact endpoints x[1]/x[end] === NoExtrap (the dangerous x[end])" begin
+@testitem "InBounds at the exact endpoints x[1]/x[end] === NoExtrap (the dangerous x[end])" setup = [Basic] begin
     # InBounds treats the exact endpoints as in-domain, so the lean searches MUST return the
     # same bracketing cell as the standard search — in particular `idx == n-1` at `x[end]`
     # (NOT `n`, which would read `x[idx+1]` out of bounds). This pins the contract for both
@@ -395,8 +398,8 @@ end
         for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
             itp_ib = f(x, y; extrap = InBounds())
             itp_ne = f(x, y)
-            @test itp_ib(first(x)) === itp_ne(first(x))    # x[1]
-            @test itp_ib(last(x)) === itp_ne(last(x))      # x[end] — the dangerous endpoint
+            @test isclose(itp_ib(first(x)), itp_ne(first(x)); nulps = PATH_ULPS)    # x[1]
+            @test isclose(itp_ib(last(x)), itp_ne(last(x)); nulps = PATH_ULPS)      # x[end] — the dangerous endpoint
         end
         # concrete value pin: linear at x[end] is the right-node value (α = 1 on cell [n-1,n])
         @test linear_interp(x, y; extrap = InBounds())(last(x)) ≈ y[end]
@@ -481,10 +484,10 @@ end
     end
 end
 
-@testitem "scalar NoExtrap promotion === InBounds (still throws OOB, Extend still extrapolates)" begin
+@testitem "scalar NoExtrap promotion === InBounds (still throws OOB, Extend still extrapolates)" setup = [Basic] begin
     # After the domain check passes, a scalar 1D NoExtrap eval promotes to InBounds FOR THE SEARCH
     # (lean guard-free search, coupled to the check: `_check_domain` returns InBounds). This must be
-    # bit-identical to an explicit InBounds interpolant on the in-domain contract, while NoExtrap's
+    # value-identical (to a few ULP) to an explicit InBounds interpolant in-domain, while NoExtrap's
     # throw-on-OOB and ExtendExtrap's OOB extrapolation are untouched (Extend passes through the
     # wrapper unchanged and keeps the guarded two-sided-clamp search). Covers all 5 methods on both
     # a uniform range (one-sided range lean) and a non-uniform vector (guard-free binary lean).
@@ -506,7 +509,7 @@ end
             itp_ex = build(ExtendExtrap())
             @testset "$mname/$glbl" begin
                 for q in (first(x), 2.3, 5.0, 7.777, last(x))      # in-domain incl. exact endpoints
-                    @test itp_ne(q) === itp_ib(q)                  # promotion is bit-identical
+                    @test isclose(itp_ne(q), itp_ib(q); nulps = PATH_ULPS)                  # promotion changes no value
                 end
                 @test_throws Exception itp_ne(first(x) - 1.0)      # NoExtrap check survives promotion
                 @test_throws Exception itp_ne(last(x) + 1.0)
@@ -517,9 +520,9 @@ end
     end
 end
 
-@testitem "hetero ND PreCompute InBounds lean === NoExtrap (+ ExtendExtrap-OOB safe)" begin
+@testitem "hetero ND PreCompute InBounds lean === NoExtrap (+ ExtendExtrap-OOB safe)" setup = [Basic] begin
     # Hetero (mixed method per axis) PreCompute paths thread `extraps` into the ND search, so
-    # an InBounds range axis takes the lean direct search — bit-identical, per-axis (no 1D
+    # an InBounds range axis takes the lean direct search — value-identical, per-axis (no 1D
     # shared-core, so an ExtendExtrap axis clamps). Cubic×Linear is a PreCompute hetero.
     using FastInterpolations: InBounds, ExtendExtrap, CubicInterp, LinearInterp
 
@@ -534,14 +537,16 @@ end
         itp_ib = interp((x, y), data; method = method, extrap = IB)
         itp_ne = interp((x, y), data; method = method)
         for q in qs
-            @test itp_ib(q) === itp_ne(q)
+            @test isclose(itp_ib(q), itp_ne(q); nulps = PATH_ULPS)
         end
     end
 
     @testset "one-shot scalar + batch: InBounds === NoExtrap" begin
         for q in qs
-            @test interp((x, y), data, q; method = method, extrap = IB) ===
-                interp((x, y), data, q; method = method)
+            @test isclose(
+                interp((x, y), data, q; method = method, extrap = IB),
+                interp((x, y), data, q; method = method); nulps = PATH_ULPS
+            )
         end
         qxs = Float64[q[1] for q in qs]
         qys = Float64[q[2] for q in qs]
@@ -549,7 +554,7 @@ end
         o_ne = similar(qxs)
         interp!(o_ib, (x, y), data, (qxs, qys); method = method, extrap = IB)
         interp!(o_ne, (x, y), data, (qxs, qys); method = method)
-        @test o_ib == o_ne
+        @test isclose(o_ib, o_ne; nulps = PATH_ULPS)
     end
 
     @testset "ExtendExtrap OOB on a hetero axis stays finite (per-axis search clamps)" begin
@@ -559,11 +564,11 @@ end
     end
 end
 
-@testitem "1D GridIdx query under InBounds on a range grid (ambiguity regression)" begin
+@testitem "1D GridIdx query under InBounds on a range grid (ambiguity regression)" setup = [Basic] begin
     # RED pin: the `(_CachedRange, ::GridIdx, ::InBounds)` search dispatch was ambiguous with the
     # `(AbstractVector, ::GridIdx, ::InBounds)` short-circuit → `itp(GridIdx(k))` on an InBounds
     # range interpolant threw `MethodError: ... is ambiguous` for linear/cubic/quadratic/hermite.
-    # Pin: no throw, a real (non-NaN) value, and bit-identical to the NoExtrap short-circuit.
+    # Pin: no throw, a real (non-NaN) value, and the same value as the NoExtrap short-circuit.
     using FastInterpolations: InBounds
 
     x = 0.0:1.0:10.0
@@ -583,13 +588,13 @@ end
             for k in (1, 4, length(x))          # incl. both exact endpoints
                 r = itp_ib(GridIdx(k))          # pre-fix: MethodError (ambiguous)
                 @test !isnan(r)                 # pre-fix quadratic: NaN (missing _resolve_grididx)
-                @test r === itp_ne(GridIdx(k))  # bit-identical to the NoExtrap short-circuit
+                @test isclose(r, itp_ne(GridIdx(k)); nulps = PATH_ULPS)  # same value as the NoExtrap short-circuit
             end
         end
     end
 end
 
-@testitem "ND one-shot GridIdx under InBounds === NoExtrap, non-NaN (resolve regression)" begin
+@testitem "ND one-shot GridIdx under InBounds === NoExtrap, non-NaN (resolve regression)" setup = [Basic] begin
     # RED pin: the one-shot ND path never resolved a bare `GridIdx(k)` (val = NaN), so the value
     # kernel (`_alpha_of`) produced NaN — for BOTH NoExtrap and InBounds. And under InBounds the
     # lean search treated the GridIdx as a coordinate (searching on NaN, and on a non-unit-step
@@ -613,7 +618,7 @@ end
                     r_ib = f(g, data, q; extrap = IB)
                     r_ne = f(g, data, q)
                     @test !isnan(r_ib)                     # pre-fix: NaN
-                    @test r_ib === r_ne                    # InBounds promotion is bit-identical (one-shot)
+                    @test isclose(r_ib, r_ne; nulps = PATH_ULPS)                    # InBounds promotion changes no value (one-shot)
                     @test r_ib ≈ itp_persist(q)            # matches the (already-correct) persistent path
                 end
             end
@@ -640,7 +645,7 @@ end
     end
 end
 
-@testitem "Hermite ND (PreCompute) InBounds === NoExtrap (persistent + one-shot + batch + GridIdx)" begin
+@testitem "Hermite ND (PreCompute) InBounds === NoExtrap (persistent + one-shot + batch + GridIdx)" setup = [Basic] begin
     # D1: hermite ND (CubicHermiteInterpolantND) changed the same _search_all_intervals sites as the
     # other methods, but was absent from every ND InBounds pin. Its one-shot scalar path had also
     # lagged on validate-only (no promotion) and never resolved GridIdx (→ NaN). Pin the full matrix.
@@ -661,14 +666,14 @@ end
     itp_ne = hermite_interp((x, y), data, p)
     @testset "persistent scalar" begin
         for q in qs
-            @test itp_ib(q) === itp_ne(q)
+            @test isclose(itp_ib(q), itp_ne(q); nulps = PATH_ULPS)
         end
     end
     @testset "one-shot scalar (incl. GridIdx, non-NaN)" begin
         for q in (qs..., (GridIdx(3), 0.3), (GridIdx(2), GridIdx(4)))
             r = hermite_interp((x, y), data, p, q; extrap = IB)
             @test !isnan(r)
-            @test r === hermite_interp((x, y), data, p, q)
+            @test isclose(r, hermite_interp((x, y), data, p, q); nulps = PATH_ULPS)
         end
     end
     @testset "one-shot batch" begin
@@ -687,7 +692,7 @@ end
     end
 end
 
-@testitem "homogeneous ND ExtendExtrap OOB safety on a mixed InBounds/Extend axis (D2)" begin
+@testitem "homogeneous ND ExtendExtrap OOB safety on a mixed InBounds/Extend axis (D2)" setup = [Basic] begin
     # D2: the per-axis `_search_axis_*` dispatch must route an ExtendExtrap ND axis away from the
     # lean one-sided-clamp path (which would BoundsError on an OOB-left query). Covered for 1D and
     # hetero, but not for the homogeneous ND methods whose per-axis code is what changed.
@@ -704,7 +709,7 @@ end
             for q in ((3.5, 1.0), (3.5, 12.0), (8.0, 0.5))
                 r = mixed(q)
                 @test isfinite(r)          # pre-fix hazard: lean one-sided clamp → BoundsError
-                @test r === allext(q)      # InBounds axis in-domain == ExtendExtrap axis in-domain
+                @test isclose(r, allext(q); nulps = PATH_ULPS)      # InBounds axis in-domain == ExtendExtrap axis in-domain
             end
         end
     end
@@ -741,9 +746,10 @@ end
     end
 end
 
-@testitem "AD: Dual query under InBounds === NoExtrap (value + partials, 1D + ND) (D6)" begin
-    # D6: the lean searches compare via `_extract_primal`; a Dual query must give the SAME value and
-    # partials as the NoExtrap path (bit-identical), 1D and ND. `Dual === Dual` compares value+partials.
+@testitem "AD: Dual query under InBounds === NoExtrap (value + partials, 1D + ND) (D6)" setup = [Basic] begin
+    # D6: the lean searches compare via `_extract_primal`; a Dual query must give the same value
+    # and partials as the NoExtrap path. Pinned separately — `isclose` on a `Dual` would compare
+    # the primal only, since `isapprox` bottoms out in a `≤` that reads the primal.
     using FastInterpolations: InBounds
     import ForwardDiff
 
@@ -763,7 +769,12 @@ end
                 ne = build(NoExtrap())
                 for q in (2.3, 5.0, 7.777)
                     d = ForwardDiff.Dual(q, 1.0)
-                    @test ib(d) === ne(d)        # value AND partial bit-identical
+                    r_ib, r_ne = ib(d), ne(d)
+                    @test isclose(ForwardDiff.value(r_ib), ForwardDiff.value(r_ne); nulps = PATH_ULPS)
+                    @test isclose(
+                        collect(ForwardDiff.partials(r_ib)),
+                        collect(ForwardDiff.partials(r_ne)); nulps = PATH_ULPS,
+                    )
                 end
             end
         end
@@ -775,10 +786,8 @@ end
             ib = f(g, data; extrap = (InBounds(), InBounds()))
             ne = f(g, data)
             for q in ([3.3, 5.5], [1.2, 2.4], [6.8, 8.7])
-                # `rtol` not `==`: the interpolant's AD is bit-identical (the direct-Dual 1D test
-                # above pins it with `===`), but `ForwardDiff.gradient`'s closure lets LLVM contract
-                # the shared cubic kernel's FMAs differently across the InBounds vs NoExtrap prologues
-                # on Julia 1.10 — a few-ULP codegen artifact, gone on 1.11+.
+                # Same reason as the direct-Dual pin above, widened: `ForwardDiff.gradient`'s
+                # closure gives LLVM even more room to contract the shared kernel differently.
                 @test ForwardDiff.gradient(v -> ib((v[1], v[2])), q) ≈
                     ForwardDiff.gradient(v -> ne((v[1], v[2])), q) rtol = 1.0e-12
             end
@@ -826,7 +835,7 @@ end
     end
 end
 
-@testitem "one-shot ND explicit hint under InBounds === NoExtrap (D7)" begin
+@testitem "one-shot ND explicit hint under InBounds === NoExtrap (D7)" setup = [Basic] begin
     # D7: the one-shot indices path (`_search_axis_oneshot_hint`) has its own hint write-back, never
     # exercised with an explicit user `Ref` under InBounds. Pin: writes the same non-sentinel interval
     # the NoExtrap one-shot does.
@@ -840,13 +849,13 @@ end
         hne = (Ref(0), Ref(0))
         r_ib = f(g, data, q; extrap = (InBounds(), InBounds()), hint = hib)
         r_ne = f(g, data, q; hint = hne)
-        @test r_ib === r_ne
+        @test isclose(r_ib, r_ne; nulps = PATH_ULPS)
         @test hib[1][] == hne[1][] != 0
         @test hib[2][] == hne[2][] != 0
     end
 end
 
-@testitem "UnitStep lean search — ULP-edge sweep bit-identical (lo==1 and lo≠1)" begin
+@testitem "UnitStep lean search — ULP-edge sweep ULP-identical (lo==1 and lo≠1)" setup = [Basic] begin
     # Characterization sweep for the `_UnitStep` lean search arithmetic: every
     # interior node ±1 ULP + exact nodes + half-cells + endpoints. Two independent
     # references (the scalar NoExtrap path promotes to InBounds since the lean-search
@@ -887,7 +896,7 @@ end
         i_ot = linear_interp((axx, axy), data; extrap = (InBounds(), InBounds()))
         i_ur = linear_interp((1:8, 1:12), data; extrap = (InBounds(), InBounds()))
         for qx in ulp_probes(axx), qy in ulp_probes(axy)
-            @test i_ot((qx, qy)) === i_ur((qx, qy))
+            @test isclose(i_ot((qx, qy)), i_ur((qx, qy)); nulps = PATH_ULPS)
         end
     end
 
@@ -941,7 +950,7 @@ end
         inb = linear_interp((axx, axy), data; extrap = (InBounds(), InBounds()))
         clp = linear_interp((axx, axy), data; extrap = (ClampExtrap(), ClampExtrap()))
         for qx in ulp_probes(axx), qy in ulp_probes(axy)
-            @test inb((qx, qy)) === clp((qx, qy))
+            @test isclose(inb((qx, qy)), clp((qx, qy)); nulps = PATH_ULPS)
         end
     end
 end

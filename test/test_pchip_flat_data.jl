@@ -1,20 +1,14 @@
 @testitem "PCHIP flat data: forward AD and adjoint" begin
-    using FastInterpolations: _pchip_harmonic_mean, _flat_secants
+    using FastInterpolations: _pchip_harmonic_mean
     using LinearAlgebra: dot
     using Random: MersenneTwister
     import ForwardDiff
 
-    # Two adjacent control points holding the SAME value make a secant exactly zero, which is
-    # the degenerate case the harmonic mean guards against (0*0/0). Both derivative paths used
-    # to fall into the branch they were meant to avoid:
-    #
-    #   forward — `iszero(den)` inspects a Dual's PARTIALS, so a seeded flat stretch skipped the
-    #             guard and returned Dual(NaN, NaN): a NaN in the VALUE, not just the derivative;
-    #   adjoint — `sign(0) == sign(0)` takes the active branch, which divides by δ² == 0, so
-    #             `pchip_adjoint` returned NaN on plain Float64 input.
-    #
-    # Ties are ordinary in practice: clamped or saturated data, quantized/rounded inputs, a
-    # plateau in an otherwise monotone profile, optimizer variables resting on a shared bound.
+    # Two adjacent control points holding the SAME value make a secant exactly zero — the
+    # 0*0/0 the harmonic mean guards against — and both derivative paths used to miss that
+    # guard: the forward's `iszero` inspected a Dual's PARTIALS (→ Dual(NaN, NaN), a NaN in
+    # the VALUE); the adjoint's `sign(0) == sign(0)` took the active branch and divided by
+    # δ² == 0. Ties are ordinary: clamped/quantized data, plateaus, shared optimizer bounds.
 
     x = collect(0.0:0.1:0.6)
     xq = collect(range(0.0, 0.6; length = 13))
@@ -24,16 +18,15 @@
         D = ForwardDiff.Dual{:t}
         # value 0 with a live partial: the guard must still fire
         @test _pchip_harmonic_mean(3.0, 3.0, D(0.0, 8.0e-9), D(0.0, 0.0)) == D(0.0, 0.0)
-        @test _flat_secants(D(0.0, 8.0e-9), D(0.0, 0.0))
-        @test !_flat_secants(D(0.0, 0.0), D(1.0, 0.0))
+        # one secant zero, the other live: den != 0, so the ordinary path returns the same zero
+        @test _pchip_harmonic_mean(3.0, 3.0, D(0.0, 0.0), D(1.0, 2.0)) == D(0.0, 0.0)
         # non-degenerate input is untouched by the primal test
         @test _pchip_harmonic_mean(3.0, 3.0, 1.0, 2.0) ≈ 6 * 1.0 * 2.0 / (3.0 * 2.0 + 3.0 * 1.0)
     end
 
     @testset "forward under ForwardDiff" begin
-        # Perturbing points INSIDE the plateau: two live seeds are required to trip the bug —
-        # with a single seed the two secant partials cancel on a uniform grid, restoring
-        # `iszero(den)`, which is why single-variable AD checks never caught it.
+        # INSIDE the plateau. Two live seeds are needed to trip the bug: with one, the secant
+        # partials cancel on a uniform grid and restore `iszero(den)` — why 1-var AD passed.
         g(p) = pchip_interp(x, flat(p[1], p[2]); extrap = ExtendExtrap()).(xq)
         J = ForwardDiff.jacobian(p -> ForwardDiff.value.(g(p)), [0.0, 0.0])
         @test !any(isnan, J)
@@ -43,8 +36,10 @@
 
         # Perturbing points OUTSIDE the plateau: smooth there, so AD must match finite
         # differences (the plateau still exists, exercising the guard).
-        f(p) = pchip_interp(x, [0.0 + p[1], 1.0, 2.0, 2.0, 2.0, 2.0, 5.0 + p[2]];
-            extrap = ExtendExtrap()).(xq)
+        f(p) = pchip_interp(
+            x, [0.0 + p[1], 1.0, 2.0, 2.0, 2.0, 2.0, 5.0 + p[2]];
+            extrap = ExtendExtrap()
+        ).(xq)
         J_ad = ForwardDiff.jacobian(f, [0.0, 0.0])
         h = 1.0e-6
         J_fd = hcat((f([h, 0.0]) .- f([-h, 0.0])) ./ 2h, (f([0.0, h]) .- f([0.0, -h])) ./ 2h)
@@ -56,8 +51,7 @@
         f_bar = pchip_adjoint(x, y, xq; extrap = ExtendExtrap())(ones(length(xq)))
         @test all(isfinite, f_bar)
 
-        # The exactly-tied result must agree with the no-ties limit: same shape, ties broken by
-        # a perturbation far below the slope scale.
+        # The exactly-tied result must agree with the no-ties limit
         y_near = [0.0, 1.0, 2.0, 2.0 + 1.0e-9, 2.0 + 2.0e-9, 2.0 + 3.0e-9, 5.0]
         f_bar_near = pchip_adjoint(x, y_near, xq; extrap = ExtendExtrap())(ones(length(xq)))
         @test isapprox(f_bar, f_bar_near; rtol = 1.0e-6)
@@ -76,7 +70,9 @@
         yn = [1.0, 3.0, 3.0, 2.0, 2.0, 5.0]
         qn = collect(range(0.0, 4.0; length = 17))
         y_bar = randn(MersenneTwister(11), length(qn))
-        @test isapprox(dot(pchip_interp(xn, yn; extrap = ExtendExtrap()).(qn), y_bar),
-            dot(yn, pchip_adjoint(xn, yn, qn; extrap = ExtendExtrap())(y_bar)); rtol = 1.0e-10)
+        @test isapprox(
+            dot(pchip_interp(xn, yn; extrap = ExtendExtrap()).(qn), y_bar),
+            dot(yn, pchip_adjoint(xn, yn, qn; extrap = ExtendExtrap())(y_bar)); rtol = 1.0e-10
+        )
     end
 end

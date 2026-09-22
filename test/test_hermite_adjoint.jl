@@ -1,5 +1,5 @@
 @testitem "HermiteAdjoint1D" setup = [AllocConstants] begin
-    using LinearAlgebra: dot
+    using LinearAlgebra: dot, norm
 
     # ========================================
     # Helper: Dot-product test for Hermite adjoint correctness
@@ -10,7 +10,7 @@
     function hermite_dot_product_test(
             x, xq, y, dy, y_bar;
             extrap = NoExtrap(), deriv = EvalValue(),
-            atol = 0, rtol = sqrt(eps(eltype(x)))
+            atol = nothing, rtol = sqrt(eps(eltype(x)))
         )
         itp = hermite_interp(x, y, dy; extrap = extrap)
         adj = hermite_adjoint(x, xq; extrap = extrap)
@@ -20,7 +20,10 @@
 
         lhs = dot(Wf, y_bar)
         rhs = dot(y, WTy)
-        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+        # A randn `y_bar` makes this dot land near zero on some draws, where an `atol = 0`
+        # relative test flakes. Floor at the OPERAND scale (measured drift: <= 2 eps * norms).
+        tol = atol === nothing ? 100 * eps(eltype(x)) * norm(Wf) * norm(y_bar) : atol
+        return lhs, rhs, isapprox(lhs, rhs; atol = tol, rtol = rtol)
     end
 
 
@@ -448,12 +451,12 @@ end
 # ========================================
 
 @testitem "CardinalAdjoint1D" setup = [AllocConstants] begin
-    using LinearAlgebra: dot
+    using LinearAlgebra: dot, norm
 
     function cardinal_dot_product_test(
             x, xq, y, y_bar;
             tension = 0.0, extrap = NoExtrap(), deriv = EvalValue(),
-            atol = 0, rtol = sqrt(eps(eltype(x)))
+            atol = nothing, rtol = sqrt(eps(eltype(x)))
         )
         itp = cardinal_interp(x, y; tension = tension, extrap = extrap)
         adj = cardinal_adjoint(x, xq; tension = tension, extrap = extrap)
@@ -463,7 +466,10 @@ end
 
         lhs = dot(Wf, y_bar)
         rhs = dot(y, WTy)
-        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+        # A randn `y_bar` makes this dot land near zero on some draws, where an `atol = 0`
+        # relative test flakes. Floor at the OPERAND scale (measured drift: <= 2 eps * norms).
+        tol = atol === nothing ? 100 * eps(eltype(x)) * norm(Wf) * norm(y_bar) : atol
+        return lhs, rhs, isapprox(lhs, rhs; atol = tol, rtol = rtol)
     end
 
     # ========================================
@@ -693,12 +699,12 @@ end
 # ========================================
 
 @testitem "PchipAdjoint1D" setup = [AllocConstants] begin
-    using LinearAlgebra: dot
+    using LinearAlgebra: dot, norm
 
     function pchip_dot_product_test(
             x, xq, y, y_bar;
             extrap = NoExtrap(), deriv = EvalValue(),
-            atol = 0, rtol = sqrt(eps(eltype(x)))
+            atol = nothing, rtol = sqrt(eps(eltype(x)))
         )
         itp = pchip_interp(x, y; extrap = extrap)
         adj = pchip_adjoint(x, y, xq; extrap = extrap)
@@ -708,7 +714,10 @@ end
 
         lhs = dot(Wf, y_bar)
         rhs = dot(y, WTy)
-        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+        # A randn `y_bar` makes this dot land near zero on some draws, where an `atol = 0`
+        # relative test flakes. Floor at the OPERAND scale (measured drift: <= 2 eps * norms).
+        tol = atol === nothing ? 100 * eps(eltype(x)) * norm(Wf) * norm(y_bar) : atol
+        return lhs, rhs, isapprox(lhs, rhs; atol = tol, rtol = rtol)
     end
 
     # ========================================
@@ -1006,12 +1015,12 @@ end
 # ========================================
 
 @testitem "AkimaAdjoint1D" setup = [AllocConstants] begin
-    using LinearAlgebra: dot
+    using LinearAlgebra: dot, norm
 
     function akima_dot_product_test(
             x, xq, y, y_bar;
             extrap = NoExtrap(), deriv = EvalValue(),
-            atol = 0, rtol = sqrt(eps(eltype(x)))
+            atol = nothing, rtol = sqrt(eps(eltype(x)))
         )
         itp = akima_interp(x, y; extrap = extrap)
         adj = akima_adjoint(x, y, xq; extrap = extrap)
@@ -1021,7 +1030,10 @@ end
 
         lhs = dot(Wf, y_bar)
         rhs = dot(y, WTy)
-        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+        # A randn `y_bar` makes this dot land near zero on some draws, where an `atol = 0`
+        # relative test flakes. Floor at the OPERAND scale (measured drift: <= 2 eps * norms).
+        tol = atol === nothing ? 100 * eps(eltype(x)) * norm(Wf) * norm(y_bar) : atol
+        return lhs, rhs, isapprox(lhs, rhs; atol = tol, rtol = rtol)
     end
 
     # ========================================

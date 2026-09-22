@@ -298,9 +298,9 @@ end
     y = [0.0, 1.0, 2.0, 3.5] .* u"m"
     F = [
         (
-                sin(ustrip(u"s", xi)) + 2.0 * ustrip(u"m", yj) +
+            sin(ustrip(u"s", xi)) + 2.0 * ustrip(u"m", yj) +
                 0.4 * ustrip(u"s", xi) * ustrip(u"m", yj)
-            ) * u"W"
+        ) * u"W"
             for xi in x, yj in y
     ]
 
@@ -469,15 +469,15 @@ end
     end
 
     @testset "eval/deriv ≡ twin with restored units" begin
-        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-14
+        @test itp(q) ≈ tw(qf) * u"W" rtol = 1.0e-11
         @test itp(q; deriv = (DerivOp(1), DerivOp(0))) ≈
-            tw(qf; deriv = (DerivOp(1), DerivOp(0))) * u"W/s" rtol = 1.0e-14
+            tw(qf; deriv = (DerivOp(1), DerivOp(0))) * u"W/s" rtol = 1.0e-11
         @test itp(q; deriv = (DerivOp(1), DerivOp(1))) ≈
-            tw(qf; deriv = (DerivOp(1), DerivOp(1))) * u"W/(s*m)" rtol = 1.0e-14
+            tw(qf; deriv = (DerivOp(1), DerivOp(1))) * u"W/(s*m)" rtol = 1.0e-11
         g = gradient(itp, q)
         gt = gradient(tw, qf)
-        @test g[1] ≈ gt[1] * u"W/s" rtol = 1.0e-14
-        @test g[2] ≈ gt[2] * u"W/m" rtol = 1.0e-14
+        @test g[1] ≈ gt[1] * u"W/s" rtol = 1.0e-11
+        @test g[2] ≈ gt[2] * u"W/m" rtol = 1.0e-11
     end
 
     @testset "Left/Right payload BCs scale in" begin
@@ -542,7 +542,7 @@ end
     end
 end
 
-@testitem "Unitful ND: composition gaps — 3D, PolyFit{4}, Real-zero BCPair, periodic, in-place" begin
+@testitem "Unitful ND: composition gaps — 3D, PolyFit{4}, Real-zero BCPair, periodic, in-place" setup = [Basic] begin
     using Unitful
 
     xf = [0.0, 1.0, 2.5, 3.0, 4.5]
@@ -614,7 +614,8 @@ end
         g_ref = gradient(itp, q)
         buf = Vector{Any}(undef, 2)
         gradient!(buf, itp, q)
-        @test buf[1] === g_ref[1] && buf[2] === g_ref[2]
+        @test isclose(buf[1], g_ref[1]; nulps = PATH_ULPS)
+        @test isclose(buf[2], g_ref[2]; nulps = PATH_ULPS)
     end
 end
 

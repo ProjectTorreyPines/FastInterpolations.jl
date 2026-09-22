@@ -49,9 +49,9 @@
         K = FI.n_series(sitp)
         return [
             [
-                    _ref_with_extrap(sitp.y, sitp.z, n_pts, x_min, x_max, k, aq_vec[j], sitp.extrap, op)
+                _ref_with_extrap(sitp.y, sitp.z, n_pts, x_min, x_max, k, aq_vec[j], sitp.extrap, op)
                     for j in eachindex(xq)
-                ]
+            ]
                 for k in 1:K
         ]
     end

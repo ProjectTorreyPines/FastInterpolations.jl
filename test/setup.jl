@@ -30,16 +30,28 @@ end
 
     # Elementwise CONSISTENCY check (fused vs point-wise), not an accuracy check:
     # the two paths differ only by FMA/muladd contraction, which is inline- and
-    # Julia/LLVM-version dependent. Tolerance is in ULP multiples so it scales
-    # across eltypes (Float64/Float32); atol shares the same floor and assumes
-    # O(1)-scale data. Tighten `nulps` to pin bit-identical paths; widen it for
-    # heavier reassociation.
+    # Julia/LLVM-version dependent. `nulps` is the budget in ULP, so it scales
+    # across eltypes; `eps(one(T))`/`oneunit(T)` keep rtol dimensionless and atol
+    # unit-carrying, so unit eltypes work too (a plain `Real` folds back to
+    # `eps(T)`). Mixed-unit tuples have no common `promote_type` — compare those
+    # component-wise at the call site.
     function isclose(a, b; nulps = 256)
         size(a) == size(b) || return false
         T = float(real(promote_type(eltype(a), eltype(b))))
-        tol = nulps * eps(T)
-        return all(isapprox.(a, b; rtol = tol, atol = tol))
+        rtol = nulps * eps(one(T))
+        return all(isapprox.(a, b; rtol = rtol, atol = rtol * oneunit(T)))
     end
+
+    # Budget for "same maths, two code paths" pins (InBounds vs guarded search,
+    # one-shot vs persistent, unit-native vs Real twin). `muladd` is contraction-
+    # optional, so LLVM may fuse one path and not the other — that flipped between
+    # Julia 1.12 and 1.13 — hence no `===`. Measured drift is 1-2 ULP.
+    const PATH_ULPS = 8
+
+    # Wider budget where both sides come out of a chained solve (tridiagonal
+    # moments, or a release-parity literal minted from one): per-step contraction
+    # differences accumulate along the sweep.
+    const SOLVE_ULPS = 64
 end
 
 # Per-fiber 1D-composition oracle for ND tensor-product `integrate`. Independent

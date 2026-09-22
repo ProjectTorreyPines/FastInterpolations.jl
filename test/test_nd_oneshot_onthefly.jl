@@ -849,9 +849,9 @@ end
             got_all = [itp((qx, qy, qz)) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s]
             ref_all = [
                 _ref_collapse_3d(
-                        (xg3, yg3, zg3), data3, methods, (qx, qy, qz),
-                        (EvalValue(), EvalValue(), EvalValue())
-                    ) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s
+                    (xg3, yg3, zg3), data3, methods, (qx, qy, qz),
+                    (EvalValue(), EvalValue(), EvalValue())
+                ) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s
             ]
             # 3D has more accumulation steps than 2D → larger ULP budget
             value_ulp_budget = any(m isa AkimaInterp for m in methods) ? 16 : 8

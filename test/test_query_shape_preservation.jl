@@ -81,7 +81,7 @@ end
 # ------------------------------------------------------------
 # Persistent N-D: shape preservation + dispatch guards + edge cases
 # ------------------------------------------------------------
-@testitem "query shape: persistent N-D" begin
+@testitem "query shape: persistent N-D" setup = [Basic] begin
     import FastInterpolations: GriddedQuery
 
     x = collect(range(0.0, 2.0, 21))
@@ -111,23 +111,23 @@ end
             r = itp(q_aos_mat)
             @test r isa Matrix
             @test size(r) == (3, 4)
-            @test r == ref_aos
+            @test isclose(r, ref_aos; nulps = PATH_ULPS)
         end
         @testset "allocating shaped SoA -> matrix" begin
             r = itp((qx_mat, qy_mat))
             @test r isa Matrix
             @test size(r) == (3, 4)
-            @test r == ref_soa
+            @test isclose(r, ref_soa; nulps = PATH_ULPS)
         end
         @testset "in-place AoS matrix" begin
             out = Matrix{Float64}(undef, 3, 4)
             @test itp(out, q_aos_mat) === out
-            @test out == ref_aos
+            @test isclose(out, ref_aos; nulps = PATH_ULPS)
         end
         @testset "in-place shaped SoA" begin
             out = Matrix{Float64}(undef, 3, 4)
             @test itp(out, (qx_mat, qy_mat)) === out
-            @test out == ref_soa
+            @test isclose(out, ref_soa; nulps = PATH_ULPS)
         end
         @testset "exact-size rejection (right length, wrong shape)" begin
             # a length-12 vector output is NOT a valid sink for a 3x4 query
@@ -173,7 +173,7 @@ end
             ref = reshape(itp((qx12, qy12); deriv = DerivOp(1, 0)), 3, 4)
             r = itp((qx_mat, qy_mat); deriv = DerivOp(1, 0))
             @test size(r) == (3, 4)
-            @test r == ref
+            @test isclose(r, ref; nulps = PATH_ULPS)
         end
         @testset "NoExtrap validates whole batch BEFORE any write" begin
             q_bad = copy(pts_vec)
@@ -187,13 +187,13 @@ end
             q_mix = copy(pts_vec)
             q_mix[1] = (5.0, 0.5)                      # OOB x — clamped, not thrown
             q_mix_mat = reshape(q_mix, 3, 4)
-            @test itp_clamp(q_mix_mat) == reshape(itp_clamp(q_mix), 3, 4)
+            @test isclose(itp_clamp(q_mix_mat), reshape(itp_clamp(q_mix), 3, 4); nulps = PATH_ULPS)
         end
         @testset "noncontiguous view query preserves shape" begin
             qv = @view q_aos_mat[1:2, :]              # 2×4 SubArray of points
             r = itp(qv)
             @test size(r) == (2, 4)
-            @test r == reshape(itp(vec(collect(qv))), 2, 4)
+            @test isclose(r, reshape(itp(vec(collect(qv))), 2, 4); nulps = PATH_ULPS)
         end
         @testset "mixed precision (Float32 SoA) preserves shape" begin
             qxf = Float32.(qx_mat)
@@ -201,7 +201,7 @@ end
             r = itp((qxf, qyf))
             @test size(r) == (3, 4)
             # shaped-Float32 matches the Float32 VECTOR path exactly (same precision, reshaped)
-            @test r == reshape(itp((vec(qxf), vec(qyf))), 3, 4)
+            @test isclose(r, reshape(itp((vec(qxf), vec(qyf))), 3, 4); nulps = PATH_ULPS)
         end
     end
 end
@@ -209,7 +209,7 @@ end
 # ------------------------------------------------------------
 # One-shot N-D: unified + dedicated cores + local/user-Hermite
 # ------------------------------------------------------------
-@testitem "query shape: one-shot N-D" begin
+@testitem "query shape: one-shot N-D" setup = [Basic] begin
     x = collect(range(0.0, 2.0, 21))
     y = collect(range(0.0, 1.0, 11))
     data = [sin(xi) * cos(yj) for xi in x, yj in y]
@@ -234,10 +234,10 @@ end
         @testset "in-place preserves shape" begin
             out = Matrix{Float64}(undef, 3, 4)
             @test interp!(out, (x, y), data, q_aos_mat; method = m) === out
-            @test out == ref_aos
+            @test isclose(out, ref_aos; nulps = PATH_ULPS)
             out2 = Matrix{Float64}(undef, 3, 4)
             interp!(out2, (x, y), data, soa_mat; method = m)
-            @test out2 == ref_soa
+            @test isclose(out2, ref_soa; nulps = PATH_ULPS)
         end
         @testset "exact-size rejection (right length, wrong shape)" begin
             @test_throws DimensionMismatch interp!(Vector{Float64}(undef, 12), (x, y), data, q_aos_mat; method = m)
@@ -264,10 +264,10 @@ end
             @testset "in-place preserves shape" begin
                 out = Matrix{Float64}(undef, 3, 4)
                 @test f!(out, (x, y), data, q_aos_mat) === out
-                @test out == ref_aos
+                @test isclose(out, ref_aos; nulps = PATH_ULPS)
                 out2 = Matrix{Float64}(undef, 3, 4)
                 f!(out2, (x, y), data, soa_mat)
-                @test out2 == ref_soa
+                @test isclose(out2, ref_soa; nulps = PATH_ULPS)
             end
             @testset "exact-size rejection" begin
                 @test_throws DimensionMismatch f!(Vector{Float64}(undef, 12), (x, y), data, q_aos_mat)
@@ -285,14 +285,14 @@ end
 
         r1 = f((x, y), data, q_aos_mat)
         @test r1 isa Matrix && size(r1) == (3, 4) && r1 == ref_aos
-        @test f((x, y), data, soa_mat) == ref_soa
+        @test isclose(f((x, y), data, soa_mat), ref_soa; nulps = PATH_ULPS)
 
         out = Matrix{Float64}(undef, 3, 4)
         @test f!(out, (x, y), data, q_aos_mat) === out
-        @test out == ref_aos
+        @test isclose(out, ref_aos; nulps = PATH_ULPS)
         out2 = Matrix{Float64}(undef, 3, 4)
         f!(out2, (x, y), data, soa_mat)
-        @test out2 == ref_soa
+        @test isclose(out2, ref_soa; nulps = PATH_ULPS)
 
         @test_throws DimensionMismatch f!(Vector{Float64}(undef, 12), (x, y), data, q_aos_mat)
     end
@@ -308,11 +308,11 @@ end
 
         r1 = hermite_interp((x, y), data, p, q_aos_mat)
         @test r1 isa Matrix && size(r1) == (3, 4) && r1 == ref_aos
-        @test hermite_interp((x, y), data, p, soa_mat) == ref_soa
+        @test isclose(hermite_interp((x, y), data, p, soa_mat), ref_soa; nulps = PATH_ULPS)
 
         out = Matrix{Float64}(undef, 3, 4)
         @test hermite_interp!(out, (x, y), data, p, q_aos_mat) === out
-        @test out == ref_aos
+        @test isclose(out, ref_aos; nulps = PATH_ULPS)
 
         @test_throws DimensionMismatch hermite_interp!(Vector{Float64}(undef, 12), (x, y), data, p, q_aos_mat)
     end
@@ -367,10 +367,10 @@ end
             @test_throws DimensionMismatch itp(Vector{Float64}(undef, 12), q_mat)
         end
         @testset "N=1 SoA (q,) parity" begin
-            @test itp((q_mat,)) == itp(q_mat)
+            @test isclose(itp((q_mat,)), itp(q_mat); nulps = PATH_ULPS)
             out = Matrix{Float64}(undef, 3, 4)
             itp(out, (q_mat,))
-            @test out == itp(q_mat)
+            @test isclose(out, itp(q_mat); nulps = PATH_ULPS)
         end
     end
 end
@@ -418,7 +418,7 @@ end
             out = Array{Float64}(undef, shp)
             @test dv(out, q) === out
             @test size(dv(q)) == shp
-            @test out == dv(q)
+            @test isclose(out, dv(q); nulps = PATH_ULPS)
         end
 
         # exact-size rejection: a length-6 vector sink for a 2x3 query must throw.
@@ -443,7 +443,7 @@ end
 # One-shot 1-D: core families + local-Hermite + unified
 # ------------------------------------------------------------
 # Reference = the vector one-shot path, reshaped.
-@testitem "query shape: one-shot 1-D" begin
+@testitem "query shape: one-shot 1-D" setup = [Basic] begin
     x = collect(range(0.0, 2π, 25))
     y = sin.(x)
     dy = cos.(x)
@@ -462,12 +462,12 @@ end
         @testset "allocating preserves shape" begin
             r = f(q_mat)
             @test r isa Matrix && size(r) == (3, 4)
-            @test r == ref
+            @test isclose(r, ref; nulps = PATH_ULPS)
         end
         @testset "in-place preserves shape" begin
             o = Matrix{Float64}(undef, 3, 4)
             @test f!(o, q_mat) === o
-            @test o == ref
+            @test isclose(o, ref; nulps = PATH_ULPS)
         end
         @testset "exact-size rejection" begin
             @test_throws DimensionMismatch f!(Vector{Float64}(undef, 12), q_mat)
@@ -484,7 +484,7 @@ end
         @test r isa Matrix && size(r) == (3, 4) && r == ref
         o = Matrix{Float64}(undef, 3, 4)
         @test f!(o, q_mat) === o
-        @test o == ref
+        @test isclose(o, ref; nulps = PATH_ULPS)
         @test_throws DimensionMismatch f!(Vector{Float64}(undef, 12), q_mat)
     end
 
@@ -495,7 +495,7 @@ end
         @test r isa Matrix && size(r) == (3, 4) && r == ref
         o = Matrix{Float64}(undef, 3, 4)
         @test interp!(o, x, y, q_mat; method = m) === o
-        @test o == ref
+        @test isclose(o, ref; nulps = PATH_ULPS)
         @test_throws DimensionMismatch interp!(Vector{Float64}(undef, 12), x, y, q_mat; method = m)
     end
 end
@@ -503,7 +503,7 @@ end
 # ------------------------------------------------------------
 # N=1 tuple-grid collapse + empty / degenerate shaped queries
 # ------------------------------------------------------------
-@testitem "query shape: N=1 collapse + empty/degenerate" begin
+@testitem "query shape: N=1 collapse + empty/degenerate" setup = [Basic] begin
     x = collect(range(0.0, 2π, 25))
     y = sin.(x)
     q12 = collect(range(0.3, 6.0, 12))
@@ -518,11 +518,11 @@ end
         )
         native = fn(x, y, q_mat)                      # bare-grid shaped 1-D
         @test native isa Matrix && size(native) == (3, 4)
-        @test fn((x,), y, q_mat) == native            # tuple-grid collapse preserves shape
-        @test fn((x,), y, (q_mat,)) == native         # single-axis SoA collapse
+        @test isclose(fn((x,), y, q_mat), native; nulps = PATH_ULPS)            # tuple-grid collapse preserves shape
+        @test isclose(fn((x,), y, (q_mat,)), native; nulps = PATH_ULPS)         # single-axis SoA collapse
         o = Matrix{Float64}(undef, 3, 4)
         fn!(o, (x,), y, q_mat)
-        @test o == native
+        @test isclose(o, native; nulps = PATH_ULPS)
     end
 
     @testset "empty + degenerate shaped queries" begin

@@ -242,27 +242,27 @@ NoInterp axes only need `length(grid) == size(data, d)` (≥1 points).
     ) where {N, M <: Tuple}
     checks = [
         quote
-                ng = length(grids[$i])
-                nd = size(data, $i)
-                if ng != nd
-                    throw(
-                        DimensionMismatch(
-                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
-                        )
+            ng = length(grids[$i])
+            nd = size(data, $i)
+            if ng != nd
+                throw(
+                    DimensionMismatch(
+                        "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
                     )
-            end
-                $(
-                    if !(fieldtype(M, i) <: NoInterp)
-                        :(
-                            if ng < 2
-                                throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
-                        end
-                        )
-                else
-                        :()
-                end
                 )
-            end for i in 1:N
+            end
+            $(
+                if !(fieldtype(M, i) <: NoInterp)
+                    :(
+                        if ng < 2
+                            throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+                        end
+                    )
+                else
+                    :()
+                end
+            )
+        end for i in 1:N
     ]
     return quote
         $(checks...)

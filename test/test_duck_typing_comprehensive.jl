@@ -1176,11 +1176,11 @@ end
             H_ref = hessian(itp_ref, q2d)
             @test size(H) == (2, 2)
             @test H[1, 1] isa MyDuck
-            @test _val(H[1, 1]) ≈ H_ref[1, 1]
-            # Off-diagonal: data is linear (xi+2yj) so ∂²f/∂x∂y ≈ 0.
+            @test isapprox(_val(H[1, 1]), H_ref[1, 1]; atol = 1.0e-14)
+            # Data is linear (xi+2yj), so every 2nd derivative here is a numerical zero.
             # FMA contraction produces different near-zero rounding artifacts; use atol.
             @test isapprox(_val(H[1, 2]), H_ref[1, 2]; atol = 1.0e-14)
-            @test _val(H[2, 2]) ≈ H_ref[2, 2]
+            @test isapprox(_val(H[2, 2]), H_ref[2, 2]; atol = 1.0e-14)
         end
         @testset "hessian! — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)
@@ -1190,7 +1190,7 @@ end
             hessian!(H, itp, q2d)
             hessian!(H_ref, itp_ref, q2d)
             @test H[1, 1] isa MyDuck
-            @test _val(H[1, 1]) ≈ H_ref[1, 1]
+            @test isapprox(_val(H[1, 1]), H_ref[1, 1]; atol = 1.0e-14)
             @test isapprox(_val(H[2, 1]), H_ref[2, 1]; atol = 1.0e-14)
         end
         @testset "laplacian — cubic" begin
@@ -1199,7 +1199,7 @@ end
             lap = laplacian(itp, q2d)
             lap_ref = laplacian(itp_ref, q2d)
             @test lap isa MyDuck
-            @test _val(lap) ≈ lap_ref
+            @test isapprox(_val(lap), lap_ref; atol = 1.0e-14)
         end
         @testset "laplacian — quadratic" begin
             itp = quadratic_interp((xg, yg), data_2d)

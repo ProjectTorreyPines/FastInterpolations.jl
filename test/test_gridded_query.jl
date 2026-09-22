@@ -1451,10 +1451,10 @@ end
         )
         refd = [
             interp(
-                    (x, y), A, (qx, qy);
-                    method = method, extrap = ClampExtrap(),
-                    deriv = (EvalDeriv1(), EvalValue()),
-                )
+                (x, y), A, (qx, qy);
+                method = method, extrap = ClampExtrap(),
+                deriv = (EvalDeriv1(), EvalValue()),
+            )
                 for qx in tx, qy in ty
         ]
         @test close(Cd, refd)

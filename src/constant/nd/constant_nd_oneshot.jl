@@ -180,6 +180,7 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _query_check_ndims(queries, Val(N))
     grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 

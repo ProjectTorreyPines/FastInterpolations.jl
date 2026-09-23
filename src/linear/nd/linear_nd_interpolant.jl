@@ -99,19 +99,15 @@ end
 
 # N=1 scalar one-shot: a bare scalar on a 1-tuple grid is sugar for the scalar
 # query `(q,)` → ND scalar one-shot (scalar output), not the `[val]` length-1 batch
-# that a bare `queries` would otherwise trigger. Batch queries stay on the ND path.
+# that a bare `queries` would otherwise trigger.
 @inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
     linear_interp(grids, data, (q,); kwargs...)
 
-# N=1 batch one-shot: a plain-vector query on a 1-tuple grid forwards to the lean 1D
-# batch one-shot (bit-identical value; skips the generic-N per-query machinery). Per-axis
-# 1-tuple kwargs unwrap to scalar.
-@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    linear_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-@inline linear_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    linear_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-# Single-axis SoA `(xv,)` unwraps to the 1D batch (same vectorized domain check).
-@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    linear_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
-@inline linear_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    linear_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+# N=1 batch one-shot: every batch container on a 1-tuple grid forwards to the lean 1D
+# batch one-shot through `_scalar_query` (numeric array / SoA as-is, point container as
+# a lazy scalar view) — the bare-vector route, bit-identical. The `Union` keeps the arm
+# disjoint from the ND scalar one-shot `query::NTuple{N, Number}`.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    linear_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline linear_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    linear_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)

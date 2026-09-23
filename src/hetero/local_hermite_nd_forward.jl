@@ -74,15 +74,10 @@ end
     pchip_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: 1D one-shot (hetero ND path is Real-only)
 
 # N=1 batch one-shot → lean 1D batch one-shot. See linear_nd_interpolant.jl.
-@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    pchip_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-@inline pchip_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    pchip_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
-@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    pchip_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
-@inline pchip_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    pchip_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    pchip_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline pchip_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    pchip_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
 
 @inline function pchip_interp(
         grids::NTuple{N, AbstractVector},
@@ -142,15 +137,10 @@ end
     cardinal_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: 1D one-shot
 
 # N=1 batch one-shot → lean 1D batch one-shot. See linear_nd_interpolant.jl.
-@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    cardinal_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-@inline cardinal_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    cardinal_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
-@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    cardinal_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
-@inline cardinal_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    cardinal_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    cardinal_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline cardinal_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    cardinal_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
 
 @inline function cardinal_interp(
         grids::NTuple{N, AbstractVector},
@@ -212,15 +202,10 @@ end
     akima_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: 1D one-shot
 
 # N=1 batch one-shot → lean 1D batch one-shot. See linear_nd_interpolant.jl.
-@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    akima_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-@inline akima_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractArray; kwargs...) =
-    akima_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
-# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
-@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    akima_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
-@inline akima_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractArray}; kwargs...) =
-    akima_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    akima_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline akima_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    akima_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
 
 @inline function akima_interp(
         grids::NTuple{N, AbstractVector},

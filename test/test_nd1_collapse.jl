@@ -11,6 +11,10 @@
 #   4. 1D interpolants accept ND-style tuple queries so collapse is transparent
 #      to generic tensor code: `itp((x,))`, `itp(out,(xv,))`, `itp((xv,))`, and
 #      per-axis kwargs `itp((x,); extrap=(WrapExtrap(),))` / `deriv=(op,)`.
+#   5. One-shot batch on a 1-tuple grid reaches the 1D engine for EVERY batch
+#      container — bare vector, SoA `(xv,)`, AoS `[(x,)]`, `Vector{Vector}`, shaped
+#      AoS, `GriddedQuery` — via `_scalar_query` (issue #204). Only cubic/quadratic
+#      explicit `coeffs = OnTheFly()` stays on the ND internals.
 
 @testitem "N=1 tuple-grid collapses to 1D" begin
     using FastInterpolations
@@ -268,4 +272,232 @@ end
     @test itp((xv,)) == itp(xv)
     # per-axis kwarg unwrap on the query path
     @test itp((3.7,); deriv = (DerivOp(1),)) == itp(3.7; deriv = DerivOp(1))
+end
+
+# ── N=1 point containers reach the 1D engine (issue #204) ──
+# The collapse's batch arm claims every batch container an ND caller may hand us —
+# AoS `[(x,)]`, `Vector{Vector}`, shaped AoS, `GriddedQuery`, single-axis SoA — and
+# forwards `_scalar_query(q)`: a numeric array passes through untouched, a point
+# container becomes a lazy scalar view the 1D engine reads like a bare vector. So
+# dimension-generic code written for N>=2 keeps working when N collapses to 1, AND it
+# lands on the same lean 1D path a bare vector takes (bulk slope preparation for the
+# local-Hermite family, not the per-query ND loop).
+#
+# Route witnesses that do not depend on `which`:
+#   - values are `==` to the 1D call (same engine, same reads);
+#   - explicit `coeffs = PreCompute()` on a local-Hermite method SUCCEEDS — the ND
+#     engine rejects it (`_validate_nd_coeffs`), so success proves the 1D route.
+@testitem "N=1 point containers reach the 1D engine" begin
+    using FastInterpolations
+
+    x = collect(range(0.0, 1.0, length = 8))
+    y = @. sin(3x)
+    qs = collect(range(0.05, 0.95, length = 7))
+
+    aos = [(q,) for q in qs]            # Vector{Tuple{Float64}}  — the issue's shape
+    aov = [[q] for q in qs]             # Vector{Vector{Float64}}
+    gq = GriddedQuery((qs,))
+
+    for (f, f!) in (
+            (constant_interp, constant_interp!), (linear_interp, linear_interp!),
+            (quadratic_interp, quadratic_interp!), (cubic_interp, cubic_interp!),
+            (pchip_interp, pchip_interp!), (akima_interp, akima_interp!),
+            (cardinal_interp, cardinal_interp!),
+        )
+        ref = f(x, y, qs)                              # 1D truth
+
+        @test f((x,), y, aos) == ref                   # AoS allocating
+        out = similar(ref)
+        @test f!(out, (x,), y, aos) === out            # AoS in-place returns the sink
+        @test out == ref
+        @test f((x,), y, aov) == ref                   # Vector{Vector}
+        @test f((x,), y, gq) == ref                    # GriddedQuery
+        @test size(f((x,), y, gq)) == (length(qs),)
+        # per-axis 1-tuple kwargs unwrap on the point-container route too
+        @test f((x,), y, aos; deriv = (DerivOp(1),)) == f(x, y, qs; deriv = DerivOp(1))
+    end
+
+    # Shaped AoS keeps the query's shape (the ND shape-preservation contract). The
+    # reference is the 1D BATCH on the same points — the scalar one-shot is a different
+    # kernel and can differ by an ULP (`muladd` contraction, Julia-version dependent).
+    M = reshape([(q,) for q in qs[1:6]], 2, 3)
+    Mref = reshape(cubic_interp(x, y, qs[1:6]), 2, 3)
+    @test size(cubic_interp((x,), y, M)) == (2, 3)
+    @test cubic_interp((x,), y, M) == Mref
+    outM = zeros(2, 3)
+    cubic_interp!(outM, (x,), y, M)
+    @test outM == Mref
+    @test_throws DimensionMismatch cubic_interp!(zeros(6), (x,), y, M)   # exact-size sink
+
+    # Route witness: the local-Hermite family accepts explicit PreCompute only on the
+    # 1D path (ND rejects it with ArgumentError).
+    for f in (pchip_interp, akima_interp, cardinal_interp)
+        @test f((x,), y, aos; coeffs = PreCompute()) == f(x, y, qs; coeffs = PreCompute())
+        @test f((x,), y, aos; coeffs = OnTheFly()) == f(x, y, qs; coeffs = OnTheFly())
+    end
+    # ...while explicit OnTheFly on cubic still selects the ND internals (no 1D equivalent).
+    @test cubic_interp((x,), y, aos; coeffs = OnTheFly()) ≈ cubic_interp(x, y, qs) rtol = 1.0e-12
+
+    # A ragged point container is rejected at the offending point, not truncated.
+    @test_throws DimensionMismatch linear_interp((x,), y, [[0.2], [0.3, 0.4]])
+    @test_throws DimensionMismatch linear_interp((x,), y, [(0.2, 0.3)])
+
+    # GridIdx batches: the point-container route has exactly the bare route's outcome.
+    # Today the 1D batch door has no GridIdx resolve, so under `--check-bounds=yes` both
+    # throw (`<` on GridIdx) while with checks off the batch domain probe is elided and
+    # both evaluate — the pin is "same outcome", not a value. Fixing that door lifts
+    # both at once.
+    outcome(q) = try
+        (:value, linear_interp((x,), y, q))
+    catch e
+        (:error, typeof(e))
+    end
+    # Julia 1.10 cannot even build the bare `Vector{GridIdx}` literal (`vect` routes
+    # through `convert(::Type{GridIdx{T}}, ::GridIdx)`, which has no 1.10-compatible
+    # path) — a pre-existing quirk outside this contract, so the pin is skipped there.
+    gbare = try
+        [GridIdx(3), GridIdx(5)]
+    catch
+        nothing
+    end
+    gbare === nothing || @test outcome([(GridIdx(3),), (GridIdx(5),)]) == outcome(gbare)
+end
+
+@testitem "N=1 point containers through the unified interp/interp! API" begin
+    using FastInterpolations
+
+    x = collect(range(0.0, 1.0, length = 8))
+    y = @. sin(3x)
+    qs = collect(range(0.05, 0.95, length = 7))
+    aos = [(q,) for q in qs]
+
+    for (m, f) in (
+            (ConstantInterp(), constant_interp), (LinearInterp(), linear_interp),
+            (QuadraticInterp(), quadratic_interp), (CubicInterp(), cubic_interp),
+            (PchipInterp(), pchip_interp), (AkimaInterp(), akima_interp),
+            (CardinalInterp(), cardinal_interp),
+        )
+        ref = f(x, y, qs)
+        @test interp((x,), y, aos; method = m) == ref
+        @test interp((x,), y, qs; method = m) == ref
+        @test interp((x,), y, (qs,); method = m) == ref
+        out = similar(ref)
+        @test interp!(out, (x,), y, aos; method = m) === out
+        @test out == ref
+        # the 1-tuple method form and per-axis kwargs are the ND spelling
+        @test interp((x,), y, aos; method = (m,), deriv = (DerivOp(1),)) == f(x, y, qs; deriv = DerivOp(1))
+    end
+
+    # Route witness for the unified local-Hermite path: explicit PreCompute succeeds at
+    # N=1 for bare, SoA and AoS alike (the ND engine rejects it), and the default
+    # AutoCoeffs batch is the same bulk-slope result.
+    for (m, f) in ((PchipInterp(), pchip_interp), (AkimaInterp(), akima_interp), (CardinalInterp(), cardinal_interp))
+        ref = f(x, y, qs; coeffs = PreCompute())
+        @test interp((x,), y, qs; method = m, coeffs = PreCompute()) == ref
+        @test interp((x,), y, (qs,); method = m, coeffs = PreCompute()) == ref
+        @test interp((x,), y, aos; method = m, coeffs = PreCompute()) == ref
+        out = similar(ref)
+        interp!(out, (x,), y, aos; method = m, coeffs = PreCompute())
+        @test out == ref
+        # bc still travels through the method object (inclusive periodic data)
+        xp = collect(range(0.0, 2π, length = 9)); yp = cos.(xp)
+        qsp = collect(range(0.3, 6.0, length = 7)); aosp = [(q,) for q in qsp]
+        mp = FastInterpolations._replace_bc(m, PeriodicBC())
+        @test interp((xp,), yp, aosp; method = mp) == f(xp, yp, qsp; bc = PeriodicBC())
+    end
+    # N=2 still rejects explicit PreCompute for local Hermite (unchanged ND contract).
+    d2 = [sin(a) + cos(b) for a in x, b in x]
+    @test_throws ArgumentError interp((x, x), d2, [(0.3, 0.4)]; method = PchipInterp(), coeffs = PreCompute())
+
+    # Shaped AoS through the unified API keeps its shape.
+    M = reshape(aos[1:6], 2, 3)
+    @test size(interp((x,), y, M; method = PchipInterp())) == (2, 3)
+    @test vec(interp((x,), y, M; method = PchipInterp())) == pchip_interp(x, y, qs[1:6])
+end
+
+# The point-container route costs nothing the bare route does not: no allocation past
+# the output (the view is a stack struct over the caller's array) and a concretely
+# inferred result. Measured through a `@noinline` barrier so the call — dispatch,
+# adapter construction, kwarg unwrap — is inside the measurement.
+@testitem "N=1 point-container route is allocation-free and inferred" setup = [AllocConstants] begin
+    using FastInterpolations
+    using Test: @inferred
+
+    x = collect(range(0.0, 1.0, length = 40))
+    y = @. sin(7x)
+    qs = collect(range(0.02, 0.98, length = 25))
+    aos = [(q,) for q in qs]
+    out = similar(qs)
+
+    # Every argument — including the grid tuple `(x,)` — is built OUTSIDE the measured
+    # call: a tuple constructed inside the `@allocated` expression and handed to a
+    # `@noinline` callee is boxed by the caller (16 B), on the bare route just the same.
+    g = (x,)
+    soa = (qs,)
+    @noinline run!(f!::F, o, g, d, q) where {F} = (f!(o, g, d, q); nothing)
+    @noinline urun!(o, g, d, q, m::M) where {M} = (interp!(o, g, d, q; method = m); nothing)
+
+    for f! in (
+            constant_interp!, linear_interp!, quadratic_interp!, cubic_interp!,
+            pchip_interp!, cardinal_interp!, akima_interp!,
+        )
+        for q in (aos, soa, qs)                                             # warm every form
+            run!(f!, out, g, y, q); run!(f!, out, g, y, q)
+        end
+        @test (@allocated run!(f!, out, g, y, aos)) <= ALLOC_THRESHOLD      # AoS in-place
+        @test (@allocated run!(f!, out, g, y, soa)) <= ALLOC_THRESHOLD      # SoA in-place
+        @test (@allocated run!(f!, out, g, y, qs)) <= ALLOC_THRESHOLD       # bare (reference)
+        @test (@inferred f!(out, g, y, aos)) === out
+    end
+    for m in (PchipInterp(), CardinalInterp(), AkimaInterp(), CubicInterp(), LinearInterp())
+        for q in (aos, qs)
+            urun!(out, g, y, q, m); urun!(out, g, y, q, m)
+        end
+        @test (@allocated urun!(out, g, y, aos, m)) <= ALLOC_THRESHOLD      # unified, AoS
+        @test (@allocated urun!(out, g, y, qs, m)) <= ALLOC_THRESHOLD       # unified, bare
+        @test (@inferred interp!(out, g, y, aos; method = m)) === out
+    end
+    # allocating form: the result array is the only allocation
+    @test (@inferred cubic_interp((x,), y, aos)) isa Vector{Float64}
+end
+
+# Regression pin: narrowing the collapse must NOT move the scalar-batch routes off the
+# lean 1D path. These stay bit-identical; a `≈` here would hide exactly the regression
+# this testitem exists to catch.
+@testitem "N=1 scalar-batch routes stay bit-identical on the 1D path" begin
+    using FastInterpolations
+
+    x = collect(range(0.0, 1.0, length = 8))
+    y = @. sin(3x)
+    qs = collect(range(0.05, 0.95, length = 7))
+
+    for (f, f!) in (
+            (constant_interp, constant_interp!), (linear_interp, linear_interp!),
+            (quadratic_interp, quadratic_interp!), (cubic_interp, cubic_interp!),
+            (pchip_interp, pchip_interp!), (akima_interp, akima_interp!),
+            (cardinal_interp, cardinal_interp!),
+        )
+        ref = f(x, y, qs)
+        @test f((x,), y, qs) == ref          # bare Vector batch
+        @test f((x,), y, (qs,)) == ref       # SoA
+        @test f((x,), y, (0.5,)) == f(x, y, 0.5)   # scalar tuple
+        out = similar(ref)
+        f!(out, (x,), y, qs)
+        @test out == ref                     # bare Vector, in-place
+    end
+end
+
+# Issue #204 verbatim: dimension-generic ND code with ndim set to 1.
+@testitem "issue #204: dimension-generic ND code at ndim=1" begin
+    using FastInterpolations
+
+    ndim, nquery, ndata = 1, 7, 5
+    output = ones(nquery)
+    grids = ntuple(n -> range(0, 1, length = ndata), ndim)
+    data = [sum(sin, x) for x in Iterators.product(ntuple(n -> range(0, 1, length = ndata), ndim)...)]
+    query = [ntuple(n -> y, ndim) for y in range(0, 1, length = nquery)]
+
+    cubic_interp!(output, grids, data, query)
+    @test all(isfinite, output)
+    @test output == cubic_interp(only(grids), data, [q[1] for q in query])   # the 1D path itself
 end

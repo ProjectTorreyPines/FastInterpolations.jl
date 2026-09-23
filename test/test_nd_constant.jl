@@ -838,3 +838,29 @@ end
         @test (@allocated itp((0.5, 0.5))) <= ALLOC_THRESHOLD
     end
 end
+
+# ── Query arity guard (allocating ND one-shot) ──
+# The allocating ND one-shot was the only ND one-shot without `_query_check_ndims`;
+# its in-place twin has always had it. Unguarded, a malformed query reaches the batch
+# loop and is silently reinterpreted — a bare coordinate vector read as a diagonal
+# batch, extra coordinates truncated. Every other family throws DimensionMismatch.
+@testitem "ConstantInterpolantND — one-shot query arity guard" begin
+    x = range(0.0, 1.0, length = 5)
+    D2 = [sin(a) + cos(b) for a in x, b in x]
+
+    # A bare coordinate vector is ONE 2-D point, not a 2-point batch.
+    @test_throws DimensionMismatch constant_interp((x, x), D2, [0.3, 0.7])
+    @test_throws DimensionMismatch linear_interp((x, x), D2, [0.3, 0.7])       # reference
+
+    # Extra coordinates must be rejected, not silently truncated.
+    @test_throws DimensionMismatch constant_interp((x, x), D2, [(0.3, 0.7, 0.9)])
+    @test_throws DimensionMismatch linear_interp((x, x), D2, [(0.3, 0.7, 0.9)])  # reference
+
+    # Under-dimensioned points: unguarded this reached an unchecked `@inbounds` tuple
+    # read and killed the process outright (signal 4, uncatchable by try/catch) at the
+    # default `--check-bounds` setting users run under.
+    @test_throws DimensionMismatch constant_interp((x, x), D2, [(0.3,), (0.2,)])
+
+    # The in-place twin already guarded — keep the pair in agreement.
+    @test_throws DimensionMismatch constant_interp!(zeros(2), (x, x), D2, [0.3, 0.7])
+end

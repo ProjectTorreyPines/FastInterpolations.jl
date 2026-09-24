@@ -13,8 +13,9 @@
 #      per-axis kwargs `itp((x,); extrap=(WrapExtrap(),))` / `deriv=(op,)`.
 #   5. One-shot batch on a 1-tuple grid reaches the 1D engine for EVERY batch
 #      container — bare vector, SoA `(xv,)`, AoS `[(x,)]`, `Vector{Vector}`, shaped
-#      AoS, `GriddedQuery` — via `_scalar_query` (issue #204). Only cubic/quadratic
-#      explicit `coeffs = OnTheFly()` stays on the ND internals.
+#      AoS, `GriddedQuery` — via `_scalar_query` (issue #204). Cubic's explicit
+#      `coeffs = OnTheFly()` keeps the hetero N=1 wrapper (which itself calls the 1D
+#      one-shot per query); quadratic has no such split and always collapses.
 
 @testitem "N=1 tuple-grid collapses to 1D" begin
     using FastInterpolations

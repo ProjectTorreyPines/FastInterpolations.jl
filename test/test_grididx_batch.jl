@@ -9,9 +9,13 @@
 # Contract pinned here: `GridIdx(k)` IS the coordinate `x[k]` — a GridIdx batch equals
 # the coordinate batch `x[ks]` (values and buffer eltype) on every route and under every
 # extrapolation mode; an index outside `1:length(x)` is rejected with the scalar
-# resolve's `ArgumentError` under every mode, before anything is read.
+# resolve's `ArgumentError` under every mode, before anything is read. A GridIdx query
+# and a coordinate query are different specializations of the same kernel, so their
+# results may differ by `muladd` contraction on some Julia/LLVM versions — the
+# cross-path value pins use `isclose(…; nulps = PATH_ULPS)`; everything structural
+# (eltype, shape, Int data, throws) stays exact.
 
-@testitem "GridIdx batch on the 1D door: every entry names a node" begin
+@testitem "GridIdx batch on the 1D door: every entry names a node" setup = [Basic] begin
     using FastInterpolations
 
     # first / interior / last nodes, then an 8-point batch (long enough for the
@@ -36,25 +40,25 @@
             )
         y = @. sin(4x) + 0.2x
         # scalar form: GridIdx(k) ≡ the coordinate x[k] (first / interior / last node)
-        @test f(x, y, GridIdx(1)) == f(x, y, x[1])
-        @test f(x, y, GridIdx(3)) == f(x, y, x[3])
-        @test f(x, y, GridIdx(12)) == f(x, y, x[12])
+        @test isclose(f(x, y, GridIdx(1)), f(x, y, x[1]); nulps = PATH_ULPS)
+        @test isclose(f(x, y, GridIdx(3)), f(x, y, x[3]); nulps = PATH_ULPS)
+        @test isclose(f(x, y, GridIdx(12)), f(x, y, x[12]); nulps = PATH_ULPS)
         ref = f(x, y, x[ks])
         ref8 = f(x, y, x[ks8])
-        @test f(x, y, g) == ref                                    # allocating batch
-        @test eltype(f(x, y, g)) === eltype(ref)                   # same buffer type, too
-        @test f(x, y, g8) == ref8                                  # long, unsorted, repeated
+        @test isclose(f(x, y, g), ref; nulps = PATH_ULPS)           # allocating batch
+        @test eltype(f(x, y, g)) === eltype(ref)                    # same buffer type, too
+        @test isclose(f(x, y, g8), ref8; nulps = PATH_ULPS)         # long, unsorted, repeated
         out = zeros(length(ks))
-        @test f!(out, x, y, g) === out                             # in-place batch
-        @test out == ref
+        @test f!(out, x, y, g) === out                              # in-place batch
+        @test isclose(out, ref; nulps = PATH_ULPS)
         # derivative at a node: same cell, same kernel as the coordinate batch
-        @test f(x, y, g; deriv = DerivOp(1)) == f(x, y, x[ks]; deriv = DerivOp(1))
+        @test isclose(f(x, y, g; deriv = DerivOp(1)), f(x, y, x[ks]; deriv = DerivOp(1)); nulps = PATH_ULPS)
         # a `hint` is accepted
         h = Ref(1)
-        @test f(x, y, g; hint = h) == ref
+        @test isclose(f(x, y, g; hint = h), ref; nulps = PATH_ULPS)
         for e in modes
-            @test f(x, y, g; extrap = e) == ref
-            @test f(x, y, g8; extrap = e) == ref8
+            @test isclose(f(x, y, g; extrap = e), ref; nulps = PATH_ULPS)
+            @test isclose(f(x, y, g8; extrap = e), ref8; nulps = PATH_ULPS)
         end
         # empty batch
         @test f(x, y, GridIdx{Float64}[]) == Float64[]
@@ -69,7 +73,7 @@
     end
 end
 
-@testitem "GridIdx batch through the N=1 collapse: bare, SoA, AoS, shaped, unified" begin
+@testitem "GridIdx batch through the N=1 collapse: bare, SoA, AoS, shaped, unified" setup = [Basic] begin
     using FastInterpolations
 
     ks = [1, 3, 9, 12]
@@ -90,17 +94,17 @@ end
             )
         y = @. sin(4x) + 0.2x
         ref = f(x, y, x[ks])
-        @test f((x,), y, g) == ref                       # bare vector on a 1-tuple grid
-        @test f((x,), y, (g,)) == ref                    # SoA
-        @test f((x,), y, aos) == ref                     # AoS — evaluated on the ND route before
+        @test isclose(f((x,), y, g), ref; nulps = PATH_ULPS)         # bare vector on a 1-tuple grid
+        @test isclose(f((x,), y, (g,)), ref; nulps = PATH_ULPS)      # SoA
+        @test isclose(f((x,), y, aos), ref; nulps = PATH_ULPS)       # AoS — evaluated on the ND route before
         @test eltype(f((x,), y, aos)) === eltype(ref)
-        @test f((x,), y, aos8) == f(x, y, x[ks8])
+        @test isclose(f((x,), y, aos8), f(x, y, x[ks8]); nulps = PATH_ULPS)
         out = zeros(length(ks))
         f!(out, (x,), y, aos)
-        @test out == ref
-        @test f((x,), y, (GridIdx(3),)) == f((x,), y, (x[3],))   # scalar tuple form
-        @test interp((x,), y, aos; method = m) == ref    # unified API
-        @test interp((x,), y, g; method = m) == ref
+        @test isclose(out, ref; nulps = PATH_ULPS)
+        @test isclose(f((x,), y, (GridIdx(3),)), f((x,), y, (x[3],)); nulps = PATH_ULPS)   # scalar tuple form
+        @test isclose(interp((x,), y, aos; method = m), ref; nulps = PATH_ULPS)    # unified API
+        @test isclose(interp((x,), y, g; method = m), ref; nulps = PATH_ULPS)
         @test_throws ArgumentError f((x,), y, [(GridIdx(13),)])
     end
 
@@ -110,18 +114,18 @@ end
     for x in (collect(range(0.0, 1.0, length = 12)), 1.0:12.0)
         y = @. sin(4x) + 0.2x
         Mref = cubic_interp((x,), y, reshape(x[[2, 5, 7, 11]], 2, 2))
-        @test cubic_interp((x,), y, M) == Mref
+        @test isclose(cubic_interp((x,), y, M), Mref; nulps = PATH_ULPS)
         for e in (ClampExtrap(), FillExtrap(NaN), WrapExtrap(), ExtendExtrap())
-            @test cubic_interp((x,), y, M; extrap = e) == Mref
+            @test isclose(cubic_interp((x,), y, M; extrap = e), Mref; nulps = PATH_ULPS)
         end
         outM = zeros(2, 2)
         @test interp!(outM, (x,), y, M; method = CubicInterp()) === outM   # unified in-place, shaped
-        @test outM == Mref
+        @test isclose(outM, Mref; nulps = PATH_ULPS)
         @test size(cubic_interp((x,), y, E)) == (0, 2)
     end
 end
 
-@testitem "GridIdx batch on a persistent 1D interpolant" begin
+@testitem "GridIdx batch on a persistent 1D interpolant" setup = [Basic] begin
     using FastInterpolations
 
     ks = [1, 3, 9, 12]
@@ -138,17 +142,17 @@ end
         y = @. sin(4x) + 0.2x
         itp = f(x, y)
         ref = itp(x[ks])
-        @test itp(GridIdx(1)) == itp(x[1])               # scalar form, first / last node
-        @test itp(GridIdx(12)) == itp(x[12])
-        @test itp(g) == ref                              # batch
+        @test isclose(itp(GridIdx(1)), itp(x[1]); nulps = PATH_ULPS)     # scalar form, first / last node
+        @test isclose(itp(GridIdx(12)), itp(x[12]); nulps = PATH_ULPS)
+        @test isclose(itp(g), ref; nulps = PATH_ULPS)                    # batch
         @test eltype(itp(g)) === eltype(ref)
         out = zeros(length(ks))
         @test itp(out, g) === out
-        @test out == ref
-        @test itp((g,)) == ref                           # ND-style single-axis SoA
+        @test isclose(out, ref; nulps = PATH_ULPS)
+        @test isclose(itp((g,)), ref; nulps = PATH_ULPS)                 # ND-style single-axis SoA
         @test_throws ArgumentError itp([GridIdx(13)])
-        itp_t = f((x,), y)                               # collapsed constructor, same object type
-        @test itp_t(g) == ref
+        itp_t = f((x,), y)                                               # collapsed constructor, same object type
+        @test isclose(itp_t(g), ref; nulps = PATH_ULPS)
     end
 end
 

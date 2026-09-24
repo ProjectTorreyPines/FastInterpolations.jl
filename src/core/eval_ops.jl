@@ -125,6 +125,9 @@ Base.show(io::IO, g::GridIdx) = print(io, "GridIdx(", g.idx, ")")
 # against Quantity — unit coordinates instead flow through the direct `-` below.
 Base.promote_rule(::Type{GridIdx{T}}, ::Type{S}) where {T, S <: Real} = promote_type(T, S)
 Base.convert(::Type{T}, g::GridIdx) where {T <: Number} = convert(T, g.val)
+# Self-conversion is the identity: the arm above also matches `T = GridIdx{T}` (it is a
+# Number) and would recurse into `GridIdx{T}(::T)`; `setindex!`/`vect` reach it on 1.10.
+Base.convert(::Type{GridIdx{T}}, g::GridIdx{T}) where {T <: Number} = g
 Base.float(g::GridIdx) = float(g.val)
 (::Type{T})(g::GridIdx) where {T <: AbstractFloat} = T(g.val)
 # Coordinate accessor for the one value-consuming seam (`q - L` → dL / α).

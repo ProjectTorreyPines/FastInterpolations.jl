@@ -1,4 +1,4 @@
-@inline function _normalize_bounds_1d(a::Real, b::Real)
+@inline function _normalize_bounds_1d(a, b)
     if a < b
         return (1, a, b)
     elseif a > b
@@ -13,7 +13,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::NoExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::NoExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     _check_domain(x, min(x0, x1), NoExtrap())
     _check_domain(x, max(x0, x1), NoExtrap())
@@ -21,7 +21,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -42,7 +42,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0::Real, x1::Real, ::Type{Tout}
+        e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -64,7 +64,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -92,7 +92,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-        ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+        ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0, x1, ::Type{Tout}
     ) where {Tout}
     return in_domain_fn(x0, x1)
 end
@@ -107,7 +107,7 @@ end
 # Vector grids) it falls back to `step(x)` / `float(x[i+1] - x[i])` — single
 # subtraction per cell, no allocation.
 @inline function _integrate_1d_cellwise(
-        x::AbstractVector, a::Real, b::Real,
+        x::AbstractVector, a, b,
         searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
     ) where {S <: Searcher, PF, FF, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
@@ -116,18 +116,31 @@ end
     i0, _, xL0, _ = search_interval(searcher, x, lo)
     i1, _, xL1, _ = search_interval(searcher, x, hi)
 
+    # `partial_fn` subtracts BOTH of its bounds from the same node and takes the
+    # two offsets as ONE type. Here both bounds are the caller's, so they must
+    # agree with each other — `integrate(itp, 1, 1.5)` on an Int grid, or `mm`
+    # beside `cm`, otherwise hands the kernel two different offset types.
     if i0 == i1
         h = _get_h(x, i0)
-        return sign * partial_fn(i0, xL0, h, lo, hi)
+        lo1c, hi1c = promote(lo, hi)
+        return convert(Tout, sign * partial_fn(i0, xL0, h, lo1c, hi1c))
     end
 
+    # The two end cells pair a caller BOUND with a grid NODE instead, so each is
+    # promoted against its own node. They already agree whenever the bound is
+    # spelled in the grid's own unit (and always on Real grids, where `promote`
+    # is the identity), but a `cm` grid integrated between `m` bounds would
+    # otherwise hand the kernel one `m` offset and one `cm` one. `promote` also
+    # widens a Float64 bound against a Float32 grid, as before.
     h0 = _get_h(x, i0)
-    total = partial_fn(i0, xL0, h0, lo, xL0 + h0)
-    @inbounds for i in (i0 + 1):(i1 - 1)
-        total += full_fn(i, _get_h(x, i))
+    lo0, hi0 = promote(lo, xL0 + h0)
+    total = convert(Tout, partial_fn(i0, xL0, h0, lo0, hi0))
+    @inbounds @simd for i in (i0 + 1):(i1 - 1)
+        total += convert(Tout, full_fn(i, _get_h(x, i)))
     end
     h1 = _get_h(x, i1)
-    total += partial_fn(i1, xL1, h1, xL1, hi)
+    lo1, hi1 = promote(xL1, hi)
+    total += convert(Tout, partial_fn(i1, xL1, h1, lo1, hi1))
 
     return sign * total
 end
@@ -143,7 +156,10 @@ end
     ) where {F, Tout}
     n = length(x)
     total = zero(Tout)
-    @inbounds for i in 1:(n - 1)
+    # @simd: pure reduction (only cross-iteration dep is `total`). LLVM won't
+    # vectorize an FP reduction without it (non-associative `+` → scalar chain,
+    # ~6× slower); no @fastmath — only the accumulation order is relaxed.
+    @inbounds @simd for i in 1:(n - 1)
         total += full_fn(i, _get_h(x, i))
     end
     return total

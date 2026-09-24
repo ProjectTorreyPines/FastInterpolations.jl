@@ -23,14 +23,16 @@ end
 end
 
 # Hermite-family kernel mixes `y` and `dy` (`h00·y0 + h01·y1 + h10·h·dy0 + h11·h·dy1`).
-# Two-call pattern over `_arithmetic_kernel_shape` keeps `Tv` and `eltype(dy)` in
+# Two-call pattern over `_interp_op` keeps `Tv` and `eltype(dy)` in
 # disjoint promote chains so a duck-typed `dy` (e.g., Float64 y + Vector{Dual} dy
 # for AD on slopes) widens the result without poisoning the `y` chain.
-@inline function _output_eltype(itp::AbstractHermiteInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq}
-    Tdy = eltype(itp.dy)
+# The dy term enters the kernel as `h·dy` (span × slope = VALUE space) — the
+# chain must see that product, or a unit dy (Y/X) promotes W against W/s → abstract.
+@inline function _promote_eltype(itp::AbstractHermiteInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq}
+    Tdy_val = Base.promote_op(*, Tg, eltype(itp.dy))
     return promote_type(
-        _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq),
-        _output_eltype(_arithmetic_kernel_shape, Tg, Tdy, Tq),
+        _promote_eltype(_interp_op, Tg, Tv, Tq),
+        _promote_eltype(_interp_op, Tg, Tdy_val, Tq),
     )
 end
 
@@ -46,11 +48,12 @@ end
         dy::AbstractVector;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    x_eff = _cache_axis(x, bc, Tg)
-    return CubicHermiteInterpolant1D(x_eff, y, dy, extrap, search; bc = bc)
+    x_eff = _policy_axis(x, bc, Tg, store)
+    return CubicHermiteInterpolant1D(x_eff, y, dy, extrap, search; bc = bc, store = store)
 end
 
 # ========================================
@@ -93,10 +96,12 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         dy::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
-    ) where {TX, TY}
+        store::StorePolicy = StorePolicy(),
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     extrap_p = _resolve_extrap(extrap, x_p, eltype(y_p))
     # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
     x_p = _cache_axis(x_p, NoBC())
-    return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
+    return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search, store = store)
 end

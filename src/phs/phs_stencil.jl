@@ -6,7 +6,7 @@
 # At query time, coefficients are obtained by mul!(coeffs, phi_inv, rhs) — a
 # single BLAS gemv, fully vectorized, rather than a triangular solve.
 #
-# For uniform grids (ScalarSpacing), all interior nodes share the same stencil
+# For uniform grids (`_CachedRange`), all interior nodes share the same stencil
 # geometry, so only a handful of unique Φ⁻¹ matrices are needed in total.
 # Non-uniform grids may produce O(N_grid) unique geometries (documented limitation).
 #

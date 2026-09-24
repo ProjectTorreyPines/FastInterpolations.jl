@@ -141,6 +141,18 @@
         end
     end
 
+    @testset "N=1 persistent collapse drops coeffs strategy kw" begin
+        x = collect(range(0.0, 3.0, length = 12))
+        y = sin.(x)
+        q = 1.35
+        ref = quadratic_interp(x, y)
+
+        for coeffs in (PreCompute(), AutoCoeffs(), OnTheFly())
+            itp = quadratic_interp((x,), y; coeffs = coeffs)
+            @test itp(q) ≈ ref(q) rtol = 1.0e-14 atol = 1.0e-14
+        end
+    end
+
     # ========================================
     # Search Policies
     # ========================================

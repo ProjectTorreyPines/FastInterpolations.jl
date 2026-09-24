@@ -57,6 +57,9 @@ function quadratic_interp(
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 
+    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-reparameterizable
+    # duck Number would die deep inside `_nd_promote_grids` otherwise.
+    _check_nd_reparam_grid(grids)
     # Zero-allocation type promotion and grid conversion
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
@@ -107,17 +110,42 @@ end
 # ========================================
 
 function _build_nd_quadratic_interpolant(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Cache axes for the build phase — inner ctor of `QuadraticInterpolantND`
     # handles the owned `_convert_copy` separately, so we only wrap (no copy)
-    # here. Already-cached axes pass through idempotently in the ctor.
-    grids_cached = map((g, bc) -> _cache_axis(g, bc, Tg), grids, bcs)
+    # here. Already-cached axes pass through idempotently in the ctor. Grids
+    # arrive value-promoted, so the Tg-less 2-arg wrap is the right form
+    # (mixed-unit axes have no common Tg; mirrors the cubic assembly).
+    grids_cached = map(_cache_axis, grids, bcs)
     nodal_derivs = _build_nd_coeffs_quadratic(grids_cached, data, bcs)
 
     return QuadraticInterpolantND(grids_cached, nodal_derivs, bcs, extraps_val, searches)
 end
+
+# N=1 collapse: a 1-axis grid tuple forwards to the genuine 1D quadratic path (lean
+# 1D batch loop; per-axis 1-tuple kwargs unwrap to scalar). More specific than the
+# `NTuple{N}` method above, so it only claims N=1. See linear_nd_interpolant.jl.
+@inline quadratic_interp(
+    grids::Tuple{AbstractVector},
+    data::AbstractVector;
+    coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+    kwargs...
+) =
+    quadratic_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot
+# (scalar output, not `[val]`). See linear_nd_interpolant.jl.
+@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
+    eltype(only(grids)) <: Real ? quadratic_interp(grids, data, (q,); kwargs...) :
+    quadratic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: gated 1D one-shot
+
+# N=1 batch one-shot → lean 1D batch one-shot (bit-identical). See linear_nd_interpolant.jl.
+@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =
+    quadratic_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline quadratic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...) =
+    quadratic_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)

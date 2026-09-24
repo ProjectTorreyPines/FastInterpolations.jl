@@ -19,27 +19,35 @@ Zero-allocation scalar one-shot ND constant evaluation.
 Evaluates directly from grids + data without constructing a ConstantInterpolantND.
 """
 function _constant_interp_nd_oneshot(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg, Tv, N}
-    grids_eff = map(_resolve_axis, grids, bcs)
-    _validate_nd_domain(grids_eff, query, extraps_val)
+    ) where {Tv, N}
+    # Selection kernel: no x·y arithmetic → RAW grid eltype (no float forcing), mirroring
+    # `_nd_promote_grids_raw`/batch/persistent. All-Int stays Int; the output follows the
+    # natural promote_type(grid, data, query) — e.g. Int grid + Float32 query → Float32.
+    Tg = _promote_grid_eltype(grids)
+    grids_eff = _resolve_axes(grids, bcs, Tg)  # @generated static-Tg unroll (no Type-captured closure)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids_eff)
+    # Validate AND promote per axis: an in-domain NoExtrap axis becomes InBounds for the lean
+    # search; InBounds no-ops through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.
+    extraps_val = _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
-    idxLs = map(first, stencils)
+    intervals, Ls, Rs = _search_all_axis_intervals(q_eval, grids_eff, searches, hints, extraps_eff)
+    idxLs = map(first, intervals)
     hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
-    return _constant_nd_evaluate(data, stencils, hs, side_vals, q_eval, Ls, ops, Val(N))
+    return _constant_nd_evaluate(data, intervals, hs, side_vals, q_eval, Ls, ops, Val(N))
 end
 
 """
@@ -47,9 +55,11 @@ end
 
 In-place batch one-shot ND constant evaluation.
 """
+# `grids` is NOT pinned to one shared axis eltype — see the Linear sibling: the
+# body reads each axis on its own, and the pin excluded mixed-unit grids.
 function _constant_interp_nd_oneshot_batch!(
-        output::AbstractVector,
-        grids::NTuple{N, AbstractVector{Tg}},
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -58,26 +68,26 @@ function _constant_interp_nd_oneshot_batch!(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         ops::NTuple{N, AbstractEvalOp},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
-    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
+    extraps_eff = _validate_nd_domain(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_eff)
         oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
-        idxLs = map(first, stencils)
+        intervals, Ls, Rs = _search_all_axis_intervals(q_eval, grids_eff, policies, hints, extraps_eff)
+        idxLs = map(first, intervals)
         hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
-        output[k] = _constant_nd_evaluate(data, stencils, hs, side_vals, q_eval, Ls, ops, Val(N))
+        output[k] = _constant_nd_evaluate(data, intervals, hs, side_vals, q_eval, Ls, ops, Val(N))
     end
     return output
 end
@@ -88,7 +98,7 @@ end
 Allocating wrapper: creates output vector, delegates to in-place batch.
 """
 function _constant_interp_nd_oneshot_batch(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries,
         bcs::NTuple{N, AbstractBC},
@@ -97,10 +107,14 @@ function _constant_interp_nd_oneshot_batch(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         ops::NTuple{N, AbstractEvalOp},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N}
-    # Buffer eltype via Constant's kernel shape (mirrors 1D oneshot wrapper).
+    ) where {Tv, N}
+    # Buffer eltype must include derivative units for unit-carrying grids, matching
+    # the scalar and generic `interp(...; method=ConstantInterp())` fronts. Folded
+    # per axis — a joined grid type is abstract on mixed-unit axes.
     Tq = _query_eltype(queries)
-    output = Vector{_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)}(undef, _query_length(queries))
+    output = _alloc_query_output(
+        _deriv_eltype_nd(_nd_value_eltype(_select_op, Tv, grids, Tq), grids, ops), queries
+    )
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, ops, hint)
 end
 
@@ -125,7 +139,7 @@ Zero-allocation after warmup.
 function constant_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
@@ -133,8 +147,9 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Scalar one-shot: raw grids (kernel resolves each axis; selection follows
+    # `eltype(data)`). Batch keeps eager-convert.
+    _validate_nd_grids(grids, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
@@ -143,7 +158,7 @@ function constant_interp(
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
-        grids_typed, data, query, bcs, extraps_val, sides, searches, ops, hint
+        grids, data, query, bcs, extraps_val, sides, searches, ops, hint
     )
 end
 
@@ -165,6 +180,7 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _query_check_ndims(queries, Val(N))
     grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 
@@ -190,7 +206,7 @@ Accepts any query format implementing the query protocol.
 Writes results into pre-allocated `output` vector.
 """
 function constant_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;

@@ -414,6 +414,42 @@ end
         @test L ≈ ref_d2 rtol = 1.0e-10
     end
 
+    @testset "Batch: GridIdx on an INTERPOLATING axis matches the scalar query" begin
+        # Existing batch coverage puts GridIdx on a NoInterp axis, whose kernel
+        # never reads the coordinate — so the unresolved `val = NaN` sentinel
+        # stayed invisible. On an interpolating axis the batch loops must resolve
+        # per point, exactly as the scalar entries do.
+        for (nm, itp) in (
+                ("linear", interp((x, y), data_2d; method = LinearInterp())),
+                ("constant", interp((x, y), data_2d; method = ConstantInterp())),
+                ("cubic", cubic_interp((x, y), data_2d)),
+                ("quadratic", quadratic_interp((x, y), data_2d)),
+            )
+            @testset "$nm" begin
+                # AoS (`Vector{<:Tuple}`): every point carries its own GridIdx.
+                # (SoA with a scalar axis is a separate, pre-sliced entry — see
+                # the `interp!` NoInterp testsets below.)
+                @test itp([(GridIdx(2), GridIdx(3))])[1] === itp((GridIdx(2), GridIdx(3)))
+                @test itp([(qx, GridIdx(3)), (GridIdx(2), qy)]) ==
+                    [itp((qx, GridIdx(3))), itp((GridIdx(2), qy))]
+            end
+        end
+
+        @testset "one-shot batch" begin
+            @test cubic_interp((x, y), data_2d, [(GridIdx(2), GridIdx(3))])[1] ≈
+                cubic_interp((x, y), data_2d)((GridIdx(2), GridIdx(3))) rtol = 1.0e-14
+            @test interp((x, y), data_2d, [(GridIdx(2), GridIdx(3))]; method = LinearInterp())[1] ===
+                interp((x, y), data_2d; method = LinearInterp())((GridIdx(2), GridIdx(3)))
+        end
+
+        @testset "3D + derivative" begin
+            itp3 = interp((x, y, z), data_3d; method = LinearInterp())
+            @test itp3([(qx, GridIdx(3), qz)])[1] === itp3((qx, GridIdx(3), qz))
+            d = (DerivOp(1), DerivOp(0), DerivOp(0))
+            @test itp3([(qx, GridIdx(3), qz)]; deriv = d)[1] === itp3((qx, GridIdx(3), qz); deriv = d)
+        end
+    end
+
     # ========================================
     # 14. Batch interp!
     # ========================================
@@ -438,9 +474,9 @@ end
         )
         ref = [
             interp(
-                    (x, z), data_3d[:, 10, :], (xq_batch[i], zq_batch[i]);
-                    method = (CubicInterp(), LinearInterp())
-                )
+                (x, z), data_3d[:, 10, :], (xq_batch[i], zq_batch[i]);
+                method = (CubicInterp(), LinearInterp())
+            )
                 for i in 1:30
         ]
         @test output ≈ ref rtol = 1.0e-13
@@ -1493,9 +1529,9 @@ end
         )
         ref = [
             interp(
-                    (x, y), data_2d, (xqi, y[10]);
-                    method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
-                ) for xqi in xq_b
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
         @test any(!iszero, out)  # must NOT be all zeros
@@ -1510,9 +1546,9 @@ end
         )
         ref = [
             interp(
-                    (x, y), data_2d, (xqi, y[10]);
-                    method = (CubicInterp(), CubicInterp())
-                ) for xqi in xq_b
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp())
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
     end
@@ -1527,9 +1563,9 @@ end
         )
         ref = [
             interp(
-                    (x, y), data_2d, (xqi, y[10]);
-                    method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
-                ) for xqi in xq_b
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
     end
@@ -1546,10 +1582,10 @@ end
         )
         ref = [
             interp(
-                    (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
-                    method = (CubicInterp(), NoInterp(), LinearInterp()),
-                    deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
-                ) for xqi in xq_b
+                (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
+                method = (CubicInterp(), NoInterp(), LinearInterp()),
+                deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
+            ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-12
     end
@@ -1711,4 +1747,19 @@ end
             @test hint[2][] == 10
         end
     end
+end
+
+@testitem "NoInterp + GridIdx: 1-D batch queries resolve at the door" begin
+    # `GridIdx` resolves at the scalar door and per point in the N-D batch loops.
+    # The 1-D batch door used to see the unresolved `val = NaN` in its domain check
+    # and throw (v0.4.17 and earlier). It now validates a GridIdx batch by index and
+    # lets the per-point kernels resolve — no query array is rebuilt (zero-alloc
+    # contract intact). Full contract in test_grididx_batch.jl.
+    x = [0.0, 1.0, 2.5, 3.0, 4.5]
+    y = [0.0, 1.0, 2.0, 3.0, 4.0]
+    itp = linear_interp(x, y)
+
+    @test itp(GridIdx(2)) === y[2]                      # scalar path
+    @test itp([GridIdx(2), GridIdx(4)]) == [y[2], y[4]]
+    @test cubic_interp(x, y)([GridIdx(2)])[1] === cubic_interp(x, y)(GridIdx(2))
 end

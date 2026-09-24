@@ -217,7 +217,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result = readchomp(`julia --startup-file=no --project=$project_dir -e $batch_script`)
+        result = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $batch_script`)
         @test endswith(result, "OK:DomainError")
 
         # Scalar oneshot path
@@ -232,7 +232,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result2 = readchomp(`julia --startup-file=no --project=$project_dir -e $scalar_script`)
+        result2 = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $scalar_script`)
         @test endswith(result2, "OK:DomainError")
 
         # Interpolant scalar path (the gap found in code review)
@@ -248,7 +248,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result3 = readchomp(`julia --startup-file=no --project=$project_dir -e $itp_scalar_script`)
+        result3 = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $itp_scalar_script`)
         @test endswith(result3, "OK:DomainError")
 
         # AoS query path
@@ -265,7 +265,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result4 = readchomp(`julia --startup-file=no --project=$project_dir -e $aos_script`)
+        result4 = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $aos_script`)
         @test endswith(result4, "OK:DomainError")
     end
 
@@ -352,4 +352,43 @@
         @test _test_eval_alloc_cubic() <= ALLOC_THRESHOLD
         @test _test_eval_alloc_quadratic() <= ALLOC_THRESHOLD
     end
+end
+
+@testitem "ND NoExtrap OOB — axis-named canonical message" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    gx = [0.0, 1.0, 2.0]
+    gy = [10.0, 20.0]        # distinct bounds per axis so the message is unambiguous
+    f = [1.0 2.0; 3.0 4.0; 5.0 6.0]
+
+    msg(f) = try
+        f()
+        ""
+    catch e
+        e isa DomainError || rethrow()
+        sprint(showerror, e)
+    end
+
+    # scalar one-shot: axis 1 vs axis 2 each named with its own physical bounds
+    m1 = msg(() -> FI.linear_interp((gx, gy), f, (-0.1, 15.0)))
+    @test occursin("query point on axis 1 outside interpolation domain", m1)
+    @test occursin("[0.0, 2.0]", m1)
+    m2 = msg(() -> FI.linear_interp((gx, gy), f, (1.0, 99.0)))
+    @test occursin("query point on axis 2 outside interpolation domain", m2)
+    @test occursin("[10.0, 20.0]", m2)
+
+    # batch (SoA) path names the axis too
+    mb = msg(() -> FI.linear_interp((gx, gy), f, ([0.5, 1.0], [15.0, 99.0])))
+    @test occursin("query point on axis 2 outside interpolation domain", mb)
+
+    # persistent interpolant scalar call
+    itp = FI.linear_interp((gx, gy), f; extrap = FI.NoExtrap())
+    mp = msg(() -> itp((-5.0, 15.0)))
+    @test occursin("query point on axis 1 outside interpolation domain", mp)
+
+    # 1D stays axis-agnostic (no "on axis" clause)
+    m1d = msg(() -> FI.linear_interp(gx, [1.0, 2.0, 3.0], -1.0))
+    @test occursin("query point outside interpolation domain", m1d)
+    @test !occursin("on axis", m1d)
 end

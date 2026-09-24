@@ -38,6 +38,24 @@ const EVALS_MED = 50        # ~500ns-2μs benchmarks (50 evals still < 1% timer 
 const EVALS_SLOW = 10       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Hardware fingerprint
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# GitHub's shared runner fleet mixes CPU generations, so a run can land on a
+# noticeably faster/slower box than the last. We record a per-run fingerprint and
+# derive a machine key from it (see bench_machine.jl); the key gates the
+# min-merge and the master store so we only ever compare like-with-like.
+
+include(joinpath(@__DIR__, "bench_machine.jl"))
+
+let hw = hardware_fingerprint()
+    println("Runner hardware: $(hw["cpu_name"]) | $(hw["model"]) | $(hw["ncores"]) cores | julia $(hw["julia"]) | key=$(machine_key(hw))")
+    open("hardware.json", "w") do io
+        JSON.print(io, hw)
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Setup
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -363,59 +381,6 @@ let b = @benchmarkable $itp_phs_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d))
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHS 1D Benchmarks
-# ══════════════════════════════════════════════════════════════════════════════
-
-println("Setting up PHS 1D benchmarks...")
-
-# 15. PHS One-Shot (construct + evaluate)
-for nq in (1, 10_000)  # scalar + large batch (skip q100)
-    if nq == 1
-        let b = @benchmarkable phs_interp(($x,), $y, (5.0,); stencil_size = 8, degree = 3)
-            b.params.evals = EVALS_MED
-            suite["15_phs_oneshot"]["q00001"] = b
-        end
-    else
-        xi = collect(range(0.1, 9.9, nq))
-        let b = @benchmarkable phs_interp(($x,), $y, ($xi,); stencil_size = 8, degree = 3)
-            b.params.evals = EVALS_SLOW
-            label = lpad(nq, 5, '0')
-            suite["15_phs_oneshot"]["q$label"] = b
-        end
-    end
-end
-
-# 16. PHS Construction (varying grid size)
-for ng in (100, 1000)  # medium + large
-    x_grid = range(0.0, 10.0, ng)
-    y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
-    let b = @benchmarkable phs_interp(($x_grid,), $y_grid; stencil_size = 8, degree = 3)
-        b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
-        label = lpad(ng, 4, '0')
-        suite["16_phs_construct"]["g$label"] = b
-    end
-end
-
-# 17. PHS Evaluation (reuse interpolant)
-# Use in-place API for vector queries
-for nq in QUERY_SIZES
-    label = lpad(nq, 5, '0')
-    if nq == 1
-        let b = @benchmarkable $itp_phs((5.0,))
-            b.params.evals = EVALS_FAST
-            suite["17_phs_eval"]["q$label"] = b
-        end
-    else
-        xi = collect(range(0.1, 9.9, nq))
-        out = Vector{Float64}(undef, nq)
-        let b = @benchmarkable $itp_phs($out, ($xi,))
-            b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
-            suite["17_phs_eval"]["q$label"] = b
-        end
-    end
-end
-
-# ══════════════════════════════════════════════════════════════════════════════
 # Cubic Grid Type × Query Pattern Benchmarks (Range vs Vector × Sorted vs Random)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -521,20 +486,142 @@ let b = @benchmarkable constant_interp!($outs_ser, $x_ser, $Ys_ser, $q_ser_rand)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
+# GriddedQuery Benchmarks (shaped in-place tensor-product query)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Catches regressions in the GriddedQuery fast paths before they become visible
+# in downstream resize-style workloads. The shaped in-place API avoids timing
+# output allocation; persistent and one-shot entries are both included because
+# they route through different public surfaces.
+
+println("Setting up GriddedQuery benchmarks...")
+
+const gq2d_bench = GriddedQuery((range(0.05, 9.95, 40), range(0.05, 5.95, 32)))
+const out_gq2d = Matrix{Float64}(undef, size(gq2d_bench))
+
+const gq3d_bench = GriddedQuery((range(0.1, 9.9, 12), range(0.1, 5.9, 10), range(0.1, 3.9, 8)))
+const out_gq3d = Array{Float64, 3}(undef, size(gq3d_bench))
+const GQ_CUBIC_METHOD = CubicInterp()
+
+# 15. GriddedQuery: persistent and one-shot shaped in-place paths
+let b = @benchmarkable $itp_linear_2d($out_gq2d, $gq2d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_persistent_2d_40x32"] = b
+end
+
+let b = @benchmarkable linear_interp!($out_gq2d, ($x2d, $y2d), $data2d, $gq2d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_oneshot_2d_40x32"] = b
+end
+
+let b = @benchmarkable $itp_linear_3d($out_gq3d, $gq3d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_persistent_3d_12x10x8"] = b
+end
+
+let b = @benchmarkable linear_interp!($out_gq3d, ($x3d, $y3d, $z3d), $data3d, $gq3d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_oneshot_3d_12x10x8"] = b
+end
+
+# Cubic's named ND batch API writes a flat vector by contract; the shaped
+# GriddedQuery one-shot fast path is exposed through unified `interp!`.
+interp!(out_gq2d, (x2d, y2d), data2d, gq2d_bench; method = GQ_CUBIC_METHOD)
+let b = @benchmarkable $itp_cubic_2d($out_gq2d, $gq2d_bench)
+    b.params.evals = EVALS_SLOW
+    suite["15_gridded_query"]["cubic_persistent_2d_40x32"] = b
+end
+
+let b = @benchmarkable interp!($out_gq2d, ($x2d, $y2d), $data2d, $gq2d_bench; method = $GQ_CUBIC_METHOD)
+    b.params.evals = EVALS_SLOW
+    suite["15_gridded_query"]["cubic_oneshot_2d_40x32"] = b
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHS 1D Benchmarks
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up PHS 1D benchmarks...")
+
+# 16. PHS 1D: one-shot (construct + evaluate), construction, evaluation — one group
+# (7 benchmarks); the ND PHS entries live in groups 9–11 beside the other methods.
+# One-shot
+for nq in (1, 10_000)  # scalar + large batch (skip q100)
+    if nq == 1
+        let b = @benchmarkable phs_interp(($x,), $y, (5.0,); stencil_size = 8, degree = 3)
+            b.params.evals = EVALS_MED
+            suite["16_phs"]["oneshot_q00001"] = b
+        end
+    else
+        xi = collect(range(0.1, 9.9, nq))
+        let b = @benchmarkable phs_interp(($x,), $y, ($xi,); stencil_size = 8, degree = 3)
+            b.params.evals = EVALS_SLOW
+            label = lpad(nq, 5, '0')
+            suite["16_phs"]["oneshot_q$label"] = b
+        end
+    end
+end
+
+# Construction (varying grid size)
+for ng in (100, 1000)  # medium + large
+    x_grid = range(0.0, 10.0, ng)
+    y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
+    let b = @benchmarkable phs_interp(($x_grid,), $y_grid; stencil_size = 8, degree = 3)
+        b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
+        label = lpad(ng, 4, '0')
+        suite["16_phs"]["construct_g$label"] = b
+    end
+end
+
+# Evaluation (reuse interpolant)
+# Use in-place API for vector queries
+for nq in QUERY_SIZES
+    label = lpad(nq, 5, '0')
+    if nq == 1
+        let b = @benchmarkable $itp_phs((5.0,))
+            b.params.evals = EVALS_FAST
+            suite["16_phs"]["eval_q$label"] = b
+        end
+    else
+        xi = collect(range(0.1, 9.9, nq))
+        out = Vector{Float64}(undef, nq)
+        let b = @benchmarkable $itp_phs($out, ($xi,))
+            b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
+            suite["16_phs"]["eval_q$label"] = b
+        end
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # CLI Argument Parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Extract --baseline <path> flag (consumed before group number parsing)
-const BASELINE_PATH = let path = ""
-    idx = findfirst(==("--baseline"), ARGS)
-    if !isnothing(idx)
-        idx < length(ARGS) || error("--baseline requires a file path argument")
-        path = ARGS[idx + 1]
-    end
-    path
+# Value-carrying flags consumed before positional (group-number) parsing.
+# --baseline <path>    gh-pages baseline data.js for regression verification
+# --prev-best <path>   JSON array [{name,value}] of prior best times for this
+#                      commit (from the existing PR comment); enables cross-run
+#                      min-merge so re-running a flagged commit only lowers times
+# --only <names>       comma-separated benchmark full-names ("group/bench") to
+#                      run in isolation (flagged-only subset re-run)
+function _extract_flag_value(args, flag)
+    idx = findfirst(==(flag), args)
+    isnothing(idx) && return ""
+    idx < length(args) || error("$flag requires an argument")
+    return args[idx + 1]
 end
 
-# Strip --baseline <path> from ARGS for group parsing
+# --master-sha <sha>   store mode: min-merge/regression-check the master commit's
+#                      point vs the *previous* master and emit master_benches.json
+const _VALUE_FLAGS = ("--baseline", "--prev-best", "--only", "--master-sha")
+
+const BASELINE_PATH = _extract_flag_value(ARGS, "--baseline")
+const PREVBEST_PATH = _extract_flag_value(ARGS, "--prev-best")
+const MASTER_SHA = _extract_flag_value(ARGS, "--master-sha")
+const ONLY_NAMES = let raw = _extract_flag_value(ARGS, "--only")
+    isempty(raw) ? Set{String}() : Set(String.(filter(!isempty, split(raw, ','))))
+end
+
+# Strip value flags (and their arguments) from ARGS for group-number parsing
 const _POSITIONAL_ARGS = let filtered = String[]
     skip_next = false
     for arg in ARGS
@@ -542,7 +629,7 @@ const _POSITIONAL_ARGS = let filtered = String[]
             skip_next = false
             continue
         end
-        if arg == "--baseline"
+        if arg in _VALUE_FLAGS
             skip_next = true
             continue
         end
@@ -575,12 +662,12 @@ const IS_FILTERED = !isempty(FILTER_ARGS)
 function is_match(key::String, arg::String)
     # Exact match
     key == arg && return true
-    # Group number match (e.g. "15" matches "15_phs_eval")
+    # Group number match (e.g. "16" matches "16_phs")
     parts = split(key, '_')
     if !isempty(parts) && parts[1] == arg
         return true
     end
-    # Substring match (e.g. "phs_eval" matches "15_phs_eval")
+    # Substring match (e.g. "phs" matches "16_phs")
     occursin(arg, key) && return true
     return false
 end
@@ -595,6 +682,22 @@ if IS_FILTERED
     println("\nFiltered to groups matching: $(join(FILTER_ARGS, ", ")) → $(length(suite)) group(s)")
 end
 
+# --only: keep only the named benchmarks ("group/bench"). Used for flagged-only
+# subset re-runs. Non-run benchmarks are filled from --prev-best at report time,
+# so the emitted report stays complete. If no name matches (e.g. stale names),
+# the suite empties and the run degrades to producing a report purely from
+# prev_best — never a crash.
+const IS_ONLY = !isempty(ONLY_NAMES)
+if IS_ONLY
+    for gkey in collect(keys(suite))
+        for bkey in collect(keys(suite[gkey]))
+            "$gkey/$bkey" ∉ ONLY_NAMES && delete!(suite[gkey], bkey)
+        end
+        isempty(suite[gkey]) && delete!(suite, gkey)
+    end
+    println("\nRestricted to $(length(ONLY_NAMES)) named benchmark(s) → $(sum(length, values(suite); init = 0)) kept")
+end
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Run and Save
 # ══════════════════════════════════════════════════════════════════════════════
@@ -604,8 +707,15 @@ end
 # to avoid GC overhead consuming the time budget (~100ms/sample → only ~30 samples)
 println("\nRunning benchmarks (evals preset, no tuning)...")
 results = BenchmarkGroup()
+function _reset_task_local_pool!()
+    # Isolate groups from setup/run history. `reset!` keeps fallback typed pools
+    # registered, which can change @with_pool checkpoint cost for later groups.
+    empty!(FastInterpolations.AdaptiveArrayPools.get_task_local_pool())
+    return nothing
+end
 for group_key in sort(collect(keys(suite)))
     GC.gc()
+    _reset_task_local_pool!()
     println("  Running [$group_key]...")
     results[group_key] = run(suite[group_key], verbose = true)
 end
@@ -614,54 +724,123 @@ end
 # Regression Verification (when --baseline is provided)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if !IS_FILTERED && !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+const _HAS_BASELINE = !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+const _HAS_PREVBEST = !isempty(PREVBEST_PATH) && isfile(PREVBEST_PATH) && filesize(PREVBEST_PATH) > 0
+
+# Enter whenever there is something to do: master store (always — bootstraps the
+# first point), a baseline to compare against, OR a prior-best to min-merge. The
+# last case matters when the gh-pages baseline fetch failed transiently on a PR
+# re-run: we still apply the floor and emit the report so the BENCH_DATA blob
+# keeps the cross-run minimum instead of resetting to this run's raw values.
+if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
     include(joinpath(@__DIR__, "regression_check.jl"))
 
     println("\n" * "="^70)
     println("REGRESSION VERIFICATION")
     println("="^70)
 
-    latest, window_avg = load_baseline(BASELINE_PATH)
-
-    if !isempty(latest)
-        flagged = detect_regressions(results, latest, window_avg)
-
-        if !isempty(flagged)
-            println("Flagged $(length(flagged)) benchmark(s) for re-verification:")
-            for fb in flagged
-                tier_str = fb.tier == :both ? "immediate+gradual" : string(fb.tier)
-                r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
-                r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
-                println("  [$tier_str] $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
-            end
-
-            println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
-            rerun_and_merge!(suite, results, flagged, RERUN_N, latest, window_avg)
-
-            # Re-evaluate after merge
-            confirmed = detect_regressions(results, latest, window_avg)
-
-            if !isempty(confirmed)
-                println("\nConfirmed $(length(confirmed)) regression(s) after re-verification:")
-                for fb in confirmed
-                    r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
-                    r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
-                    println("  $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
-                end
-            else
-                println("\nAll flagged benchmarks verified as noise after re-run")
-            end
-        else
-            println("No regressions detected")
-            flagged = FlaggedBench[]
-            confirmed = FlaggedBench[]
+    if !isempty(MASTER_SHA)
+        # ── Master store mode ──────────────────────────────────────────────
+        # prev_best = same-(commit,machine) floor (re-run only lowers the point);
+        # latest/window_avg = the *previous* master on THIS machine, for detection.
+        prev_best, latest, window_avg = load_master_baseline(BASELINE_PATH, MASTER_SHA, machine_key())
+        if !isempty(prev_best)
+            println("Loaded $(length(prev_best)) same-commit prior value(s) for SHA $(MASTER_SHA[1:min(8, lastindex(MASTER_SHA))]) (floor)")
         end
 
-        write_regression_report("regression_report.json", results, latest, window_avg, flagged, confirmed)
-        println("Wrote regression_report.json")
+        effective = compute_effective(results, prev_best)
+        flagged = detect_regressions(effective, latest, window_avg)
+        confirmed = FlaggedBench[]
+        if !isempty(flagged)
+            println("Flagged $(length(flagged)) benchmark(s) vs previous master; re-running $(RERUN_N)×...")
+            rerun_and_merge!(suite, results, effective, flagged, RERUN_N, prev_best, latest, window_avg)
+            confirmed = detect_regressions(effective, latest, window_avg)
+            println("$(length(confirmed)) still above threshold after re-run (stored as measured; the graph shows the trend)")
+        else
+            println("No regressions vs previous master")
+        end
+
+        write_master_benches("master_benches.json", effective, results)
+        println("Wrote master_benches.json ($(length(effective)) benches)")
+
+        # Also emit the rich report so the push workflow can post/refresh a commit
+        # comment (same table as a PR): the master min-merge floor lives in
+        # gh-pages, so re-running a commit only lowers these numbers.
+        write_regression_report(
+            "regression_report.json", effective, latest, window_avg, flagged, confirmed,
+            machine_key(), latest_master_machine(BASELINE_PATH),
+        )
+        println("Wrote regression_report.json (for the commit comment)")
     else
-        println("No baseline data available, skipping verification")
-    end
+        # ── PR mode ────────────────────────────────────────────────────────
+        # Prior best times for this commit (from the existing PR comment). Empty
+        # on the first run / when the stored SHA didn't match.
+        prev_best = Dict{String, Float64}()
+        if _HAS_PREVBEST
+            for e in JSON.parsefile(PREVBEST_PATH)
+                prev_best[String(e["name"])] = Float64(e["value"])
+            end
+            println("Loaded $(length(prev_best)) prior-best value(s) for cross-run min-merge")
+        end
+
+        # Min-merge is applied UNCONDITIONALLY (not gated on the baseline): a
+        # re-run only ever lowers values, and the report we emit — hence the
+        # BENCH_DATA blob — preserves the cross-run minimum even when the
+        # baseline is missing. Only the regression *comparison* needs a baseline.
+        effective = compute_effective(results, prev_best)
+
+        latest = Dict{String, Float64}()
+        window_avg = Dict{String, Float64}()
+        flagged = FlaggedBench[]
+        confirmed = FlaggedBench[]
+
+        if _HAS_BASELINE
+            latest, window_avg = load_baseline(BASELINE_PATH, machine_key())
+            flagged = detect_regressions(effective, latest, window_avg)
+
+            if !isempty(flagged)
+                println("Flagged $(length(flagged)) benchmark(s) for re-verification:")
+                for fb in flagged
+                    tier_str = fb.tier == :both ? "immediate+gradual" : string(fb.tier)
+                    r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                    r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                    println("  [$tier_str] $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+                end
+
+                println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
+                rerun_and_merge!(suite, results, effective, flagged, RERUN_N, prev_best, latest, window_avg)
+
+                # Re-evaluate after merge
+                confirmed = detect_regressions(effective, latest, window_avg)
+
+                if !isempty(confirmed)
+                    println("\nConfirmed $(length(confirmed)) regression(s) after re-verification:")
+                    for fb in confirmed
+                        r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                        r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                        println("  $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+                    end
+                else
+                    println("\nAll flagged benchmarks verified as noise after re-run")
+                end
+            else
+                println("No regressions detected")
+            end
+        else
+            println("No baseline available — applied prev-best min-merge, skipped regression comparison")
+        end
+
+        # Record which CPU this run measured on vs the CPU of master's most-recent
+        # commit (the natural baseline) so the comment can warn on a cross-CPU
+        # comparison — the more dangerous mismatch than a mere runner change.
+        cur_machine = machine_key()
+        base_machine = _HAS_BASELINE ? latest_master_machine(BASELINE_PATH) : ""
+        write_regression_report(
+            "regression_report.json", effective, latest, window_avg, flagged, confirmed,
+            cur_machine, base_machine,
+        )
+        println("Wrote regression_report.json (runner=$cur_machine, master-baseline=$(isempty(base_machine) ? "none" : base_machine))")
+    end   # master-store vs PR mode
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -12,7 +12,7 @@
 # ========================================
 
 """
-    _LinearAnchoredQuery{Tg, Tq}
+    _LinearAnchoredQuery{Tg, Tq, I}
 
 Precomputed geometry for ultra-fast linear interpolation at a fixed query point.
 Internal API: no runtime grid validation; callers must ensure the anchor
@@ -21,9 +21,11 @@ matches the interpolant grid.
 # Type Parameters
 - `Tg`: Grid type — normally Float32/Float64, but unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `Tq`: Query type (widened to `promote_type(Tq, Tg)` by the outer constructor)
+- `I <: _AbstractIndices{2}`: Interval representation — `_ContiguousIndices{2}` (one Int) for
+  ordinary grids, `_ExplicitIndices{2}` (two Int) for periodic-exclusive seam cells
 
 # Fields
-- `stencil::_IdxStencil{2}`: Corner-index stencil; `stencil[1]` is the left index, `stencil[2]` the right
+- `interval::I`: Physical cell interval; `interval[1]` is the left index, `interval[2]` the right
   (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
   For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
@@ -50,17 +52,18 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 
 # Efficiency
-- `alpha` for EvalValue: `muladd(alpha, yR - yL, yL)` (no division)
-- `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
+- `alpha` for EvalValue: `alpha*yR + (1-alpha)*yL` (convex blend, no division)
+- `inv_h` for EvalDeriv1: `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe, no division)
 """
-struct _LinearAnchoredQuery{Tg, Tq <: Real}
-    # Corner-index stencil: `stencil[1]` is the left index (idxL), `stencil[2]`
+struct _LinearAnchoredQuery{Tg, Tq <: Real, I <: _AbstractIndices{2}}
+    # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
     # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
-    # periodic-exclusive seam cells `idxR == 1` (wrap). Unified across all
-    # wrap-aware methods via `_IdxStencil{K}` (src/core/idx_stencil.jl).
+    # periodic-exclusive seam cells `idxR == 1` (wrap). Ordinary grids store the
+    # compact `_ContiguousIndices{2}` (one Int); periodic-exclusive seam cells
+    # store `_ExplicitIndices{2}` (src/core/axis_indices.jl).
     # Legacy `aq.idxL` / `aq.idxR` accessors are preserved via `getproperty`
     # below — every existing call site reads through the virtual property.
-    stencil::_IdxStencil{2}
+    interval::I
     xq::Tq                     # query point (possibly wrapped)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     xL::Tg                     # left grid point
@@ -80,26 +83,26 @@ end
 # property returns a concrete type and the call inlines to a single `getfield`
 # (+ tuple index for `:idxL` / `:idxR`). A single-method `getproperty` with
 # `s === :idxL && ...` branches is *not* reliably inlined inside hot loops:
-# the union of possible return types (Int, Tq, UInt8, Tg, _IdxStencil{2})
+# the union of possible return types (Int, Tq, UInt8, Tg, _ExplicitIndices{2})
 # defeats return-type inference and causes boxing. Val-dispatch sidesteps this.
 @inline Base.getproperty(aq::_LinearAnchoredQuery, s::Symbol) = _get_lin_prop(aq, Val(s))
-@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
-@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{:idxL}) = getfield(aq, :interval)[Val(1)]
+@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{:idxR}) = getfield(aq, :interval)[Val(2)]
 @inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
 @inline Base.propertynames(::_LinearAnchoredQuery) =
-    (:stencil, :idxL, :idxR, :xq, :state, :xL, :h, :inv_h, :alpha)
+    (:interval, :idxL, :idxR, :xq, :state, :xL, :h, :inv_h, :alpha)
 
 # Outer constructor: infers `Tq` from alpha's arithmetic type and promotes
-# `xq` to match. Callers pass an explicit `_IdxPair` (or any `_IdxStencil{2}`)
-# so seam-aware index handling is local to the call site.
+# `xq` to match; `I` is inferred from the caller's `interval` (contiguous for
+# ordinary grids, explicit at periodic-exclusive seams — chosen local to the call site).
 #
 # For Float grids:  alpha::Tq, xq::Tq — no conversion (identity).
 # For Dual grids + Float query:  alpha::Dual (from grid arithmetic),
 #   xq promoted to Dual via convert (zero partials = "query has no grid sensitivity").
-@inline function _LinearAnchoredQuery(stencil::_IdxStencil{2}, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
+@inline function _LinearAnchoredQuery(interval::I, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg, I <: _AbstractIndices{2}}
     Ta = typeof(alpha)
     xq_p = convert(Ta, xq)
-    return _LinearAnchoredQuery{Tg, Ta}(stencil, xq_p, state, xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery{Tg, Ta, I}(interval, xq_p, state, xL, h, inv_h, alpha)
 end
 
 # ========================================
@@ -113,20 +116,22 @@ end
     _linear_kernel(::EvalValue, yL, yR, aq::_LinearAnchoredQuery)
 
 Evaluate linear interpolation using anchor's precomputed alpha.
-No division: uses muladd(alpha, yR - yL, yL).
+Returns: α*yR + (1-α)*yL (convex form — wrap-free, bounded, endpoint-exact).
+No division: uses `_linear_value_blend(alpha, yL, yR)`.
 """
 @inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery) where {Tv}
-    return muladd(aq.alpha, yR - yL, yL)
+    return _linear_value_blend(aq.alpha, yL, yR)
 end
 
 """
     _linear_kernel(::EvalDeriv1, yL, yR, aq::_LinearAnchoredQuery)
 
 Evaluate first derivative using anchor's precomputed inv_h.
-No division: uses (yR - yL) * inv_h.
+No division: uses `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe).
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg, Tv}
-    return (yR - yL) * aq.inv_h
+    Tw = _value_space_eltype(Tg, Tv)   # (see linear_kernels.jl)
+    return _fielddiff(Tw, yR, yL) * aq.inv_h
 end
 
 """Second derivative of linear is always zero."""
@@ -176,7 +181,7 @@ itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 """
 # Unified scalar anchor construction. The outer constructor of _LinearAnchoredQuery
-# handles Tg×Tq type promotion, so no _promote_for_anchor call is needed here.
+# handles Tg×Tq type promotion, so no _promote_coord call is needed here.
 @inline function _anchor_query(
         x::AbstractVector{Tg},
         xq,
@@ -219,7 +224,7 @@ function _anchor_query(
     # Tq_promoted accounts for Tg×Tq arithmetic: promote_type(Tq, Tg) gives the
     # widened query type that the outer constructor will use for alpha and xq.
     Tq_promoted = promote_type(Tq, Tg)
-    output = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, length(xq))
+    output = Vector{_LinearAnchoredQuery{Tg, Tq_promoted, _interval_type(x)}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         output[k] = _linear_anchor_query_impl(x, xq[k], wrap, searcher_resolved)
@@ -235,7 +240,7 @@ In-place version of `_anchor_query(x, xq, Val(:linear))` — zero-allocation as 
 the caller reuses `buffer`. Writes `length(xq)` entries.
 
 # Arguments
-- `buffer::Vector{_LinearAnchoredQuery{Tg,Tq}}`: Caller-allocated buffer (length >= length(xq))
+- `buffer::AbstractVector{<:_LinearAnchoredQuery{Tg,Tq}}`: Caller-allocated buffer (length >= length(xq))
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type)
 - `::Val{:linear}`: Type tag for linear interpolation
@@ -246,7 +251,7 @@ The outer `_LinearAnchoredQuery` constructor promotes via `promote_type(S, Tg)`,
 so wider precision is preserved when `S` differs from `Tg`.
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},
+        buffer::AbstractVector{<:_LinearAnchoredQuery{Tg, Tq}},
         x::AbstractVector{Tg},
         xq::AbstractVector{S},
         ::Val{:linear},
@@ -290,15 +295,11 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     # falls back to `xR - xL` on AbstractVector, which loses precision on
     # large-offset Ranges (e.g. `range(1e8, step=0.1, ...)`) due to floating-
     # point cancellation.
-    h = _get_h(x, loc.idx)
-    inv_h = _get_inv_h(x, loc.idx)
+    h = _get_h(x, loc.idxL)
+    inv_h = _get_inv_h(x, loc.idxL)
     alpha = (loc.xq - loc.xL) * inv_h
 
-    # `_anchor_loc` never returns a periodic-exclusive seam pair — it operates
-    # on a fixed grid with at most wrap-to-domain remapping — so `idxR = idxL+1`
-    # here. Periodic-exclusive seam anchors are constructed via `_LinearAnchoredQuery(...)`
-    # directly in the exclusive periodic one-shot helpers (bypassing `_anchor_loc`).
-    return _LinearAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery(loc.interval, loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================
@@ -372,7 +373,8 @@ end
     )
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+        deriv_oneunit = _deriv_oneunit(oneunit(aq.h), op)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, deriv_oneunit)
     end
     @inbounds return _linear_kernel(op, y[aq.idxL], y[aq.idxR], aq)
 end
@@ -419,7 +421,7 @@ function (itp::LinearInterpolant{Tg, Tv})(
         aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
     ) where {Tg, Tv, Tq <: Real}
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)

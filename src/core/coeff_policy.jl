@@ -15,11 +15,11 @@
 
 # ── AutoCoeffs: 1D scalar query → always OnTheFly ──
 # Single query: O(1) local slopes strictly beats O(n) bulk slopes.
-@inline _resolve_coeffs(::AutoCoeffs, ::AbstractVector, ::Real) = OnTheFly()
+@inline _resolve_coeffs(::AutoCoeffs, ::AbstractVector, ::Any) = OnTheFly()
 
 # ── AutoCoeffs: 1D vector query → runtime length check ──
 # Crossover: PreCompute O(n + K) vs OnTheFly O(2K). At K ≈ n, PreCompute wins.
-@inline function _resolve_coeffs(::AutoCoeffs, x::AbstractVector, xq::AbstractVector)
+@inline function _resolve_coeffs(::AutoCoeffs, x::AbstractVector, xq::AbstractArray)
     return length(xq) > length(x) ? PreCompute() : OnTheFly()
 end
 
@@ -32,7 +32,7 @@ end
 # Local Hermite methods → OnTheFly (no ND PreCompute for Hermite yet).
 # Global methods (Cubic, Quadratic) → PreCompute (specialized ND types with integrate/adjoint).
 # NOTE: N≥3 rule removed — would route Cubic/Quadratic to HeteroInterpolantND which lacks
-# integrate/adjoint support. Can be re-added when HeteroInterpolantND gains these features.
+# ND adjoint support (integrate is supported). Can be re-added when it gains adjoints.
 @inline function _resolve_coeffs(::AutoCoeffs, ::Val{N}, methods) where {N}
     _all_trivial_methods(methods) && return PreCompute()
     _has_any_local_method(methods) && return OnTheFly()

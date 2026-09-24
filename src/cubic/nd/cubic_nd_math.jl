@@ -182,8 +182,10 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
         h::Tg, inv_h::Tinv, dL::Tq
     ) where {Tg, Tinv, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
-    # Auto-promote naturally through arithmetic with value types
-    value_contrib = 12 * (yL - yR)
+    # `(yL - yR)` widens in VALUE space (narrow y can't wrap) — a coeff-space `_coeff_op2`
+    # type (value/grid²) would make `_fielddiff` convert the `W` values and throw. The grid⁻³
+    # units enter only at the final `inv_h³`; `deriv_contrib = 6·h·dy` is likewise value-space.
+    value_contrib = 12 * _fielddiff(_promote_eltype(_interp_op, Tg, typeof(yL), Tg), yL, yR)
     deriv_contrib = 6 * h * (dyL + dyR)
 
     d3P_dt3 = value_contrib + deriv_contrib
@@ -201,7 +203,8 @@ Generic fallback: N-th derivative of cubic Hermite is zero for N ≥ 4.
         yL, ::Any, ::Any, ::Any,
         ::Tg, ::Tinv, dL::Tq
     ) where {N, Tg, Tinv, Tq}
-    return 0 * yL * one(dL)
+    # `yL` is value space; an N-th derivative carries `inv(grid)^N` (value/gridᴺ).
+    return 0 * yL * Base.literal_pow(^, inv(oneunit(dL)), Val(N))
 end
 
 # ========================================
@@ -247,7 +250,7 @@ function _moments_to_derivatives_1d!(
         h1 = _get_h(x, 1)
         inv_h1 = _get_inv_h(x, 1)
         h_over_6 = h1 * inv_6
-        linear_slope = (y[2] - y[1]) * inv_h1
+        linear_slope = _fielddiff(Tv, y[2], y[1]) * inv_h1
         moment_sum = muladd(Tg(2), m[1], m[2])
         dydx[1] = muladd(-h_over_6, moment_sum, linear_slope)
     end
@@ -257,7 +260,7 @@ function _moments_to_derivatives_1d!(
         h = _get_h(x, i)
         inv_h = _get_inv_h(x, i)
         h_over_6 = h * inv_6
-        linear_slope = (y[i + 1] - y[i]) * inv_h
+        linear_slope = _fielddiff(Tv, y[i + 1], y[i]) * inv_h
         moment_sum = muladd(Tg(2), m[i + 1], m[i])
         dydx[i + 1] = muladd(h_over_6, moment_sum, linear_slope)
     end
@@ -321,7 +324,7 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, first(values))
     cache = _get_cubic_cache(grid, bc, _effective_autocache(true, Tg))
     actual_bc = cache.bc isa PeriodicBC ? cache.bc : bc_compute
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, actual_bc)
     _moments_to_derivatives_1d!(deriv, m, values, cache.x)
@@ -344,7 +347,7 @@ end
     # Cache uses grid type Tg for matrix structure
     bc_cache = BCPair(Deriv1(zero(Tg)), Deriv1(zero(Tg)))
     cache = _get_cubic_cache(grid, bc_cache, _effective_autocache(true, Tg))
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, bc)
     _moments_to_derivatives_1d!(deriv, m, values, cache.x)
@@ -384,9 +387,9 @@ This enables @simd vectorization over the contiguous dimension.
 - `thomas::ThomasFactorization{Tg}`: Thomas factorization with dl, du, inv_d
 """
 @inline function _ldiv_along_dim_vectorized!(
-        z::AbstractMatrix{Tv},
-        thomas::ThomasFactorization{Tg, V}
-    ) where {Tv, Tg, V <: AbstractVector{Tg}}
+        z::AbstractMatrix,
+        thomas::ThomasFactorization
+    )
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d

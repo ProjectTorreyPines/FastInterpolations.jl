@@ -4,12 +4,12 @@ FastInterpolations supports interpolation with arbitrary value types — not jus
 
 Internally, every interpolant separates two type roles:
 
-* **Grid type**: Internally `<: AbstractFloat` (`Float64`, `Float32`). Integer grids are automatically promoted. Used for grid coordinates, spacings, and search.
+* **Grid type (`Tg`)**: `<: Number`. Real grids (`Float64`, `Float32`; integer grids are automatically promoted) are the common case, but unit-carrying grids (`Unitful.Quantity`) and AD grids (`ForwardDiff.Dual`) work too. Used for grid coordinates, spacings, and search.
 * **Value type (`Tv`)**: Unconstrained. Can be any type supporting the 4 operations below.
 
 ## Required Operations — Vector Space Axioms
 
-Only 4 operations are needed. These are sufficient for **every** interpolation method, boundary condition, derivative, integration, ND, Series, and vector calculus operation in the library.
+Only 4 operations are needed for interpolation, boundary conditions, derivatives, bounded integration, ND, Series, and vector calculus on a **`Real` grid**:
 
 ```julia
 +(::Tv, ::Tv) → Tv                    # value addition
@@ -18,7 +18,24 @@ Only 4 operations are needed. These are sufficient for **every** interpolation m
 *(::Tv, ::Real) → Tv                  # right scalar multiplication
 ```
 
-These are the standard **vector space axioms** — addition, subtraction, and scalar multiplication over `Real` scalars. Nothing else is required. Using `Real` (rather than separate `AbstractFloat` + `Integer` methods) is simpler and also covers `Rational`, `ForwardDiff.Dual`, and other `Real` subtypes automatically.
+These are the standard **vector space axioms** — addition, subtraction, and scalar multiplication over `Real` scalars. Using `Real` (rather than separate `AbstractFloat` + `Integer` methods) is simpler and also covers `Rational`, `ForwardDiff.Dual`, and other `Real` subtypes automatically.
+
+### What the axioms deliberately exclude
+
+`zero(::Type{Tv})`, `convert`, `oneunit`, `/(::Tv, ::Tg)`, `isapprox`, `==`, `<` are **not** required, and the kernels are written so they are never called. This is load-bearing rather than incidental: it is why an out-of-bounds derivative is built as `0 * y_boundary * oneunit(grid⁻ᴺ)` — the `zero`, `oneunit` and `inv` all happen on the **grid** side (which is `<: Number`, so they are guaranteed), and `Tv` is only ever touched with `*`. A design that computed the output type first and converted at the end would need `zero(T_out)`/`convert`, so it is not available here.
+
+### Two cases that need more
+
+* **Non-`Real` grid + derivatives.** On a `Unitful` grid an `N`-th derivative lives in `value/coordᴺ`, so the scalar multiplying `Tv` is a `Quantity`, not a `Real`. Define the `Number` forms as well:
+
+  ```julia
+  *(::Number, ::Tv) → Tv
+  *(::Tv, ::Number) → Tv
+  ```
+
+  Values (`deriv = EvalValue()`) need only the `Real` forms — the interpolation weights are dimensionless.
+
+* **Full-domain and cumulative integration.** `integrate(itp)` and `cumulative_integrate(itp)` seed an accumulator and therefore need `zero(::Type{Tv})`. Bounded `integrate(itp, a, b)` does not.
 
 ## Conditional: `muladd`
 

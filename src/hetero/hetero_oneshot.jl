@@ -16,15 +16,17 @@
 @with_pool pool function _interp_nd_hetero_oneshot(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
     ) where {Tg, N}
-    # 0. Domain check + FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
+    # 0. Validate + promote (in-domain NoExtrap axis → InBounds for the lean search) + FillExtrap
+    #    short-circuit. InBounds no-ops through `_try_fill_oob` / periodic extension /
+    #    `_resolve_extrap` / `_handle_all_extraps` and reaches the extrap-aware search below.
+    extraps_val = _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -40,7 +42,7 @@
 
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
     Tv = _value_type(eltype(data), Tg)
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
@@ -50,7 +52,8 @@
 
     # 4. Eval pipeline (axis-only — `grids_p` carries `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_p, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, searches, hints)
+    # 5-arg search: per-axis `extraps_eff` → InBounds range axes take the lean direct search.
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, searches, hints, extraps_eff)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
 
     # 6. Heterogeneous tensor-product kernel
@@ -62,7 +65,7 @@ end
 # ========================================
 
 @with_pool pool function _interp_nd_hetero_oneshot_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{<:Any, N},
         queries,
@@ -86,10 +89,10 @@ end
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
     # Batch-level InBounds promotion: see cubic_nd_oneshot.jl for pattern.
-    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
+    extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
 
     Tv = _value_type(eltype(data), Tg)
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
@@ -97,14 +100,16 @@ end
 
     # Eval loop (per query) — axis-only helpers read `h`/`inv_h` from `grids_p`
     @inbounds for k in 1:nq
-        query_k = _extract_query_point(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N), grids_p)
         oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints)
+        # 5-arg search: `extraps_eff` is InBounds-promoted (via `_validate_nd_domain` above) for
+        # an in-domain batch → InBounds range axes take the lean direct search.
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints, extraps_eff)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
     end
@@ -124,15 +129,15 @@ end
 # Periodic BC is handled internally by each _oneshot_eval_1d call.
 
 @inline @with_pool pool function _interp_nd_oneshot_onthefly(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
@@ -141,17 +146,21 @@ end
     # `_wrap_to_domain` / `search_interval` without the raw n-length Vector's
     # `last - first ≠ period` mismatch (Linear/Constant ND mirror this pattern).
     bcs = map(_bc_for_periodic_check, methods)
-    grids_eff = map(_resolve_axis, grids, bcs)
+    # Value-matched grid float (Int grid + Float32 data → Float32) — output matches the caller's witness.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    # @generated static-Tg unroll: a Type captured in a closure (or an
+    # `ntuple(_ -> Tg, …)` element) de-optimizes under weak const-prop —
+    # LTS per-fiber heap, and per-axis dynamic dispatch on 1.12 CI workers.
+    grids_eff = _resolve_axes(grids, bcs, Tg)
     # NOTE: inclusive PeriodicBC slice validation is NOT performed here — it is
     # hoisted to the callers (`_interp_nd_oneshot_dispatch` and the OnTheFly
     # branch of `_interp_nd_oneshot_batch_dispatch!`) so the batch path pays the
     # O(boundary-size) check once per batch instead of once per query.
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids_eff)
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
-    # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
-    # that must fit into _collapse_dims intermediate buffers.
-    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    # Tr promotes data with grid + query eltypes → Dual-safe pool buffers for AD.
+    # `Tg` (value-matched above) already floats Int; reuse it here.
+    Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # GridIdx safety gate: same reason as the persistent path — a GridIdx on a
     # windowable axis would be aliased to the wrong grid entry once the data
@@ -167,8 +176,8 @@ end
     if _has_any_local_method(methods) && !_has_grididx(typeof(query))
         # BC-aware per-axis search; on `PeriodicBC{:exclusive}` axes the seam
         # cell returns `idx_R=1` so the windowing below picks the right cell.
-        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
-        indices = map(first, stencils)
+        intervals, _, _ = _search_all_axis_intervals(q_eval, grids_eff, searches, hints)
+        indices = map(first, intervals)
         # Per-axis windows — generic `AbstractVector{Int}`:
         #   - non-periodic windowable: `UnitRange{Int}` (cell-local, asymmetric clamp)
         #   - periodic windowable:     `Vector{Int}` from pool (wrap-aware indices)
@@ -192,7 +201,11 @@ end
         )
     end
 
-    # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
+    # Global-solve path: grids straight through. The caller
+    # (`_interp_nd_oneshot_dispatch`) promotes types only — the axes arrive raw,
+    # and each inner 1D one-shot value-matches its own axis via the data-aware
+    # cache / width-first geometry (and wraps `:exclusive` axes itself — user
+    # length n, not the wrapped virtual n+1). `_collapse_dims` emits `Tr` directly.
     full_windows = map(Base.OneTo, size(data))
     return _collapse_dims(Tr, data, grids, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end
@@ -247,9 +260,16 @@ function _interp_nd_oneshot_dispatch(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
     ) where {N}
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(eltype(data), Tg, typeof.(query)...)
+    # Type-only promotion: no eager grid convert. The OnTheFly path value-matches
+    # each raw axis at its own inner 1D surface (data-aware caches / width-first
+    # geometry), so it takes the raw `grids` straight through. The PreCompute path
+    # (`_interp_nd_hetero_oneshot`) requires homogeneous-eltype `Tg` grids and uses
+    # them directly, so it still gets the converted grids.
+    Tg, Tv, _ = _nd_promote_types(grids, data)
+    _validate_nd_grids(grids, data)
+    # Per-axis (hetero) ND one-shot does not support unit-carrying grids yet —
+    # match the persistent builder's actionable error, not a deep `_collapse_dims` MethodError.
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
     bcs = map(_bc_for_periodic_check, methods)
@@ -261,12 +281,16 @@ function _interp_nd_oneshot_dispatch(
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    _validate_axis_methods(grids_typed, methods, extraps_val)
+    _validate_axis_methods(grids, methods, extraps_val)
+    # Fold the derivative order in AFTER `ops` is known — an all-Linear method
+    # tuple reaches here on a unit grid (only the solver-backed families are
+    # refused above), and the value-space witness would assert `W` on a `W/s`.
+    Tr = _deriv_eltype_nd(_promote_eltype(eltype(data), Tg, typeof.(query)...), grids, ops)
 
     if coeffs isa OnTheFly
-        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hints)::Tr
+        return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hints)::Tr
     end
-    return _interp_nd_hetero_oneshot(grids_typed, data, query, methods, extraps_val, searches, ops, hints)::Tr
+    return _interp_nd_hetero_oneshot(_convert_grids_typed(grids, Tg), data, query, methods, extraps_val, searches, ops, hints)::Tr
 end
 
 # ========================================
@@ -321,15 +345,18 @@ end
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
     ) where {N}
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Type-only promotion (see the scalar dispatch): OnTheFly takes raw `grids`
+    # and value-matches per axis; PreCompute gets the converted grids.
+    Tg, Tv, _ = _nd_promote_types(grids, data)
+    _validate_nd_grids(grids, data)
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     _query_check_ndims(queries, Val(N))
 
     # bc-aware extrap (matches scalar dispatch).
     bcs = map(_bc_for_periodic_check, methods)
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    _validate_axis_methods(grids_typed, methods, extraps_val)
+    _validate_axis_methods(grids, methods, extraps_val)
 
     if coeffs isa OnTheFly
         nq = _query_length(queries)
@@ -346,13 +373,13 @@ end
         # (follow-up).
         searches = _resolve_search_nd(search, Val(N))
         @inbounds for k in 1:nq
-            query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
+            query_k = _extract_query_point(queries, k, Val(N), grids)
+            output[k] = _interp_nd_oneshot_onthefly(grids, data, query_k, methods, extraps_val, searches, ops, hints)
         end
         return output
     end
 
-    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, ops, search, hints)
+    return _interp_nd_hetero_batch_dispatch!(output, _convert_grids_typed(grids, Tg), data, queries, methods, extraps_val, ops, search, hints)
 end
 
 # ========================================
@@ -384,7 +411,7 @@ dfdx = interp((x, y), data, (0.5, 0.3);
 function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -392,7 +419,7 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
     resolved_query = map(_resolve_grididx, query, grids)
     # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
     # GridIdx axes need no interpolation — replace their method with NoInterp()
@@ -419,14 +446,81 @@ end
 # Public API — Batch In-Place
 # ========================================
 
+# Shared body for the public batch `interp!` methods. Query-specific contracts
+# such as GriddedQuery's shaped output requirement are checked before entry.
+# Normalizes `method`, then routes on (grid arity, method tuple): the N=1 local-Hermite
+# route (interp_1d.jl) must see the caller's `coeffs` before the ND resolver turns
+# `AutoCoeffs` into the per-query `OnTheFly` loop.
+function _interp_nd_oneshot_batch_public!(
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries,
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy,
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}},
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}},
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}},
+        hint,
+    ) where {N}
+    method_tuple = _method_tuple(method, Val(N))
+    return _interp_nd_oneshot_batch_route!(output, grids, data, queries, method_tuple, coeffs, deriv, extrap, search, hint)
+end
+
+function _interp_nd_oneshot_batch_route!(
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries,
+        method_tuple::Tuple{Vararg{AbstractInterpMethod, N}},
+        coeffs::AbstractCoeffStrategy,
+        deriv, extrap, search, hint,
+    ) where {N}
+    # A GridIdx query mixes free arrays with pinned scalar indices, so `_query_size`
+    # does not describe it; the GridIdx branch pre-slices the pinned axes and its
+    # reduced sub-problem validates its own length. Every other query gets the exact-
+    # size gate before any write (including the separable fast path): a shaped query
+    # requires a matching-shape output, and a length-only match that silently flattened
+    # a matrix query into a vector sink is rejected.
+    is_grididx = queries isa Tuple && _has_grididx(typeof(queries))
+    is_grididx || _check_query_output_size(output, queries)
+    # Separable fast path: fills the N-D output directly (no reshape). True iff a
+    # gridded evaluator exists for this (query, method) tuple.
+    _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv, coeffs) && return output
+    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward `coeffs`
+    # so the reduced (post-slice) sub-problem honors the caller's strategy. That core
+    # is vector-typed, so a shaped output is flattened through a zero-copy `vec` view
+    # HERE only (niche path); the main dispatch below writes the N-D output directly.
+    if is_grididx
+        flat = output isa AbstractVector ? output : vec(output)
+        _interp_batch_with_grididx!(
+            flat, grids, data, queries;
+            method = method_tuple, deriv = deriv, extrap = extrap,
+            search = search, hint = hint, coeffs = coeffs,
+        )
+        return output
+    end
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
+    # Reject explicit unsupported combinations (PreCompute + local Hermite); the
+    # AutoCoeffs path never trips this because resolution returns OnTheFly for
+    # local methods. Mirrors the scalar `interp` validation at line 309.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
+    # Write directly into the (possibly N-D) output — the batch cores fill by linear
+    # index and array/GriddedQuery queries unravel column-major.
+    _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    return output
+end
+
 """
     interp!(output, grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 In-place one-shot N-dimensional interpolation at multiple points.
-Builds partials once, evaluates at all query points.
+Builds partials once, evaluates at all query points. `output` must match the
+shape requested by `queries`: ordinary batch queries write a vector, while
+shaped query containers such as `GriddedQuery` write an N-dimensional array.
 """
 function interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;
@@ -437,34 +531,50 @@ function interp!(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint = nothing,
     ) where {N}
-    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward
-    # `coeffs` so the reduced (post-slice) sub-problem honors and validates the
-    # caller's strategy choice rather than silently falling back to AutoCoeffs.
-    if queries isa Tuple && _has_grididx(typeof(queries))
-        return _interp_batch_with_grididx!(
-            output, grids, data, queries;
-            method = method, deriv = deriv, extrap = extrap,
-            search = search, hint = hint, coeffs = coeffs,
-        )
-    end
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
-    # Reject explicit unsupported combinations (PreCompute + local Hermite); the
-    # AutoCoeffs path never trips this because resolution returns OnTheFly for
-    # local methods. Mirrors the scalar `interp` validation at line 309.
-    _validate_nd_coeffs(coeffs_resolved, method_tuple)
-    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    return _interp_nd_oneshot_batch_public!(
+        output, grids, data, queries, method, coeffs, deriv, extrap, search, hint
+    )
 end
 
 # ========================================
 # Public API — Batch Allocating
 # ========================================
 
+# Value eltype folded PER AXIS (`_nd_value_eltype`), then into derivative space.
+# Joining the axes into one grid type first collapses a mixed-unit grid (`s` × `m`)
+# to an abstract `Quantity{Float64}`; the ND batch kernels are pinned to a
+# concrete output, so that surfaced as an internal `MethodError` on a public call
+# rather than as silent boxing. The witness also picks the axis resolution
+# (blend → value-matched float, select → raw), so it is passed, not spelled here.
+@inline function _interp_nd_output_eltype(
+        ::Tuple{Vararg{AbstractInterpMethod}},
+        grids::NTuple{N, AbstractVector},
+        ::Type{Tv},
+        ::Type{Tq},
+        ops::Tuple;
+        shape_op = _interp_op
+    ) where {N, Tv, Tq}
+    return _deriv_eltype_nd(_nd_value_eltype(shape_op, Tv, grids, Tq), grids, ops)
+end
+
+@inline function _interp_nd_output_eltype(
+        ::Tuple{ConstantInterp, Vararg{ConstantInterp}},
+        grids::NTuple{N, AbstractVector},
+        ::Type{Tv},
+        ::Type{Tq},
+        ops::Tuple;
+        shape_op = _select_op
+    ) where {N, Tv, Tq}
+    return _deriv_eltype_nd(_nd_value_eltype(shape_op, Tv, grids, Tq), grids, ops)
+end
+
 """
     interp(grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 Allocating one-shot N-dimensional interpolation at multiple points.
-Returns a `Vector` of interpolated values.
+Allocates the output shape requested by `queries`: ordinary batch queries
+return a vector, while shaped query containers such as `GriddedQuery` return an
+N-dimensional array.
 """
 function interp(
         grids::NTuple{N, AbstractVector},
@@ -477,10 +587,13 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N}
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
+    method_tuple = _method_tuple(method, Val(N))
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(Tv, Tg, Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
-    interp!(output, grids, data, queries; method = method, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq, ops)
+    # Output takes the query's shape: a flat vector for ordinary batches, the
+    # N-D `size(gq)` array for a shaped container like GriddedQuery.
+    output = Array{Tr}(undef, _query_size(queries))
+    interp!(output, grids, data, queries; method = method_tuple, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
     return output
 end

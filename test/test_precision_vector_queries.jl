@@ -216,11 +216,13 @@
     end
 
     @testset "Cubic Series: vector vs per-point scalar" begin
-        # Known limitation: CubicSeriesInterpolant vector path requires out::Vector{Tv}
-        # and data::Matrix{Tv} to share the same Tv. When the grid is Float32 and
-        # queries are Float64, the output buffer is Vector{Float64} but data is
-        # Matrix{Float32}, causing a MethodError in _eval_series_vector!.
-        # Fix requires decoupling output type from data type in _eval_series_vector!.
+        # Known limitation: on a Float32 grid with Float64 queries, the out-of-place
+        # vector path (series-contiguous batch kernel) and the per-point scalar path
+        # (point-contiguous kernel) can disagree past PRECISION_RTOL on cancellation-
+        # heavy points (e.g. cosine at π/2: ~1.66e-9 relative, ~8e-19 absolute). Both
+        # paths already produce Float64 — the divergence is FMA/SIMD scheduling across
+        # the two load layouts, not a missing promotion. Pre-existing (both layouts
+        # were SIMD before the scalar-unify refactor); tracked separately.
         @test_broken begin
             x = Float32.(collect(range(0.0, 2π, 51)))
             y1 = Float32.(sin.(x))

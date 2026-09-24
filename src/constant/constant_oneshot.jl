@@ -24,26 +24,30 @@
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq,
-        ::InBounds,
+        e::InBounds,
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
+    xi = _resolve_grididx(xi, x)   # GridIdx(k) → node coordinate (identity otherwise)
     if _extract_primal(xi) == _extract_primal(last(x))
-        # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic
-        # `inner[1]`). `one(Tq) * one(Tg)` threads both query and grid carriers
-        # — must match the kernel branch (which threads Tg via `dL`), else
-        # inference becomes `Union{Tv, Dual}` when grid is Dual and query is Float.
+        # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic `inner[1]`).
+        # `one(coord) * one(Tg)` threads both carriers — must match the kernel branch
+        # (Tg via `dL`), else inference is `Union{Tv, Dual}` for a Dual grid + Float query.
+        # The carrier comes from the resolved value, not `Tq` (a `GridIdx` has no `one`).
         return op isa EvalValue ?
-            last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * one(Tq) * one(Tg)
+            last(y) * one(_coord_value(xi)) * one(Tg) :
+            0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(_coord_value(xi))
     end
-    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
+    # Reached only in-domain (genuine InBounds; NoExtrap post-throw; Clamp/Fill/Extend after
+    # their IN_DOMAIN check — ExtendExtrap is routed to Clamp above), so the lean InBounds
+    # search is safe here. bit-identical to the standard search for an in-bounds query.
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi, e)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
-# NoExtrap / others matching AbstractExtrap: domain check → delegate.
+# NoExtrap / others matching AbstractExtrap: domain check → threaded search + kernel.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -52,9 +56,20 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    @boundscheck _check_domain(x, xi, extrap)
-    return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
+    ) where {Tg, Tv, Tq, S <: Searcher}
+    # Thread `extrap_eff` into the search (not a hardcoded InBounds()) so this core matches the other
+    # 1D wrappers and stays correct for any extrap that reaches it — today only NoExtrap does
+    # (ExtendExtrap → ClampExtrap; Clamp/Fill/Wrap have own methods). Seam branch mirrors the InBounds core.
+    xi = _resolve_grididx(xi, x)
+    extrap_eff = _check_domain(x, xi, extrap)
+    if _extract_primal(xi) == _extract_primal(last(x))
+        return op isa EvalValue ?
+            last(y) * one(_coord_value(xi)) * one(Tg) :
+            0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(_coord_value(xi))
+    end
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi, extrap_eff)
+    dL = xi - xL
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
 # ExtendExtrap: constant has zero slope → extend = clamp. Route through
@@ -68,7 +83,7 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
     return _constant_eval_at_point(x, y, xi, ClampExtrap(), side, op, searcher)
 end
 
@@ -81,10 +96,15 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    ) where {Tg, Tv, Tq, S <: Searcher}
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain selection. Identity on Float64; Int grids stay Int.
+    xi = _promote_coord(_resolve_grididx(xi, x), eltype(x))
     xi_primal = _extract_primal(xi)
-    xi_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
-    xi_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
+    st = _oob_state(x, xi_primal)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xi, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xi, deriv_oneunit)
     return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
 end
 
@@ -100,8 +120,8 @@ end
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_wrapped = _wrap_to_domain(xi, x)
+    ) where {Tg, Tv, Tq, S <: Searcher}
+    xi_wrapped = _wrap_to_domain(_resolve_grididx(xi, x), x)
     # Right-edge short-circuit (closed-domain): `xi == last(x)` collapses
     # uniformly to `last(y)`, bypassing side semantics. Mirrors the InBounds
     # core's identical guard and the persistent anchor path's `aq.xq == x_last`
@@ -110,8 +130,8 @@ end
     # cyclic wrap is preserved; raw Vector yields `y[n]`.
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
         return op isa EvalValue ?
-        last(y) * one(Tq) * one(Tg) :
-        0 * last(y) * one(Tq) * one(Tg)
+        last(y) * one(_coord_value(xi_wrapped)) * one(Tg) :
+        0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(_coord_value(xi_wrapped))
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
@@ -140,7 +160,7 @@ Constant (step/piecewise constant) interpolation at a single point.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
-- `xi::Real`: Query point
+- `xi::Number`: Query point
 - `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
   `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
   for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
@@ -192,12 +212,15 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info
-    # lives in axis type after resolution → searcher uses `NoBC()`.
-    x_eff = _resolve_axis(x, bc)
+    # lives in axis type after resolution → searcher uses `NoBC()`. Raw Tg:
+    # the selection kernel keeps natural promotion (no float forcing) — an Int
+    # range stays `_CachedRange{Int}`, mirroring the ND constant scalar rule.
+    x_eff = _resolve_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, xi, search, hint)
@@ -236,24 +259,27 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
 # Unified in-place entry. Resolvers normalize inputs; selection kernel
 # preserves `eltype(y)`. No Real/Mixed wrapper needed.
 function constant_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
+    _check_grid_orderable(eltype(x))
     @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
+    _check_query_output_size(output, x_targets)
 
-    # Surface-level BC-aware resolvers (same template as Linear oneshot).
-    x_eff = _resolve_axis(x, bc)
+    # Surface-level BC-aware resolvers (same template as Linear oneshot);
+    # raw Tg — selection kernel keeps natural promotion (no float forcing).
+    x_eff = _resolve_axis(x, bc, eltype(x))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    searcher = _resolve_search(x_eff, x_targets, search, hint)
     _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
@@ -280,22 +306,24 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 # Buffer eltype via Constant's kernel shape — Julia infers the return type
-# from `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`, matching the
+# from `_select_op(xL, yv, xq) = yv * one(xq - xL)`, matching the
 # actual kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual};
 # Float y × Dual grid → Dual carrier via `xq - xL`).
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
-    output = Vector{_output_eltype(_constant_kernel_shape, eltype(x), eltype(y), eltype(x_targets))}(
-        undef, length(x_targets)
-    )
-    constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
+    # Deriv-aware: constant's nth derivative is zero but carries value/gridᴺ units,
+    # so the buffer must size in that space (identity fold for `EvalValue`).
+    Tr = _deriv_eltype(_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets)), eltype(x), deriv)
+    output = _alloc_query_output(Tr, x_targets)
+    constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search, hint)
     return output
 end

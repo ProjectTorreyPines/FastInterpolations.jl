@@ -57,17 +57,19 @@ function linear_interp! end
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
 function linear_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
+    _check_grid_orderable(eltype(x))
     @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
+    _check_query_output_size(output, x_targets)
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping):
     #   `_resolve_axis(x, bc)` shapes the axis (Range→`_CachedRange`, Vector→passthrough,
@@ -77,10 +79,11 @@ function linear_interp!(
     #     for `:exclusive`).
     # BC info lives in the axis type after resolution → searcher uses `NoBC()`,
     # the seam is handled by the wrapper (or by the naturally-extended Range).
-    x_eff = _resolve_axis(x, bc)
+    # Value-matched Tg keeps the loop interior bit-consistent with the scalar path.
+    x_eff = _resolve_axis(x, bc, _promote_grid_float(eltype(x), eltype(y)))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    searcher = _resolve_search(x_eff, x_targets, search, hint)
     return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
@@ -91,10 +94,10 @@ end
 # `NoExtrap` paths the return type is already `InBounds`, so this is a
 # no-op. Supports mixed types: Tg for grid, Tv for values.
 @inline function _linear_interp_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_targets::AbstractVector,
+        x_targets::AbstractArray,
         extrap::AbstractExtrap,
         op::O,
         searcher::S
@@ -104,10 +107,10 @@ end
 end
 
 @inline function _linear_interp_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_targets::AbstractVector,
+        x_targets::AbstractArray,
         extrap::E,
         op::O,
         searcher::S
@@ -132,14 +135,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
+    linear_interp(x, y, xq::Number; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
 - For general `AbstractVector` x: Search algorithm determined by `search` parameter
 
 # Arguments
-- `xq::Real`: Single interpolation query point
+- `xq::Number`: Single interpolation query point
 - `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
   `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
   for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
@@ -204,11 +207,11 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
-# Oneshot path (no spacing): α via direct (q-L)/(R-L) on plain Vector grid
-# (`_alpha_of(q, L, R, grid)`); inv_h recomputed per query.
-# Persistent path (with spacing): α via cached `inv_h * (q-L)`; mirrors the ND
-# `_locate_cell` design — exact at knots is sacrificed for query-time speed
-# (1 ULP off possible at right knots; oneshot path remains exact).
+# Cell geometry enters at the value-matched width: `inv_h` converts to the
+# compile-time `typeof(inv(oneunit(Tw)))` (the `_CachedRange` Tinv idiom) — a no-op
+# for float/duck/Unitful axes, and the value-width float for an Int axis whose
+# `inv(h::Int)` would otherwise widen everything to Float64. α = (q−L)·inv_h keeps
+# query blood (Dual partials) and mirrors the persistent + ND `_locate_cell` form.
 
 # Core in-bounds path: search + kernel. All non-InBounds extrap overloads
 # delegate here after their preprocessing — see cubic_eval.jl for the same
@@ -218,24 +221,25 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Compile-time cell-geometry type: reciprocal spacing at the value-matched width.
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
-    # Independent computation of `α` and `inv_h`. The kernel uses only one
-    # (EvalValue → α, `DerivOp(1)` → inv_h, `DerivOp(2)` → neither), so the
-    # unused branch's fdiv is dead-code-eliminated by LLVM. `_alpha_of`
-    # dispatches on grid type:
-    #   `_CachedRange`        → `(q-L) * x.inv_h` (cached fmul, no fdiv)
-    #   raw `AbstractVector`  → `(q-L) / float(R-L)` (single fdiv)
-    α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    α = _alpha_of(xq, xL, inv_h)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# (NoExtrap throws on OOB; others are no-op fallbacks) → delegate.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — it must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query. Passing `extrap` routes to
+# the clamping `search_interval` overload; the boundary cell (idx ∈ [1, n-1]) lets `α`
+# extrapolate past the ends.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -245,11 +249,21 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    α = _alpha_of(xq, xL, inv_h)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
 end
 
-# ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
+# ClampExtrap / FillExtrap (all ops): boundary check → extrap value or delegate.
+# An OOB query under flat extrapolation freezes at the boundary node, so the result IS the
+# boundary sample (value) or zero (derivative) — short-circuit, skipping search + kernel. The
+# saving scales with the OOB fraction (each OOB query is ~half a full eval), so this dominates
+# an always-clamp-then-evaluate path on extrapolation-heavy batches.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -258,13 +272,15 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to the coordinate type Tc so the OOB extrap VALUE carries the grid
+    # carrier (Dual grid → Dual fill via _eval_extrapolation), matching the
+    # in-domain kernel. Identity on Float64; Int grids stay Int. Classify on primal.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
-        return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
-        return _eval_extrapolation(op, last(y), extrap, xq)
-    end
+    st = _oob_state(x, xq_primal)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, deriv_oneunit)
     return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
 end
 
@@ -282,11 +298,13 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))
     xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
-    α = _alpha_of(xq_wrapped, xL, xR, x)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    α = _alpha_of(xq_wrapped, xL, inv_h)
     yi = _raw(y)
-    @inbounds return _linear_kernel(op, yi[idx], yi[idx_R], _get_inv_h(x, idx), α)
+    @inbounds return _linear_kernel(op, yi[idx], yi[idx_R], inv_h, α)
 end
 
 # Public scalar one-shot API.
@@ -301,14 +319,16 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Same surface-level resolution as the in-place vector form. Zero-alloc:
     # `_resolve_axis` returns either `x` (Vector passthrough), a stack-allocated
     # `_CachedRange`, or an `_ExclusivePeriodicAxis` reference wrapper.
-    # `_resolve_data` is reference-only.
-    x_eff = _resolve_axis(x, bc)
+    # `_resolve_data` is reference-only. The Tg is value-matched: an Int/OneTo
+    # grid beside Float32 data floats to Float32, not the blind Float64.
+    x_eff = _resolve_axis(x, bc, _promote_grid_float(Tg, Tv))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
@@ -329,16 +349,20 @@ end
 function linear_interp(
         x::AbstractVector,
         y::AbstractVector,
-        x_targets::AbstractVector;
+        x_targets::AbstractArray;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, eltype(y), eltype(x_targets))
-    output = Vector{T_out}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space, so scale the
+    # value eltype through the same `_deriv_eltype` fold as the persistent path
+    # (identity for `EvalValue`, so the value case is unchanged).
+    T_out = _deriv_eltype(_promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets)), Tg, deriv)
+    output = _alloc_query_output(T_out, x_targets)
+    linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output
 end
 

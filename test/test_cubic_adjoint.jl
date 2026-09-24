@@ -197,8 +197,8 @@
         b1 = randn(n_grid)
         b2 = copy(b1)
 
-        FastInterpolations._ldiv_tridiagonal_nopiv!(b1, thomas)
-        FastInterpolations._ldiv_tridiagonal_transpose!(b2, thomas)
+        FastInterpolations._ldiv_tridiagonal_nopiv!(b1, b1, thomas)
+        FastInterpolations._ldiv_tridiagonal_transpose!(b2, b2, thomas)
 
         @test b1 ≈ b2
     end

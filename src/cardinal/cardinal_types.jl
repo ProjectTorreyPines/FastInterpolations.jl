@@ -7,7 +7,7 @@
 # but separate type for dispatch (show, plot, future integrate/adjoint).
 
 """
-    CardinalInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
+    CardinalInterpolant1D{Tg, Tv, X, Y, DY, E, P, Tt, CS}
 
 Callable interpolant for cardinal spline interpolation.
 Returned by `cardinal_interp(x, y)` (2-argument form).
@@ -38,6 +38,7 @@ struct CardinalInterpolant1D{
         DY,
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
+        Tt,
         CS <: AbstractCoeffStrategy,
     } <: AbstractHermiteInterpolant1D{Tg, Tv}
     x::X
@@ -45,25 +46,26 @@ struct CardinalInterpolant1D{
     dy::DY
     extrap::E
     search_policy::P
-    tension::Tg
+    tension::Tt   # DIMENSIONLESS shape param at grid precision (Tg would demand a unit)
 
     # PreCompute inner: builds slopes via cardinal central FD.
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute},
             extrap::E, search::P, tension::Real;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
-        Tdy = _output_eltype(Tv, Tg)
+        xc = _store_axis(x, bc, Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
+        Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dy = Vector{Tdy}(undef, length(yc))
-        _cardinal_slopes!(dy, xc, yc, Tg(tension))
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, PreCompute}(
-            xc, yc, dy, extrap, search, Tg(tension)
+        _cardinal_slopes!(dy, xc, yc, _as_dimensionless(tension, Tg))
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, _dimensionless_type(Tg), PreCompute}(
+            xc, yc, dy, extrap, search, _as_dimensionless(tension, Tg)
         )
     end
 
@@ -71,19 +73,20 @@ struct CardinalInterpolant1D{
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, dy::AbstractVector,
             extrap::E, search::P, tension::Real;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(dy) == length(y) || throw(ArgumentError("dy length ($(length(dy))) must match y length ($(length(y)))"))
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
-        Tdy = _output_eltype(Tv, Tg)
+        xc = _store_axis(x, bc, Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
+        Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dyc = _convert_copy(dy, Tdy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
-            xc, yc, dyc, extrap, search, Tg(tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, _dimensionless_type(Tg), PreCompute}(
+            xc, yc, dyc, extrap, search, _as_dimensionless(tension, Tg)
         )
     end
 
@@ -91,16 +94,17 @@ struct CardinalInterpolant1D{
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod,
             extrap::E, search::P, tension::Real;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
-            xc, yc, slope_strategy, extrap, search, Tg(tension)
+        xc = _store_axis(x, bc, Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, _dimensionless_type(Tg), OnTheFly}(
+            xc, yc, slope_strategy, extrap, search, _as_dimensionless(tension, Tg)
         )
     end
 end
@@ -114,9 +118,10 @@ end
         tension::Real = 0.0,
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    x_eff = _cache_axis(x, bc, Tg)
-    return CardinalInterpolant1D(x_eff, y, slope_strategy, extrap, search, tension; bc = bc)
+    x_eff = _policy_axis(x, bc, Tg, store)
+    return CardinalInterpolant1D(x_eff, y, slope_strategy, extrap, search, tension; bc = bc, store = store)
 end

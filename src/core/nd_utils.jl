@@ -65,20 +65,16 @@ Compile-time selective OOB check for FillExtrap axes only.
 Returns `false` at compile time when no axis has FillExtrap (dead-code eliminated).
 """
 @generated function _is_fill_oob(
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         extraps::E
     ) where {N, E <: Tuple{Vararg{AbstractExtrap, N}}}
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     isempty(fill_dims) && return :(false)
 
-    oob_checks = [
-        :(
-                let qp = _extract_primal(query[$d])
-                    qp < first(grids[$d]) || qp > last(grids[$d])
-            end
-            ) for d in fill_dims
-    ]
+    # Per-axis OOB via the shared `_oob_state` (widened `_CachedRange` bracket →
+    # a query at the true endpoint is in-domain, matching the 1D paths).
+    oob_checks = [:(_oob_state(grids[$d], query[$d]) != IN_DOMAIN) for d in fill_dims]
     oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
         foldl((a, b) -> :($a || $b), oob_checks)
 
@@ -98,7 +94,7 @@ Compile-time eliminated when no axis has FillExtrap.
 Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractEvalOp}}`.
 """
 @generated function _try_fill_oob(
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         extraps::E,
         ops,
@@ -107,13 +103,9 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     isempty(fill_dims) && return :(nothing)
 
-    oob_checks = [
-        :(
-                let qp = _extract_primal(query[$d])
-                    qp < first(grids[$d]) || qp > last(grids[$d])
-            end
-            ) for d in fill_dims
-    ]
+    # Per-axis OOB via the shared `_oob_state` (widened `_CachedRange` bracket →
+    # a query at the true endpoint is in-domain, matching the 1D paths).
+    oob_checks = [:(_oob_state(grids[$d], query[$d]) != IN_DOMAIN) for d in fill_dims]
     oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
         foldl((a, b) -> :($a || $b), oob_checks)
 
@@ -121,7 +113,7 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
     return quote
         Base.@_inline_meta
         @inbounds if $oob_expr
-            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref, query[1])
+            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref, query[1], grids)
         end
         return nothing
     end
@@ -133,14 +125,31 @@ end
 # deriv, NaN fill_value propagates through IEEE multiplication.
 # 4th arg `qe` (query element) promotes result to kernel return type.
 # `zero_ref` arg retained for signature stability; intentionally unused.
-@inline _fill_extrap_result(::EvalValue, fill_val, _, qe) = _promote_extrap_val(fill_val, qe)
-@inline _fill_extrap_result(::AbstractEvalOp, fill_val, _, qe) = _promote_extrap_zero(fill_val, qe)
-@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, _, qe)
+@inline _fill_extrap_result(::EvalValue, fill_val, _, qe, _) = _promote_extrap_val(fill_val, qe)
+@inline _fill_extrap_result(op::AbstractEvalOp, fill_val, _, qe, grids) =
+    _promote_extrap_zero(fill_val, qe) * _nd_fill_deriv_scale(grids, op)
+@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, _, qe, grids)
     for i in 1:length(ops)
-        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(fill_val, qe)
+        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(fill_val, qe) * _nd_fill_deriv_scale(grids, ops)
     end
     return _promote_extrap_val(fill_val, qe)
 end
+
+# CANONICAL per-axis grid⁻ᵒʳᵈᵉʳ scale fold: ∏ᵈ `_deriv_oneunit(samples[d], ops[d])`.
+# `samples[d]` is any grid-space value for axis d (`oneunit` is taken inside the
+# single-axis factor). `true` (dimensionless) on Real grids — folds to no-op.
+# Every ND derivative-zero scale routes through THIS fold — do not respell it.
+@inline _nd_deriv_scale(::Tuple{}, ::Tuple{}) = true
+@inline _nd_deriv_scale(samples::Tuple, ops::Tuple) =
+    _deriv_oneunit(first(samples), first(ops)) * _nd_deriv_scale(Base.tail(samples), Base.tail(ops))
+
+# Grid-sample adapter for the fold above (axis samples from the grid eltypes; a
+# scalar op broadcasts to every axis). Despite the historical "fill" name it
+# serves BOTH the FillExtrap OOB zeros and the scaled-store in-domain restore
+# seam (`_restore_nd_deriv_scale`) — eval correctness rides on it.
+@inline _nd_fill_deriv_scale(grids::Tuple, op::AbstractEvalOp) = _nd_fill_deriv_scale(grids, map(_ -> op, grids))
+@inline _nd_fill_deriv_scale(grids::Tuple, ops::Tuple) =
+    _nd_deriv_scale(map(g -> oneunit(eltype(g)), grids), ops)
 
 # Extract fill_value from the first FillExtrap in extraps tuple.
 # Only called on OOB cold path (guarded by _is_fill_oob).
@@ -251,6 +260,14 @@ end
     exprs = [:(FastInterpolations._promote_extrap(extraps[$d], Tv)) for d in 1:N]
     return :(($(exprs...),))
 end
+
+# One-shot fill/extrap payload space (scalar entries don't eagerly convert data):
+# Real axes widen by the family coeff witness (`_coeff_op2` cubic, `_coeff_op`
+# quadratic); a non-Real tag cannot run the witness — the value space serves
+# (the persistent entry's convention).
+@inline _oneshot_fill_eltype(op::F, ::Type{Tg}, ::Type{Tv}) where {F, Tg <: Real, Tv} =
+    _promote_eltype(op, Tg, Tv)
+@inline _oneshot_fill_eltype(::F, ::Type{Tg}, ::Type{Tv}) where {F, Tg, Tv} = _value_type(Tv, Tg)
 
 # ── Periodic BC compatibility checks for Mode types ──────────────────
 
@@ -494,19 +511,19 @@ Uses @generated to avoid closure boxing when iterating over heterogeneous grid t
 @generated function _validate_nd_grids(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}) where {N}
     checks = [
         quote
-                ng = length(grids[$i])
-                nd = size(data, $i)
-                if ng != nd
-                    throw(
-                        DimensionMismatch(
-                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
-                        )
+            ng = length(grids[$i])
+            nd = size(data, $i)
+            if ng != nd
+                throw(
+                    DimensionMismatch(
+                        "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
                     )
+                )
             end
-                if ng < 2
-                    throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+            if ng < 2
+                throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
             end
-            end for i in 1:N
+        end for i in 1:N
     ]
 
     return quote
@@ -532,12 +549,15 @@ Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
 Uses map over named helper so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
-# GridIdx: in-domain by construction (bounds-checked at resolution), skip extrap entirely
+# Single per-axis gateway: promote the query to the grid eltype (`_promote_coord`, as
+# 1D does) so handlers see one concrete coordinate type — no OOB/in-domain `Union` (→ `Any`
+# for Hermite ND). No-op for matched/non-float grids (Int-grid Int queries stay Int); GridIdx skips it.
 @inline _extrap_axis(q::GridIdx, grid, extrap) = q
-@inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
+@inline _extrap_axis(q, grid, extrap) =
+    @inbounds _handle_axis_extrap(_promote_coord(q, eltype(grid)), grid, extrap)
 
 @inline function _handle_all_extraps(
-        queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        queries::Tuple{Vararg{Number, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     return map(_extrap_axis, queries, grids, extraps)
@@ -549,11 +569,21 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
+# Branchless per-axis ClampExtrap: one `min/max` clamp (vs the `_oob_state` classify + 2
+# branches) — removes the boundary-OOB misprediction hump. Clamp to the real endpoints
+# `first/last` (geometry, matching `_clamp_to_grid`); the widened `domain_lo/hi` are for OOB
+# *classification* only (Fill/NoExtrap). `min/max` promote → symmetric for a Dual query/grid.
+@inline _handle_axis_extrap(q, axis::AbstractVector, ::ClampExtrap) =
+    _clamp(q, first(axis), last(axis))
+
+# FillExtrap keeps the branchy `_oob_state` clamp: Fill needs `_oob_state` anyway for the
+# `_try_fill_oob` decision, and the compiler CSEs it with this coordinate classify (so
+# `return q` is free). Branchless `min/max` here can't be CSEd → adds ops (measured slower).
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::FillExtrap)
     q_primal = _extract_primal(q)
-    lo, hi = first(axis), last(axis)
-    q_primal < lo && return oftype(q, lo)
-    q_primal > hi && return oftype(q, hi)
+    st = _oob_state(axis, q_primal)
+    st == OOB_LEFT && return _promote_extrap_val(first(axis), q)
+    st == OOB_RIGHT && return _promote_extrap_val(last(axis), q)
     return q
 end
 
@@ -593,21 +623,21 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _getL(r) = r[3]
 @inline _getR(r) = r[4]
 
-# Stencil-valued interval tuple per axis: `stencils[d] = _IdxStencil{2}((idx_L_d, idx_R_d))`.
+# Interval tuple per axis: `intervals[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))`.
 # Consumers (periodic-aware ND kernels) read corner addresses via
-# `stencils[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
+# `intervals[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
 # axes `idx_R == idx_L + 1`; for periodic-exclusive axes at the seam `idx_R == 1`
 # (wrap) so eval reads the periodic neighbor without data extension.
-# The `_IdxStencil{K}` wrapper (src/core/idx_stencil.jl) unifies this shape across
+# The `_ExplicitIndices{K}` wrapper (src/core/axis_indices.jl) unifies this shape across
 # method families and carries K as a type parameter for future K > 2 variants
 # (ND Hermite bicubic, etc.).
-@inline _getstencil(r) = _IdxStencil((r[1], r[2]))
+@inline _result_interval(r) = _ExplicitIndices((r[1], r[2]))
 
 # Shared projector for all `_search_all_intervals*` overloads. Every variant
 # boils down to "run `map(search_fn, ...)` then extract `(indices, Ls, Rs)`
 # from each result". Only the index extractor differs:
 #   - `_getidx`     → `NTuple{N, Int}`             (single corner per axis)
-#   - `_getstencil` → `NTuple{N, _IdxStencil{2}}`  (left/right pair per axis)
+#   - `_result_interval` → `NTuple{N, _ExplicitIndices{2}}`  (left/right pair per axis)
 # Centralizing the `(map(_getL, ...), map(_getR, ...))` tail keeps all variants
 # in sync when the 4-tuple `search_interval` return shape evolves.
 @inline _project_search_results(results, proj::F) where {F} =
@@ -733,9 +763,47 @@ end
     return @inbounds search_interval(searcher, grid, q)
 end
 
+# ── Extrap-aware per-axis search (6-arg) ──────────────────────────────────────
+# The 5-arg form above plus a trailing per-axis `extrap` — trailing because it is the
+# new modifier and matches the other per-axis extrap helpers (`_extrap_axis(q, grid,
+# extrap)`, `_handle_axis_extrap`, `_check_domain`, which all put `extrap` last), so the
+# first five arguments keep the 5-arg positions verbatim. An `InBounds` axis on a
+# normalized range takes the lean `_search_direct_inbounds` (one-sided clamp — the lower
+# `max(·,1)` is dead when the query is in-domain); the interval is bit-identical to the
+# generic path. The persistent hint is still written back (symmetry with the standard
+# `_search_direct!` / `_search_grididx!` path): an explicitly-provided hint must report
+# the found interval regardless of extrap. PER-AXIS — a mixed `(InBounds, ClampExtrap)`
+# query leans only the InBounds axis. Every other `(extrap, grid)` pair delegates to the
+# 5-arg form unchanged. Any ND `_locate_cell` that threads its `extraps` into the search
+# picks this up; 5-arg callers are unaffected. `hint` is always a concrete `Ref{Int}` here
+# (the 6-arg `_search_all_intervals` is reached only from persistent `_locate_cell`).
+@inline function _search_axis_adaptive(q, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q, e)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+@inline function _search_axis_adaptive(q::GridIdx, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, ::InBounds)
+    @boundscheck (grid.len >= 2 && 1 <= q.idx <= grid.len) || throw(BoundsError(grid, q.idx))
+    idx = min(q.idx, grid.len - 1)
+    hint[] = idx
+    return idx, idx + 1, (@inbounds grid[idx]), (@inbounds grid[idx + 1])
+end
+@inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, mono, ::AbstractExtrap) =
+    _search_axis_adaptive(q, grid, policy, hint, mono)
+# InBounds vector grid: reuse the guarded path's Searcher choice (mono → LinearBinarySearch walk,
+# else BinarySearch), but route through the 4-arg lean `search_interval` so a BinarySearch axis drops
+# the `first`/`last` guards; LinearBinarySearch/Linear fall through (no lean). GridIdx is handled by
+# the 4-arg dispatch (index short-circuit). Range keeps the more-specific `_CachedRange` method above;
+# `::AbstractSearchPolicy` (not `::AutoSearch`) keeps this from tying with it on dispatch.
+@inline _axis_vec_searcher(::AutoSearch, hint, is_mono) =
+    is_mono ? _to_searcher(LinearBinarySearch(), hint) : _to_searcher(BinarySearch(), hint)
+@inline _axis_vec_searcher(policy::AbstractSearchPolicy, hint, _is_mono) = _to_searcher(policy, hint)
+@inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, is_mono, ::InBounds) =
+    @inbounds search_interval(_axis_vec_searcher(policy, hint, is_mono), grid, q, InBounds())
+
 # 5-arg `_search_all_intervals` (mono variant, no spacings).
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}},
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         policies::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -745,10 +813,26 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# 6-arg extrap-aware variant: the 5-arg form plus a trailing `extraps` (positions of the
+# first five match the 5-arg form), threaded per-axis into `_search_axis_adaptive` so
+# InBounds range axes take the lean direct search. Callers with `extraps` in hand (every
+# persistent `_locate_cell`) route here; the 5-arg form stays for callers that do not.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_adaptive, q_evals, grids, policies, hints, mono, extraps)
+    return _project_search_results(results, _getidx)
+end
+
 # 5-arg variant with Nothing hint (used by oneshot scalar paths that have no
 # persistent hint storage — same as the 4-arg with-hints form, plus mono).
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}},
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         policies::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
@@ -767,7 +851,7 @@ end
 
 # 3-arg `_search_all_intervals` (no spacings, no hints, no mono).
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}},
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
     ) where {N}
@@ -777,7 +861,7 @@ end
 
 # 4-arg `_search_all_intervals` (no spacings, Nothing hint).
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}},
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
@@ -787,13 +871,63 @@ end
 
 # 4-arg `_search_all_intervals` (no spacings, Tuple hint).
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}},
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
     ) where {N}
     results = map(_search_axis_oneshot_hint, q_evals, grids, searches, hints)
     return _project_search_results(results, _getidx)
+end
+
+# Extrap-aware per-axis oneshot search (indices path, used by cubic/quad/hermite oneshot).
+# An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
+# (one-sided clamp), bit-identical to the standard search for an in-bounds query, and
+# still writes the hint (symmetry). EVERY other `(q, grid, extrap)` — GridIdx queries,
+# vector grids, and periodic axes (always WrapExtrap, never InBounds; the `_ExclusivePeriodicAxis`
+# seam wrap in `search_interval` is untouched) — delegates to the 4-arg form verbatim.
+@inline function _search_axis_oneshot_hint(q::Real, grid::_CachedRange, search, hint::Base.RefValue{Int}, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q, e)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+# GridIdx → 4-arg short-circuit (exact .idx), not the coordinate lean (which can pick an off-by-one
+# cell on non-unit-step ranges). Mirrors the persistent `_search_axis_adaptive(q::GridIdx, …)`.
+@inline _search_axis_oneshot_hint(q::GridIdx, grid::_CachedRange, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_oneshot_hint(q, grid, search, hint)
+@inline _search_axis_oneshot_hint(q, grid, search, hint, ::AbstractExtrap) =
+    _search_axis_oneshot_hint(q, grid, search, hint)
+# InBounds vector grid: thread InBounds into the resolved-searcher search so a BinarySearch axis
+# leans; GridIdx routed by the 4-arg dispatch. Range uses the `_CachedRange` method above.
+@inline _search_axis_oneshot_hint(q, grid::AbstractVector, search, hint::Base.RefValue{Int}, ::InBounds) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
+
+# 5-arg extrap-aware `_search_all_intervals` (oneshot indices path): the 4-arg hint form
+# plus a trailing per-axis `extraps`, threaded into `_search_axis_oneshot_hint` so InBounds
+# range axes take the lean direct search. The trailing `AbstractExtrap`-tuple is type-distinct
+# from the 5-arg `mono::NTuple{N,Bool}` form, so they never collide for N >= 1.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot_hint, q_evals, grids, searches, hints, extraps)
+    return _project_search_results(results, _getidx)
+end
+
+# Nothing-hint 5-arg extrap-aware (scalar oneshot): throwaway Refs (stack-elided), then
+# the with-hint extrap-aware search. The InBounds hint write lands on the throwaway Ref
+# and is DCE'd, so the lean fast path is still 0-alloc.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
 end
 
 # Aqua-required N=0 disambiguators. The grid-only and spacings-based 4-arg
@@ -805,6 +939,11 @@ end
     ((), (), ())
 @inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
     ((), (), ())
+# Nothing-hint 5-arg N=0: the `(…, ::Nothing, mono::NTuple{N,Bool})` and
+# `(…, ::Nothing, extraps::NTuple{N,AbstractExtrap})` forms both collapse to a `Tuple{}`
+# 5th slot at N=0 — this `::Nothing`-4th disambiguator resolves the pair.
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Nothing, ::Tuple{}) =
+    ((), (), ())
 
 # ────────────────────────────────────────────────────────
 # BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
@@ -812,8 +951,8 @@ end
 # Parallel in purpose to `_search_all_intervals`, but threads per-axis `bcs`
 # into each `Searcher` so `PeriodicBC{:exclusive}` axes return
 # `(n, 1, x[n], x[1]+L)` at seam cells via the BC-aware `search_interval`
-# dispatch. Returns `(stencils, Ls, Rs)` where
-# `stencils[d] = _IdxStencil{2}((idx_L_d, idx_R_d))` — non-periodic axes have
+# dispatch. Returns `(intervals, Ls, Rs)` where
+# `intervals[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))` — non-periodic axes have
 # `idx_R == idx_L + 1`; periodic-exclusive axes at seam have `idx_R == 1` (wrap).
 #
 # Structurally mirrors persistent's `_search_all_intervals`: one `map` that
@@ -828,29 +967,78 @@ end
 # Per-axis inline: build Searcher + run search_interval in one body.
 # Callers pre-wrap grids via `_resolve_axis` (or pass already-wrapped axes),
 # so seam handling is via axis-level dispatch in `periodic_axis.jl`.
-@inline _search_axis_stencil(grid, q, search, hint) =
+@inline _search_axis_interval(grid, q, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
 
-@inline function _search_all_intervals_stencil(
-        q_evals::Tuple{Vararg{Real, N}},
+@inline function _search_all_axis_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
     ) where {N}
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints)
-    return _project_search_results(results, _getstencil)
+    results = map(_search_axis_interval, grids, q_evals, searches, hints)
+    return _project_search_results(results, _result_interval)
 end
 
 # Nothing-hint overload — scalar oneshot entries only. Batch must use the
 # 4-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
-@inline function _search_all_intervals_stencil(
-        q_evals::Tuple{Vararg{Real, N}},
+@inline function _search_all_axis_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
     ) where {N}
     hints = _ensure_hint_nd(nothing, Val(N))
-    return _search_all_intervals_stencil(q_evals, grids, searches, hints)
+    return _search_all_axis_intervals(q_evals, grids, searches, hints)
+end
+
+# Extrap-aware per-axis stencil search (stencil path, used by linear/constant oneshot).
+# An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
+# (one-sided clamp) and emits the non-seam stencil `(idx, idx+1, …)` — bit-identical to
+# the standard stencil for an in-bounds query. EVERY other `(grid, q, extrap)` delegates
+# to the 4-arg `_search_axis_interval`: crucially `_ExclusivePeriodicAxis` (always
+# WrapExtrap, never InBounds, and `<: AbstractVector` not `_CachedRange`) keeps its
+# `search_interval` seam wrap `(n, 1, …)` untouched, as do GridIdx and vector grids.
+@inline function _search_axis_interval(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q, e)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+# GridIdx → short-circuit (exact `.idx`), not the coordinate lean — see the same overload on
+# `_search_axis_oneshot_hint` above for the off-by-one rationale.
+@inline _search_axis_interval(grid::_CachedRange, q::GridIdx, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_interval(grid, q, search, hint)
+@inline _search_axis_interval(grid, q, search, hint, ::AbstractExtrap) =
+    _search_axis_interval(grid, q, search, hint)
+# InBounds vector grid: thread InBounds into the resolved-searcher search (BinarySearch axis leans).
+# Range uses the `_CachedRange` method above; periodic axes are `<: AbstractVector` but never arrive
+# InBounds (always WrapExtrap), so they stay on the `::AbstractExtrap` seam path.
+@inline _search_axis_interval(grid::AbstractVector, q, search, hint::Base.RefValue{Int}, ::InBounds) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
+
+# 5-arg extrap-aware `_search_all_axis_intervals`: the 4-arg hint form plus a trailing
+# per-axis `extraps`, threaded into `_search_axis_interval` so InBounds range axes take the
+# lean direct search. Non-InBounds / non-range / periodic axes are unaffected.
+@inline function _search_all_axis_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_interval, grids, q_evals, searches, hints, extraps)
+    return _project_search_results(results, _result_interval)
+end
+
+# Nothing-hint 5-arg extrap-aware stencil (scalar oneshot): throwaway Refs (stack-elided).
+@inline function _search_all_axis_intervals(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    return _search_all_axis_intervals(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
 end
 
 
@@ -867,37 +1055,6 @@ fresh `Ref{Int}` per axis; user-supplied Refs pass through unchanged.
     policies = _resolve_search_nd(search, Val(N), queries, hint)
     hints = _ensure_hint_nd(hint, Val(N))
     return policies, hints
-end
-
-# ========================================
-# N=2 Specialized Cell Location Preamble
-# ========================================
-#
-# Shared 2D preamble for all N=2 _locate_cell specializations.
-# Extracts query, handles extrapolation, and performs interval search.
-# Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
-
-# N=2 preamble: per-axis adaptive search inside function barrier
-@inline function _locate_cell_2d_preamble(
-        query::Tuple{Vararg{Real, 2}},
-        grids, extraps,
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    )
-    xq, yq = query
-    grid_x, grid_y = grids
-    extrap_x, extrap_y = extraps
-    policy_x, policy_y = policies
-    hint_x, hint_y = hints
-    mono_x, mono_y = mono
-
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-    ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, policy_x, hint_x, mono_x)
-    iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, policy_y, hint_y, mono_y)
-
-    return (x_eval, y_eval, ix, iy, xL, yL)
 end
 
 # ========================================
@@ -995,19 +1152,148 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
 `dLs` (left deltas).
 """
 @inline function _compute_all_local_params(
-        q_evals::Tuple{Vararg{Real, N}},
+        q_evals::Tuple{Vararg{Number, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         indices::NTuple{N, Int},
-        Ls::Tuple{Vararg{Real, N}},
+        Ls::Tuple{Vararg{Number, N}},
     ) where {N}
+    # Promote `hs`/`inv_hs` to one common float `Tg`: `_eval_nd_*_cell` is `@generated`
+    # and couples them as `NTuple{N, Tg}`, so heterogeneous/mixed-precision raw grids
+    # need them unified. Bit-identical for the homogeneous Float/Dual callers.
+    # (N=0 edge: `float(promote_type())` = `float(Union{})` throws; the ntuples are
+    # empty there, so this placeholder is never used.)
+    Tg = N == 0 ? Float64 : float(_promote_grid_eltype(grids))
+    return _compute_all_local_params(q_evals, grids, indices, Ls, Tg)
+end
+
+# Data-aware form: the caller supplies the width type `Tg` (value-matched, e.g.
+# `_promote_grid_float(grid eltype, Tv)` — Int grid + Float32 data → Float32), so raw
+# Int axes don't widen the eval to Float64 via `inv(Int)`. `dLs` deliberately keep
+# their natural `q - L` promotion — converting them would strip Dual-query partials.
+@inline function _compute_all_local_params(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Number, N}},
+        ::Type{Tg},
+    ) where {N, Tg <: Real}
     hs = ntuple(Val(N)) do d
-        @inbounds _get_h(grids[d], indices[d])
+        @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end
     inv_hs = ntuple(Val(N)) do d
-        @inbounds _get_inv_h(grids[d], indices[d])
+        @inbounds convert(Tg, _get_inv_h(grids[d], indices[d]))
     end
     dLs = ntuple(Val(N)) do d
         @inbounds q_evals[d] - Ls[d]
+    end
+    return hs, inv_hs, dLs
+end
+
+# Non-Real width tag (unit type or abstract promotion tag) → the dimensionless
+# collapse: the axes carry the witnesses, the tag itself is never instantiated.
+@inline _compute_all_local_params(
+    q_evals::Tuple{Vararg{Number, N}},
+    grids::Tuple{Vararg{AbstractVector, N}},
+    indices::NTuple{N, Int},
+    Ls::Tuple{Vararg{Number, N}},
+    ::Type,
+) where {N} = _compute_all_local_params_reparam(q_evals, grids, indices, Ls)
+
+# Canonical per-element reparam transform (axis element → dimensionless twin).
+# The solver gate (`_check_nd_reparam_eltype`) probes exactly this op, so the
+# gate's promise (`oneunit`, `inv`, `*`) is what it actually checks.
+@inline _reparam_op(x) = x * _deriv_oneunit(x, DerivOp(1))
+
+# Lazy twin (see `_ReparamAxis` in axis_types.jl): `_reparam_op` applied per
+# access. The eltype comes from the same op that the gate probes and the view
+# applies — one witness, three uses.
+@inline function _ReparamAxis(inner::AbstractVector)
+    u = oneunit(eltype(inner))                       # type-derived: never touches the data
+    scale = _deriv_oneunit(u, DerivOp(1))
+    T = _promote_eltype(_reparam_op, eltype(inner))
+    return _ReparamAxis{T, typeof(inner), typeof(scale), typeof(u)}(inner, scale, u)
+end
+
+@inline Base.size(a::_ReparamAxis) = size(a.inner)
+Base.IndexStyle(::Type{<:_ReparamAxis}) = IndexLinear()
+@inline Base.@propagate_inbounds Base.getindex(a::_ReparamAxis, i::Int) = a.inner[i] * a.scale
+# Widths pass through the parent's cache — a scalar multiply, no re-subtraction.
+@inline Base.@propagate_inbounds _get_h(a::_ReparamAxis, i::Int) = _get_h(a.inner, i) * a.scale
+@inline Base.@propagate_inbounds _get_inv_h(a::_ReparamAxis, i::Int) = _get_inv_h(a.inner, i) * a.unit
+
+# Dimensionless axis twins for the solver-family ND builds — the
+# `_float_grids_peraxis` peel idiom (build paths ban closure-maps over axis
+# wraps). Ranges keep the arithmetic form: Base's range broadcast already
+# yields an isbits range (no array) and preserves the `_CachedRange` objectid
+# fast path in the solve cache banks. Everything else takes the lazy view.
+@inline _reparam_axis(x::AbstractRange) = x .* _deriv_oneunit(first(x), DerivOp(1))
+@inline _reparam_axis(x::AbstractVector) = _ReparamAxis(x)
+@inline _reparam_grids(::Tuple{}) = ()
+@inline _reparam_grids(grids::Tuple) =
+    (_reparam_axis(first(grids)), _reparam_grids(Base.tail(grids))...)
+
+# Typed PointBC payloads live in [Y/Xᵏ] → scale by oneunit(axis)ᵏ onto the
+# dimensionless axis ([Y]). Structural Real payloads rehydrate via the canonical
+# `_payload_val` in that TRUE space (witness `first(data)·u⁻¹` — matches the 1D
+# rejection of dimensionally incomplete nonzero Reals) before scaling into [Y];
+# the ND fiber solve (`_deriv_1d!`) has no normalize of its own. Left/Right are
+# quadratic's side wrappers.
+@inline _scale_bcs_reparam(::Tuple{}, ::Tuple{}, _data) = ()
+@inline _scale_bcs_reparam(bcs::Tuple, grids::Tuple, data) = (
+    _scale_bc_reparam(first(bcs), first(grids), data),
+    _scale_bcs_reparam(Base.tail(bcs), Base.tail(grids), data)...,
+)
+@inline _scale_bc_reparam(bc::BCPair, x, data) =
+    BCPair(_scale_bc_reparam(bc.left, x, data), _scale_bc_reparam(bc.right, x, data))
+@inline _scale_bc_reparam(bc::Left, x, data) = Left(_scale_bc_reparam(bc.bc, x, data))
+@inline _scale_bc_reparam(bc::Right, x, data) = Right(_scale_bc_reparam(bc.bc, x, data))
+@inline _scale_bc_reparam(bc::Deriv1, x, data) =
+    Deriv1(_scale_payload_reparam(bc.val, oneunit(eltype(x)), data))
+@inline _scale_bc_reparam(bc::Deriv2, x, data) =
+    Deriv2(_scale_payload_reparam(bc.val, oneunit(eltype(x))^2, data))
+@inline _scale_bc_reparam(bc::Deriv3, x, data) =
+    Deriv3(_scale_payload_reparam(bc.val, oneunit(eltype(x))^3, data))
+@inline _scale_bc_reparam(bc::AbstractBC, _x, _data) = bc
+@inline _scale_payload_reparam(v::Real, u, data) =
+    _payload_val(v, (@inbounds first(data)) * inv(u)) * u
+@inline _scale_payload_reparam(v, u, _data) = v * u
+
+# Solve-frame selection for the scaled-store families (persistent build + one-shot
+# pool): Real axes solve natively; non-Real axes solve on their dimensionless
+# twins with [Y]-rescaled BC payloads. Dispatch on the promotion tag, not a
+# boolean test (gate style) — the Real arm folds to a passthrough.
+@inline _reparam_solve_frame(grids, bcs, data) =
+    _reparam_solve_frame(_promote_grid_eltype(grids), grids, bcs, data)
+@inline _reparam_solve_frame(::Type{<:Real}, grids, bcs, _data) = (grids, bcs)
+@inline _reparam_solve_frame(::Type, grids, bcs, data) =
+    (_reparam_grids(grids), _scale_bcs_reparam(bcs, grids, data))
+
+# Cell-seam restoration: scaled-store kernels run dimensionless over the
+# [Y]-homogeneous partials, so a non-Real grid multiplies the result back into
+# value/coordᴺ space. The Real arm is an identity ARM, not ×1.0 — LLVM folds only ×true.
+@inline _restore_nd_deriv_scale(r, grids, ops) =
+    _restore_nd_deriv_scale(_promote_grid_eltype(grids), r, grids, ops)
+@inline _restore_nd_deriv_scale(::Type{<:Real}, r, _grids, _ops) = r
+@inline _restore_nd_deriv_scale(::Type, r, grids, ops) = r * _nd_fill_deriv_scale(grids, ops)
+
+# Reparameterized (dimensionless) local params for non-Real axes: each axis's
+# h/inv_h/dL collapses to Real via the canonical `_deriv_oneunit` witness, so the
+# [Y]-homogeneous kernels run in value space even on mixed-unit axes.
+# Multiplication (not conversion) preserves Dual-query partials in `dLs`.
+@inline function _compute_all_local_params_reparam(
+        q_evals::Tuple{Vararg{Number, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Number, N}},
+    ) where {N}
+    hs = ntuple(Val(N)) do d
+        @inbounds _get_h(grids[d], indices[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
+    end
+    inv_hs = ntuple(Val(N)) do d
+        @inbounds _get_inv_h(grids[d], indices[d]) * oneunit(first(grids[d]))
+    end
+    dLs = ntuple(Val(N)) do d
+        @inbounds (_coord_value(q_evals[d]) - Ls[d]) * _deriv_oneunit(first(grids[d]), DerivOp(1))
     end
     return hs, inv_hs, dLs
 end
@@ -1089,6 +1375,58 @@ Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), .
     return :(($(exprs...),))
 end
 
+# ── Static-Tg tuple maps for the one-shot hot paths (@generated) ─────────────
+# `map(f, grids, ntuple(_ -> Tg, Val(N)))` re-captures the Type witness in the
+# ntuple closure: under a degraded-inference context (a long-lived test worker)
+# the tuple elements decay to `DataType` and every per-axis call goes through
+# dynamic dispatch — 32 B/axis on Julia 1.12 CI, 60-90 KB downstream on LTS.
+# These unroll at codegen with `Tg` as a STATIC signature parameter: no closure
+# and no runtime `Type` value exist on any Julia version.
+
+# Pooled value-matched wrap (cubic/quadratic PreCompute scalar backends).
+@generated function _cache_axes_pooled(pool, grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
+    if isconcretetype(Tg)
+        exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is an abstract promotion tag —
+        # wrap each axis at its OWN eltype (mirrors `_convert_cache_axes`).
+        exprs = [:(_cache_axis_pooled(pool, grids[$i], eltype(grids[$i]))) for i in 1:N]
+    end
+    return :(($(exprs...),))
+end
+
+# BC-aware one-shot resolve (linear/constant/hetero OnTheFly surfaces).
+@generated function _resolve_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_resolve_axis(grids[$i], bcs[$i], Tg)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
+# Owned cached wrap (PreCompute/adjoint inner ctors): cache + `_convert_copy`
+# per axis. Closure-map forms of this are banned — see the store-policy lint.
+@generated function _convert_cache_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
+    if isconcretetype(Tg)
+        exprs = [:(_convert_copy(_cache_axis(grids[$i], bcs[$i], Tg), Tg)) for i in 1:N]
+    else
+        # Mixed-unit axes: the promoted `Tg` is an abstract promotion tag —
+        # wrap + own each axis at its OWN eltype (mirrors `_store_axes`;
+        # `oneunit(abstract)` is undefined).
+        exprs = [
+            :(_convert_copy(_cache_axis(grids[$i], bcs[$i], eltype(grids[$i])), eltype(grids[$i])))
+                for i in 1:N
+        ]
+    end
+    return :(($(exprs...),))
+end
+
+# Width-typed reciprocal spans from search results (linear ND scalar one-shot).
+# Span-first via the width-first 5-arg `_get_inv_h` rows: raw axes difference in
+# their own eltype, convert the span once, divide at `Tg` — the reciprocal is
+# born at `Tg` (an Int axis would otherwise mint Float64 via `inv(Int)`).
+@generated function _typed_inv_hs(grids::NTuple{N, AbstractVector}, idxs, Ls, Rs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_get_inv_h(Tg, grids[$i], idxs[$i], Ls[$i], Rs[$i])) for i in 1:N]
+    return :(($(exprs...),))
+end
+
 """
     _nd_promote_grids(grids, data) -> (grids_typed, Tg, Tv, Tz)
 
@@ -1103,19 +1441,73 @@ Returns:
 
 Callers destructure only what they need:
 ```julia
-grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (constant/adjoint)
+grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (batch dispatch)
 grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
 ```
 """
+@inline _nd_promote_grids(
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{Tv_raw, N}
+) where {Tv_raw, N} = _nd_promote_grids(grids, data, Tv_raw)
+
+# 3-arg form: `Tv_extra` widens the value space beyond `eltype(data)` BEFORE the grid
+# value-match — Hermite's value space is data ∪ partials (Float32 data + Float64
+# partials must give a Float64 grid, matching the one-shot rule). 2-arg delegates
+# with `Tv_extra = eltype(data)` (neutral).
 @inline function _nd_promote_grids(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N},
+        ::Type{Tv_extra}
+    ) where {Tv_raw, Tv_extra, N}
+    _check_grid_orderable(_promote_grid_eltype(grids))
+    Tv_all = promote_type(Tv_raw, Tv_extra)
+    # Value-matched grid float (1D rule): Int/OneTo grid + Float32 data → Float32 grid, so the
+    # cheap grid converts and the O(nᴺ) data aliases under copy=false. The old grid-eltype-only
+    # `float(...)` gave Float64 and dragged Tv (and the data, via `Tv.(data)`) up with it.
+    Tg_raw = _promote_grid_eltype(grids)
+    if Tg_raw <: Real
+        Tg = _promote_grid_float(Tg_raw, Tv_all)
+        grids_typed = _convert_grids_typed(grids, Tg)
+    else
+        # Unit/duck axes: per-axis value-match, NO common-eltype convert (mixed
+        # units promote `Tg` to an ABSTRACT type — promotion-tag only, never
+        # instantiated; witnesses must come from per-axis eltypes downstream).
+        grids_typed = _float_grids_peraxis(grids)
+        Tg = _promote_grid_eltype(grids_typed)
+    end
+    Tv = _value_type(Tv_all, Tg)
+    Tz = _promote_eltype(Tv, Tg)
+    return grids_typed, Tg, Tv, Tz
+end
+
+# Recursive tuple peel (NOT a closure-map — the source-lint bans closure-maps
+# over axis wraps in build paths; peel stays inferable and box-free).
+@inline _float_grids_peraxis(::Tuple{}) = ()
+@inline _float_grids_peraxis(grids::Tuple) = (
+    _convert_grid(first(grids), float(eltype(first(grids)))),
+    _float_grids_peraxis(Base.tail(grids))...,
+)
+
+"""
+    _nd_promote_types(grids, data) -> (Tg, Tv, Tz)
+
+Type-only counterpart of [`_nd_promote_grids`](@ref): computes the same
+`(Tg, Tv, Tz)` from the grid/data *types* alone (via the `@generated`
+`_promote_grid_eltype`), skipping the `_convert_grids_typed` allocation. Callers
+that value-match each axis downstream (the OnTheFly hetero one-shot, whose inner
+1D one-shots resolve their own axes) use this to avoid an eager grid convert on
+raw Int/Rational axes.
+"""
+@inline function _nd_promote_types(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N}
     ) where {Tv_raw, N}
-    Tg = float(_promote_grid_eltype(grids))
-    grids_typed = _convert_grids_typed(grids, Tg)
+    _check_grid_orderable(_promote_grid_eltype(grids))
+    Tg_raw = _promote_grid_eltype(grids)
+    Tg = Tg_raw <: Real ? _promote_grid_float(Tg_raw, Tv_raw) : Tg_raw
     Tv = _value_type(Tv_raw, Tg)
-    Tz = _output_eltype(Tv, Tg)
-    return grids_typed, Tg, Tv, Tz
+    Tz = _promote_eltype(Tv, Tg)
+    return Tg, Tv, Tz
 end
 
 """
@@ -1131,7 +1523,7 @@ is no x·y arithmetic and the output contract follows `eltype(data)` directly.
 - `grids_typed`: each axis converted to share `Tg` (container heterogeneity
   preserved — Range stays Range, Vector stays Vector).
 
-Arithmetic methods keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
+Arithmetic batch/constructor paths keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
 """
 @inline function _nd_promote_grids_raw(
         grids::NTuple{N, AbstractVector},

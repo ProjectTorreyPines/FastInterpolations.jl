@@ -36,10 +36,13 @@ function CubicHermiteInterpolantND(
     # Only the full mixed set (K = 2^N - 1) is accepted. `HermitePartials`
     # already enforces this, so this guards direct struct construction.
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
+    # No scaled-store/reparam seam here (user partials live per-axis in [Y/Xᵈ]) —
+    # non-Real axes get the friendly refusal instead of deep coerce MethodErrors.
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
 
-    # Promote across (grid, data, partials) to a single Tv.
-    grids_typed, _, Tv_promoted, _ = _nd_promote_grids(grids, data)
-    Tv = promote_type(Tv_promoted, Tv_part)
+    # Promote across (grid, data, partials) to a single Tv — the grid value-match must
+    # see the partials' width too (value space = data ∪ partials, matching one-shot).
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data, Tv_part)
 
     data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))
@@ -125,23 +128,21 @@ end
 # ========================================
 
 """
-    (itp::CubicHermiteInterpolantND)(query; deriv=EvalValue(), search=itp.searches)
+    (itp::CubicHermiteInterpolantND)(query; deriv=EvalValue(), extrap=nothing, search=itp.searches)
 
 Evaluate ND cubic Hermite at `query::NTuple{N, Real}`. Supports `deriv` as
-`DerivOp` (same order all axes) or `NTuple{N, DerivOp}` (per-axis).
+`DerivOp` (same order all axes) or `NTuple{N, DerivOp}` (per-axis). Pass
+`extrap=InBounds()` to skip the domain check for in-domain queries (`nothing`
+keeps the stored extrap; any other extrapolation mode errors).
 """
 @inline function (itp::CubicHermiteInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tg, Tv, N}
-    resolved = map(_resolve_grididx, query, itp.grids)
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints = _ensure_hint_nd(hint, Val(N))
-    mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_scalar_query(itp, query, deriv, extrap, search, hint)
 end
 
 # ========================================
@@ -153,14 +154,16 @@ end
 
 @inline function _locate_cell(
         itp::CubicHermiteInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono)
+    # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
+    # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end

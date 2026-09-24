@@ -6,7 +6,7 @@
 # The adjoint pipeline reverses the forward: scatter → transpose solve → Rᵀ.
 #
 # Dependencies (already included before this file):
-# - CubicSplineCache, _CubicAnchoredQuery (cubic_types.jl, cubic_anchor.jl)
+# - CubicSplineCache, _CubicAdjointAnchor (cubic_types.jl, cubic_anchor.jl)
 # - _anchor_query, _fill_anchors! (cubic_anchor.jl)
 # - _get_cubic_cache (cubic_cache_pool.jl)
 # - _ldiv_tridiagonal_transpose! (thomas_lu_solver.jl)
@@ -55,7 +55,7 @@ end
 # ========================================
 
 """
-    CubicAdjoint{Tg, C, BC}
+    CubicAdjoint{Tg, C, BC, I}
 
 Adjoint (transpose) operator for cubic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -67,6 +67,7 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` or `PeriodicBC` (normalized boundary condition)
+- `I`: Per-axis interval representation — `_ContiguousIndices{2}` (ordinary grid) or `_ExplicitIndices{2}` (exclusive-periodic seam)
 
 # Usage
 ```julia
@@ -96,9 +97,12 @@ Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operato
 PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
 fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint1D{Tg}
+struct CubicAdjoint{Tg, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, I <: _AbstractIndices{2}} <: AbstractAdjoint1D{Tg}
     cache::C
-    anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
+    # Coordinate type is grid-pinned (`Tc = Tg`), not the canonical `_coord_eltype(Tq, Tg)`:
+    # the adjoint operates on baked coefficients, so AD-through-adjoint is unsupported. The
+    # forward Dual-grid contract is satisfied independently.
+    anchors::Vector{_CubicAdjointAnchor{Tg, Tg, I}}
     bc::BC
 end
 
@@ -142,7 +146,7 @@ end
     _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar, deriv)
 
     # Step 2: Transpose solve — A⁻ᵀz̄ → r̄ (result in z_bar)
-    _ldiv_tridiagonal_transpose!(z_bar, adj.cache.thomas)
+    _ldiv_tridiagonal_transpose!(z_bar, z_bar, adj.cache.thomas)
 
     # Step 3: RHS adjoint — f̄ += Rᵀr̄
     # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
@@ -158,14 +162,14 @@ end
 
 """
 Scatter query-space sensitivities to grid-space using precomputed anchor weights.
-Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAnchoredQuery`.
+Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAdjointAnchor`.
 
 - `EvalValue`/`EvalDeriv1`: 4-weight scatter (wyL, wyR, wzL, wzR) → f_bar + z_bar
 - `EvalDeriv2`/`EvalDeriv3`: 2-weight scatter (wzL, wzR) → z_bar only (y-weights are zero)
 """
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalValue
     )
     @inbounds for q in eachindex(y_bar)
@@ -184,7 +188,7 @@ end
 
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv1
     )
     @inbounds for q in eachindex(y_bar)
@@ -203,7 +207,7 @@ end
 
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv2
     )
     @inbounds for q in eachindex(y_bar)
@@ -218,7 +222,7 @@ end
 
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv3
     )
     @inbounds for q in eachindex(y_bar)
@@ -234,7 +238,7 @@ end
 # Generic fallback: 4th+ derivative of cubic is zero → no scatter
 @inline function _scatter_eval_adjoint!(
         ::AbstractVector, ::AbstractVector,
-        ::Vector{<:_CubicAnchoredQuery}, ::Any,
+        ::Vector{<:_CubicAdjointAnchor}, ::Any,
         ::DerivOp{N}
     ) where {N}
     return nothing
@@ -352,35 +356,49 @@ end
 # ========================================
 
 """
-Fix anchor weights for OOB queries under ClampExtrap or FillExtrap.
+    _bake_cubic_clampfill_anchors(x, xq, extrap) -> Vector{_CubicAdjointAnchor}
 
-- **ClampExtrap**: forward returns `f[boundary]` for EvalValue, `0` for derivatives.
-  Keep w0 (clamped to boundary gives correct [1,0,0,0] or [0,1,0,0] weights),
-  zero out w1/w2/w3 (derivatives are zero for constant extrapolation).
+Single-pass ClampExtrap/FillExtrap adjoint anchor builder.
+
+Clamps each query to the actual grid endpoints (`_clamp_to_grid`) for valid
+boundary-cell geometry, anchors it, then bakes the OOB weight semantics for
+genuinely-OOB queries (widened `_is_inbounds` classification):
+
+- **ClampExtrap**: forward returns `f[boundary]` for EvalValue, `0` for
+  derivatives. Keep w0 (clamped boundary weights = [1,0,0,0] or [0,1,0,0]),
+  zero w1/w2/w3.
 - **FillExtrap**: forward returns fill constant → gradient w.r.t. f is zero.
-  Zero out all weights (w0/w1/w2/w3).
+  Zero all weights.
 
-Modifies `anchors` in-place by replacing OOB entries with corrected structs.
-Only called at construction time; no runtime overhead.
+In-domain and endpoint-sliver queries keep the anchor as built. Fuses the
+former clamp-broadcast + `_anchor_query` + weight-fixup three passes into one
+loop — no transient clamped-query array. Construction-time only.
 """
-function _fixup_clampfill_anchors!(
-        anchors::Vector{_CubicAnchoredQuery{Tg, Tg}},
-        xq_original::AbstractVector{Tg},
-        x_lo::Tg, x_hi::Tg,
-        extrap::AbstractExtrap
-    ) where {Tg}
+function _bake_cubic_clampfill_anchors(
+        x::AbstractVector{T},
+        xq::AbstractVector{S},
+        extrap::AbstractExtrap,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {T, S <: Real, P <: Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     keep_w0 = extrap isa ClampExtrap
-    z = zero(Tg)
-    @inbounds for i in eachindex(anchors)
-        (x_lo <= xq_original[i] <= x_hi) && continue
-        aq = anchors[i]
-        w0_new = keep_w0 ? aq.w0 : (z, z, z, z)
-        anchors[i] = _CubicAnchoredQuery{Tg, Tg}(
-            getfield(aq, :stencil), aq.xq, IN_DOMAIN,
-            w0_new, (z, z, z, z), (z, z), (z, z)
-        )
+    z = zero(T)
+    z4 = (z, z, z, z)
+    output = Vector{_CubicAdjointAnchor{T, T, _interval_type(x)}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        xq_raw = xq[k]
+        aq = _anchor_query_impl(x, _promote_coord(_clamp_to_grid(xq_raw, x), T), false, searcher_resolved)
+        if _is_inbounds(x, xq_raw)
+            output[k] = aq
+        else
+            w0_new = keep_w0 ? aq.w0 : z4
+            output[k] = _CubicAdjointAnchor{T, T, _interval_type(x)}(
+                getfield(aq, :interval), aq.xq, IN_DOMAIN,
+                w0_new, z4, (z, z), (z, z)
+            )
+        end
     end
-    return nothing
+    return output
 end
 
 # ========================================
@@ -454,11 +472,9 @@ function cubic_adjoint(
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap isa WrapExtrap
     if extrap isa Union{ClampExtrap, FillExtrap}
-        # Clamp OOB queries to boundary for valid anchor indices, then fix weights
-        x_lo, x_hi = first(cache.x), last(cache.x)
-        xq_clamped = clamp.(xq_p, x_lo, x_hi)
-        anchors = _anchor_query(cache.x, xq_clamped, Val(:cubic), false)
-        _fixup_clampfill_anchors!(anchors, xq_p, x_lo, x_hi, extrap)
+        # OOB queries get actual-endpoint geometry; the widened (`_is_inbounds`)
+        # classification bakes OOB weights. Single fused pass (no temp array).
+        anchors = _bake_cubic_clampfill_anchors(cache.x, xq_p, extrap)
     else
         anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
     end
@@ -469,7 +485,7 @@ end
 # Scalar query convenience: cubic_adjoint(x, 0.5; ...) → wraps to vector
 function cubic_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
@@ -537,7 +553,7 @@ end
     fill!(q_t, zero(Tg))
     @inbounds q_t[1] = one(Tg)
     @inbounds q_t[n] = one(Tg)
-    _ldiv_tridiagonal_transpose!(q_t, adj.cache.thomas)
+    _ldiv_tridiagonal_transpose!(q_t, q_t, adj.cache.thomas)
 
     _adjoint_periodic_solve!(z_bar, adj.cache, q_t, n)
 
@@ -569,7 +585,7 @@ function _adjoint_periodic_solve!(
     ) where {Tv, Tg, X, F}
 
     # Transpose Thomas solve on z_bar[1:n]
-    _ldiv_tridiagonal_transpose!(z_bar, cache.thomas)
+    _ldiv_tridiagonal_transpose!(z_bar, z_bar, cache.thomas)
 
     # Sherman-Morrison correction with q_t = A'^{-T} u
     α = Tv(_get_h(cache.x, n))

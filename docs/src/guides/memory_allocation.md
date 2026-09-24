@@ -54,4 +54,4 @@ x = 0.0:0.1:10.0
 x = collect(0.0:0.1:10.0)
 ```
 
-For non-uniform grids where `Vector` is required, see [Search & Hints](@ref search_hints) for optimizing lookup performance.
+For non-uniform grids where `Vector` is required, see [Search & Hints](@ref search_hints) for optimizing lookup performance. For integer / unit-spaced uniform grids, the `Range` type refines further (`UnitRange`, `Base.OneTo`) — see [Performance Tips](@ref perf-grid).

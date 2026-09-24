@@ -1373,24 +1373,29 @@ const FI = FastInterpolations
     end
 
     # =========================================================================
-    # Duck-typed grid cache fallback (Dual grid → 2-arg _get_cubic_cache)
+    # Duck-typed grid cache banking (Dual grid → 2-arg _get_cubic_cache)
     # =========================================================================
-    @testset "Dual grid 2-arg cache API (duck-type fallback)" begin
+    @testset "Dual grid 2-arg cache API (banks by full isequal)" begin
         using FastInterpolations: _get_cubic_cache, clear_cubic_cache!
         clear_cubic_cache!()
 
         x_dual = ForwardDiff.Dual.(Float64[0, 1, 2, 3, 4], 1.0)
 
-        # Derivative BC — duck-type fallback builds fresh (no caching).
-        # Cache stores Dual grid as-is (partials needed for AD correctness).
+        # Dual grids bank under their exact eltype; the pool's `isequal` scan
+        # compares primal AND partials, so same-seed rebuilds hit and a
+        # different seed misses (AD correctness preserved).
         DualT = eltype(x_dual)
         cache_d = _get_cubic_cache(x_dual, ZeroCurvBC())
         @test cache_d isa CubicSplineCache{DualT}
 
         cache_d2 = _get_cubic_cache(x_dual, ZeroCurvBC())
-        @test cache_d2 !== cache_d  # fresh build each time, not cached
+        @test cache_d2 === cache_d  # bank hit: same primal + partials
 
-        # Periodic BC — duck-type periodic fallback
+        x_dual_s2 = ForwardDiff.Dual.(Float64[0, 1, 2, 3, 4], 2.0)
+        cache_s2 = _get_cubic_cache(x_dual_s2, ZeroCurvBC())
+        @test cache_s2 !== cache_d  # same primal, different partials → miss
+
+        # Periodic BC — banks through the periodic pool the same way
         x_dual_p = ForwardDiff.Dual.(Float64[0, 1, 2, 3, 4, 5, 6], 1.0)
         cache_p = _get_cubic_cache(x_dual_p, PeriodicBC())
         @test cache_p isa CubicSplineCache{DualT}

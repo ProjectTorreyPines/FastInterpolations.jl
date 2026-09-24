@@ -29,8 +29,10 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
+    # Value space = y ∪ dy: the axis floats against both widths (matching ND partials).
+    x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
@@ -50,20 +52,21 @@ end
 In-place cubic Hermite interpolation using user-supplied slopes.
 """
 function hermite_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
+    x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
 
     searcher = _resolve_search(x, x_query, search, hint)
     extrap = _resolve_extrap(extrap, x)
@@ -78,28 +81,34 @@ end
     hermite_interp(x, y, dy, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cubic Hermite interpolation at multiple query points using user-supplied slopes.
-Returns `Vector` of interpolated values.
+Returns an `Array` of interpolated values matching the query's shape
+(a `Vector` for a vector query, a `Matrix` for a matrix query).
 """
 function hermite_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     # Disjoint chains for `Tv` and `eltype(dy)` over the shared kernel shape —
     # a single trait call would let SVector `eltype(dy)` collapse the duck-Tq
     # fallback to `Any`. Mirrors the `AbstractHermiteInterpolant1D` persistent
-    # override that pulls `eltype(itp.dy)` at the type level.
+    # override that pulls `eltype(itp.dy)` at the type level. The dy chain sees
+    # the kernel's `h·dy` product (span × slope = value space).
     Tg_p = _promote_grid_float(Tg, Tv)
-    Tr = promote_type(
-        _output_eltype(_arithmetic_kernel_shape, Tg_p, Tv, Tq),
-        _output_eltype(_arithmetic_kernel_shape, Tg_p, eltype(dy), Tq),
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tr = _deriv_eltype(
+        promote_type(
+            _promote_eltype(_interp_op, Tg_p, Tv, Tq),
+            _promote_eltype(_interp_op, Tg_p, Base.promote_op(*, Tg_p, eltype(dy)), Tq),
+        ),
+        Tg_p, deriv,
     )
-    output = Vector{Tr}(undef, length(x_query))
+    output = _alloc_query_output(Tr, x_query)
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end
@@ -108,6 +117,13 @@ end
 # ║                  INPUT PROMOTION HELPER                                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# Hermite grid float: the value space is y ∪ dy, so the axis width must see both
+# (x::Float32 + y::Float32 + dy::Float64 → Float64; duck dy leaves the grid alone).
+@inline function _hermite_grid_float(::Type{TX}, ::Type{TY}, ::Type{TDY}) where {TX, TY, TDY}
+    Tg_y = _promote_grid_float(TX, TY)
+    return TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
+end
+
 # Joint promotion of (x, y, dy) — grid type Tg considers all three inputs,
 # so e.g. x::Float32 + y::Float32 + dy::Float64 → Tg=Float64 (no precision loss).
 @inline function _promote_hermite_inputs(
@@ -115,8 +131,7 @@ end
         y::AbstractVector{TY},
         dy::AbstractVector{TDY},
     ) where {TX, TY, TDY}
-    Tg_y = _promote_grid_float(TX, TY)
-    Tg = TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
+    Tg = _hermite_grid_float(TX, TY, TDY)
     x_p = _to_float(x, Tg)
     # Only promote values when Tg is a standard float type — duck-typed Tg (Dual etc.)
     # leaves y/dy as-is; Julia arithmetic promotion handles the rest in kernels.

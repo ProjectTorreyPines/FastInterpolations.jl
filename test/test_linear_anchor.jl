@@ -15,12 +15,12 @@
         aq = FastInterpolations._anchor_query(x, xq, Val(:linear))
 
         @test aq isa FastInterpolations._LinearAnchoredQuery{Float64}
-        # `idxL` and `idxR` are virtual properties backed by `stencil::_IdxStencil{2}`
-        # since the _IdxStencil migration — `hasproperty` handles both real and
+        # `idxL` and `idxR` are virtual properties backed by
+        # `interval::_ExplicitIndices{2}` — `hasproperty` handles both real and
         # virtual fields.
         @test hasproperty(aq, :idxL)
         @test hasproperty(aq, :idxR)
-        @test hasfield(typeof(aq), :stencil)
+        @test hasfield(typeof(aq), :interval)
         @test hasfield(typeof(aq), :xq)
         @test hasfield(typeof(aq), :state)
         @test hasfield(typeof(aq), :h)
@@ -323,10 +323,14 @@
         @test itp(aq_below) ≈ y[1]
         @test itp(aq_below) ≈ itp(-0.5)
 
-        # Above domain returns last y
+        # Above domain returns last y.
+        # The scalar path clamps the coordinate to last(x) then runs the kernel
+        # (muladd at α=1), so it equals y[end] only to ≤1 ULP; near a zero-valued
+        # endpoint (sin(2π)≈0) that gap is large relative to the value, so compare
+        # with an absolute tolerance rather than the default relative ≈.
         aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:linear))
         @test itp(aq_above) ≈ y[end]
-        @test itp(aq_above) ≈ itp(1.5)
+        @test itp(aq_above) ≈ itp(1.5) atol = 1.0e-14
 
         # Inside domain still interpolates
         aq_mid = FastInterpolations._anchor_query(x, 0.35, Val(:linear))
@@ -402,7 +406,7 @@
             expected = FI._anchor_query(x, xq, Val(:linear))
 
             # In-place version - now uses {Tg, Tq} type parameters
-            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:linear))
 
             # Verify all fields match exactly (bit-wise)
@@ -421,7 +425,7 @@
             xq = [-0.3, 0.5, 1.3, 2.5]
 
             expected = FI._anchor_query(x, xq, Val(:linear), true)
-            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:linear), true)
 
             for i in eachindex(xq)
@@ -434,7 +438,7 @@
         @testset "length assertion when buffer too small" begin
             x = collect(range(0.0, 1.0, 101))
             xq = [0.15, 0.35, 0.5, 0.75]
-            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, 2)
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, 2)
 
             @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:linear))
         end
@@ -442,7 +446,7 @@
         @testset "zero allocation after warmup" begin
             x = collect(range(0.0, 1.0, 101))
             xq = collect(range(0.1, 0.9, 50))
-            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
 
             FI._fill_anchors!(buffer, x, xq, Val(:linear))
             allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:linear))

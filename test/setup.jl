@@ -10,6 +10,7 @@ using TestItemRunner
 # accessing FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK is safe.
 @testsnippet AllocConstants begin
     const AAP_RUNTIME_CHECK = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+    # LTS keeps a small 240-byte margin for genuine warm-path noise; 1.12+ is strict (0).
     const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
     const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
 end
@@ -26,6 +27,76 @@ end
         false
     catch e
         e isa T
+    end
+end
+
+# Basic setup: the fixtures nearly every testitem needs — the `FI` alias and the
+# ULP-scaled `isclose`. Compose with AllocConstants (`setup=[Basic, AllocConstants]`)
+# when a testitem also needs allocation thresholds. The threshold consts are kept
+# in AllocConstants only (not duplicated here) so the two snippets never redefine
+# the same binding; a later suite-wide migration can fold them together.
+@testsnippet Basic begin
+    # `const` (not `import ... as FI`): a snippet is a module and testitems pull in
+    # its bindings via `using`, which only re-exports names the module OWNS. An
+    # import-alias is non-owned and would be invisible under the ReTestItems runner
+    # (parallel CI), so `FI` must be an owned const. `using FastInterpolations` is
+    # auto-injected, so the module object is in scope here.
+    const FI = FastInterpolations
+
+    # Elementwise CONSISTENCY check (fused vs point-wise), not an accuracy check:
+    # the two paths differ only by FMA/muladd contraction, which is inline- and
+    # Julia/LLVM-version dependent. `nulps` is the budget in ULP, so it scales
+    # across eltypes; `eps(one(T))`/`oneunit(T)` keep rtol dimensionless and atol
+    # unit-carrying, so unit eltypes work too (a plain `Real` folds back to
+    # `eps(T)`). Mixed-unit tuples have no common `promote_type` — compare those
+    # component-wise at the call site.
+    function isclose(a, b; nulps = 256)
+        size(a) == size(b) || return false
+        T = float(real(promote_type(eltype(a), eltype(b))))
+        rtol = nulps * eps(one(T))
+        return all(isapprox.(a, b; rtol = rtol, atol = rtol * oneunit(T)))
+    end
+
+    # Budget for "same maths, two code paths" pins (InBounds vs guarded search,
+    # one-shot vs persistent, unit-native vs Real twin). `muladd` is contraction-
+    # optional, so LLVM may fuse one path and not the other — that flipped between
+    # Julia 1.12 and 1.13 — hence no `===`. Measured drift is 1-2 ULP.
+    const PATH_ULPS = 8
+
+    # Wider budget where both sides come out of a chained solve (tridiagonal
+    # moments, or a release-parity literal minted from one): per-step contraction
+    # differences accumulate along the sweep.
+    const SOLVE_ULPS = 64
+end
+
+# Per-fiber 1D-composition oracle for ND tensor-product `integrate`. Independent
+# of the ND separable engine: it integrates the inner axis per outer node with a
+# freshly built 1D interpolant of the matching method, then integrates the outer
+# 1D interpolant of those node integrals. Exact for tensor products (integration
+# is linear and the ND antiderivative factorizes), so it validates the whole ND
+# engine — weights, slot contraction, mixed radix — without sharing its code.
+# `ms` is the per-axis method tuple; homogeneous callers pass `(m, m[, m])`.
+@testsnippet NDCompositionOracle begin
+    const FIO = FastInterpolations
+    _ob1d(::FIO.LinearInterp, x, v) = linear_interp(x, v)
+    _ob1d(::FIO.CubicInterp, x, v) = cubic_interp(x, v)
+    _ob1d(::FIO.QuadraticInterp, x, v) = quadratic_interp(x, v)
+    _ob1d(m::FIO.ConstantInterp, x, v) = constant_interp(x, v; side = m.side)
+
+    comp_nd(ms::Tuple{Any}, grids, A) = integrate(_ob1d(ms[1], grids[1], A))
+    comp_nd(ms::Tuple{Any}, grids, A, lo, hi) =
+        integrate(_ob1d(ms[1], grids[1], A), lo[1], hi[1])
+    function comp_nd(ms, grids, A)
+        x = grids[1]
+        inner = Base.tail(grids)
+        vals = [comp_nd(Base.tail(ms), inner, selectdim(A, 1, i)) for i in eachindex(x)]
+        return integrate(_ob1d(ms[1], x, vals))
+    end
+    function comp_nd(ms, grids, A, lo, hi)
+        x = grids[1]
+        inner = Base.tail(grids)
+        vals = [comp_nd(Base.tail(ms), inner, selectdim(A, 1, i), Base.tail(lo), Base.tail(hi)) for i in eachindex(x)]
+        return integrate(_ob1d(ms[1], x, vals), lo[1], hi[1])
     end
 end
 

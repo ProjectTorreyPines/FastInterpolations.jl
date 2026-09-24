@@ -29,6 +29,11 @@ itp = interp((x, y), data; method=methods)
 """
 abstract type AbstractInterpMethod end
 
+@inline _method_tuple(method::AbstractInterpMethod, ::Val{N}) where {N} =
+    ntuple(_ -> method, Val(N))
+@inline _method_tuple(methods::Tuple{Vararg{AbstractInterpMethod, N}}, ::Val{N}) where {N} =
+    methods
+
 """
     CubicInterp(; bc::AbstractBC = CubicFit())
 

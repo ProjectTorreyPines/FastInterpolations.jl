@@ -17,7 +17,7 @@
 # ========================================
 
 """
-    LinearAdjoint{Tg, EP}
+    LinearAdjoint{Tg, BC, EP, I}
 
 Adjoint (transpose) operator for 1D linear interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward linear interpolation weight matrix.
@@ -27,7 +27,9 @@ The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
 - `Tg`: Grid float type (Float32 or Float64)
+- `BC`: Boundary condition type (normalized)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
+- `I`: Per-axis interval representation — `_ContiguousIndices{2}` (ordinary grid) or `_ExplicitIndices{2}` (exclusive-periodic seam)
 
 # Fields
 - `anchors`: Pre-computed `_LinearAnchoredQuery` per query point
@@ -51,8 +53,11 @@ itp = linear_interp(x, f)
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct LinearAdjoint{Tg, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
-    anchors::Vector{_LinearAnchoredQuery{Tg, Tg}}
+struct LinearAdjoint{Tg, BC <: AbstractBC, EP <: AbstractExtrap, I <: _AbstractIndices{2}} <: AbstractAdjoint1D{Tg}
+    # Coordinate type is grid-pinned (`Tc = Tg`), not the canonical `_coord_eltype(Tq, Tg)`:
+    # the adjoint operates on baked coefficients, so AD-through-adjoint is unsupported. The
+    # forward Dual-grid contract is satisfied independently.
+    anchors::Vector{_LinearAnchoredQuery{Tg, Tg, I}}
     grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     bc::BC
     extrap::EP
@@ -165,27 +170,35 @@ end
 # ========================================
 
 """
-Restore `state` flags for anchors built with clamped query positions.
+    _bake_linear_clampfill_anchors(x, xq) -> Vector{_LinearAnchoredQuery}
 
-When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
-gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
-original query position, so scatter can skip OOB contributions.
+Single-pass ClampExtrap/FillExtrap adjoint anchor builder.
+
+Each query is clamped to the *actual* grid endpoints (`_clamp_to_grid`) for
+valid boundary-cell geometry, anchored, then genuinely-OOB queries get their
+side flag restored from the widened (`_oob_state`) classification so scatter
+skips (FillExtrap) or keeps (ClampExtrap) the boundary weight per extrap. An
+in-domain or endpoint-sliver query keeps the anchor as built.
+
+Fuses the former clamp-broadcast + `_anchor_query` + state-fixup three passes
+into one loop, dropping the transient clamped-query array. Construction-time
+only; the apply path consumes the baked anchors unchanged.
 """
-function _fixup_linear_anchor_state!(
-        anchors::Vector{<:_LinearAnchoredQuery},
-        xq_original::AbstractVector,
-        x_lo, x_hi
-    )
-    @inbounds for i in eachindex(anchors)
-        xq_i = xq_original[i]
-        (x_lo <= xq_i <= x_hi) && continue
-        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
-        aq = anchors[i]
-        anchors[i] = typeof(aq)(
-            aq.stencil, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
-        )
+function _bake_linear_clampfill_anchors(
+        x::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg, Tq <: Real, P <: Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
+    output = Vector{_LinearAnchoredQuery{Tg, promote_type(Tq, Tg), _interval_type(x)}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        xq_raw = xq[k]
+        aq = _linear_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
+        state = _oob_state(x, xq_raw)
+        output[k] = state == IN_DOMAIN ? aq :
+            typeof(aq)(aq.interval, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha)
     end
-    return nothing
+    return output
 end
 
 # ========================================
@@ -242,7 +255,7 @@ function linear_adjoint(
 
     # BC-aware axis wrap: `:exclusive` periodic → `_ExclusivePeriodicAxis` with
     # logical length n+1 (virtual seam endpoint `inner[1] + period`). Anchors
-    # at the seam cell store stencil = (n, n+1); the protocol's exclusive-
+    # at the seam cell store interval = (n, n+1); the protocol's exclusive-
     # periodic in-place callable folds f_work[1] += f_work[n+1] before trim.
     x_axis = _cache_axis(x_p, bc, Tg)
     # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the wrapped axis;
@@ -252,24 +265,15 @@ function linear_adjoint(
     # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
     # the virtual seam endpoint for `:exclusive`). Use primal for Dual grid boundaries.
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
-            )
-        end
+        _validate_domain(x_axis, xq_p)
     end
 
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap_eff isa WrapExtrap
     if extrap_eff isa _ClampOrFill
-        # Clamp OOB queries to boundary for correct anchor weights (alpha ∈ [0,1]).
-        # Then restore side flags so scatter can skip OOB contributions.
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
-        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
-        anchors = _anchor_query(x_axis, xq_clamped, Val(:linear), false)
-        _fixup_linear_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
+        # OOB queries get actual-endpoint geometry; the widened (`_oob_state`)
+        # classification restores side flags. Single fused pass (no temp array).
+        anchors = _bake_linear_clampfill_anchors(x_axis, xq_p)
     else
         # ExtendExtrap: OOB uses boundary interval with extrapolated alpha (correct)
         # WrapExtrap: wraps to domain (correct; covers periodic auto-promotion)
@@ -277,7 +281,7 @@ function linear_adjoint(
         anchors = _anchor_query(x_axis, xq_p, Val(:linear), wrap)
     end
 
-    return LinearAdjoint{Tg, typeof(bc), typeof(extrap_eff)}(
+    return LinearAdjoint{Tg, typeof(bc), typeof(extrap_eff), _interval_type(x_axis)}(
         anchors, length(x_axis), bc, extrap_eff
     )
 end
@@ -285,7 +289,7 @@ end
 # Scalar query convenience
 function linear_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
     )

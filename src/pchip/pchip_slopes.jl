@@ -41,6 +41,26 @@ Clamped endpoint slope that preserves monotonicity.
 end
 
 """
+    _pchip_harmonic_mean(w1, w2, δp, δc)
+
+Fritsch–Carlson weighted harmonic mean of two secants, single-division form.
+Algebraically `(w1+w2)/(w1/δp + w2/δc) == (w1+w2)·δp·δc / (w1·δc + w2·δp)`, which
+trades 3 divisions for 1. Called only from the monotone branch where
+`sign(δp) == sign(δc)`, so the denominator is nonzero unless both secants are
+exactly zero (flat data) — the zero-denominator guard maps that 0·0/0 case to `0`,
+matching the old form's `Inf`-arithmetic limit (and avoiding a NaN).
+
+The guard tests the PRIMAL (as `_constant_kernel` does): `iszero` on a `ForwardDiff.Dual`
+inspects the partials too, so a seeded flat stretch would skip it and evaluate the 0·0/0,
+returning `Dual(NaN, NaN)` — a NaN in the VALUE, not merely in the derivative.
+"""
+@inline function _pchip_harmonic_mean(w1, w2, δp, δc)
+    den = w1 * δc + w2 * δp
+    # Use primal value for comparison (supports ForwardDiff.Dual)
+    return iszero(_extract_primal(den)) ? zero(den) : (w1 + w2) * δp * δc / den
+end
+
+"""
     _pchip_slopes!(dy, x, y)
 
 Compute PCHIP (Fritsch-Carlson) monotone-preserving slopes in-place.
@@ -58,12 +78,19 @@ Compute PCHIP (Fritsch-Carlson) monotone-preserving slopes in-place.
 # Complexity
 O(n), single pass, zero allocation (writes into `dy`).
 """
+# Width-less form: delegate with the axis's own eltype — bit-identical to the
+# historic raw behavior. One-shot PreCompute backends pass the value-matched
+# `Tw` explicitly so slopes are born at the value width (raw Int axes included).
+_pchip_slopes!(dy::AbstractVector, x::AbstractVector, y::AbstractVector; bc::AbstractBC = NoBC()) =
+    _pchip_slopes!(dy, x, y, eltype(x); bc)
+
 function _pchip_slopes!(
         dy::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector;
+        x::AbstractVector,
+        y::AbstractVector,
+        ::Type{Tw};
         bc::AbstractBC = NoBC()
-    ) where {Tg}
+    ) where {Tw}
     n = length(x)
     @assert n >= 2 "PCHIP requires at least 2 points"
     @assert length(y) == n "y length must match x"
@@ -75,48 +102,52 @@ function _pchip_slopes!(
     # n=2 grids (where the seam secant can have opposite sign of cell-1).
     if n == 2
         if bc isa PeriodicBC
-            @inbounds dy[1] = _pchip_boundary_slope(x, y, 1, n, bc)
-            @inbounds dy[2] = _pchip_boundary_slope(x, y, 2, n, bc)
+            @inbounds dy[1] = _pchip_boundary_slope(Tw, x, y, 1, n, bc)
+            @inbounds dy[2] = _pchip_boundary_slope(Tw, x, y, 2, n, bc)
             return dy
         end
         @inbounds begin
-            δ = (y[2] - y[1]) / (x[2] - x[1])
+            δ = _forward_secant(Tw, x, y, 1)
             dy[1] = δ
             dy[2] = δ
         end
         return dy
     end
 
-    # Compute secant slopes for first two intervals (needed for first interior)
-    @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = (y[2] - y[1]) / h_prev
+    Tc = eltype(dy)
 
-    @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = (y[3] - y[2]) / h_curr
+    # Compute secant slopes for first two intervals (needed for first interior).
+    # Cell widths stay raw — they are width-neutral WEIGHTS (Int × secant keeps
+    # the secant's type); only the secants carry the value-matched width.
+    @inbounds h_prev = _get_h(x, 1)
+    @inbounds δ_prev = _forward_secant(Tw, x, y, 1)
+
+    @inbounds h_curr = _get_h(x, 2)
+    @inbounds δ_curr = _forward_secant(Tw, x, y, 2)
 
     # Left endpoint: bc-dispatched helper.
     # NoBC: one-sided 3-point FD with monotonicity clamping.
     # PeriodicBC: closed-cycle interior formula via wrap-aware abstraction.
-    @inbounds dy[1] = _pchip_boundary_slope(x, y, 1, n, bc)
+    @inbounds dy[1] = _pchip_boundary_slope(Tw, x, y, 1, n, bc)
 
     # Interior slopes (k = 2:n-1) — unchanged. K=3 stencil never crosses join.
     @inbounds for k in 2:(n - 1)
         if sign(δ_prev) != sign(δ_curr)
             # Local extremum: zero slope preserves monotonicity
-            dy[k] = zero(eltype(dy))
+            dy[k] = zero(Tc)
         else
             # Weighted harmonic mean (Fritsch-Carlson formula)
             w1 = 2 * h_curr + h_prev
             w2 = h_curr + 2 * h_prev
-            dy[k] = (w1 + w2) / (w1 / δ_prev + w2 / δ_curr)
+            dy[k] = _pchip_harmonic_mean(w1, w2, δ_prev, δ_curr)
         end
 
         # Advance to next interval (k < n-1 means there's a next interval)
         if k < n - 1
             h_prev = h_curr
             δ_prev = δ_curr
-            h_curr = x[k + 2] - x[k + 1]
-            δ_curr = (y[k + 2] - y[k + 1]) / h_curr
+            h_curr = _get_h(x, k + 1)
+            δ_curr = _forward_secant(Tw, x, y, k + 1)
         end
     end
 
@@ -129,7 +160,7 @@ function _pchip_slopes!(
     #   differs from i=1's (m_0=seam, m_1) — dy[1] ≠ dy[n] in general, both
     #   correctly wrap-aware via the seam secant.
     # - NoBC: helper falls back to the original one-sided FD.
-    @inbounds dy[n] = _pchip_boundary_slope(x, y, n, n, bc)
+    @inbounds dy[n] = _pchip_boundary_slope(Tw, x, y, n, n, bc)
 
     return dy
 end

@@ -50,7 +50,7 @@ end
         -> NTuple{N,Int}
 
 Find the grid node nearest to `query` in each dimension.
-O(1) per axis for uniform (ScalarSpacing) grids; O(log n) for non-uniform.
+O(1) per axis for uniform (`_CachedRange`) grids; O(log n) for non-uniform.
 """
 @inline function _phs_find_base_node(
         itp::PHSInterpolantND{Tg, Tv, N, K},

@@ -19,7 +19,7 @@ Wrap `xi` into `[x_min, x_max]` for `WrapExtrap` / periodic BC. Closed-domain:
 path. `_extract_primal` is identity on plain numerics, so the in-domain branch
 returns the original `xi` and preserves AD `Dual` carriers.
 """
-@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
+@inline function _wrap_to_domain(xi, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
     if (xi_primal >= x_min) && (xi_primal <= x_max)
         return xi
@@ -42,8 +42,13 @@ end
 #
 # Arg order `(xq, x)`: matches the 3-arg primitive `(xq, x_min, x_max)` —
 # the operand always comes first; axis bounds (or extracted bounds) follow.
-@inline _wrap_to_domain(xq, x::AbstractVector) =
-    _wrap_to_domain(xq, first(x), last(x))
+@inline function _wrap_to_domain(xq, x::AbstractVector)
+    # In-domain by the widened bounds → no fold (the sliver just past `last` is the
+    # true endpoint, not a wrap point). Genuinely-OOB queries fold against the
+    # actual grid span (exact period `last - first`).
+    _is_inbounds(x, xq) && return xq
+    return _wrap_to_domain(xq, first(x), last(x))
+end
 # Wrapper-specific overload lives in `periodic_axis.jl` where
 # `_ExclusivePeriodicAxis` is defined.
 
@@ -603,10 +608,10 @@ Called once at build time before `_build_nd_coeffs`.
   (post-extension) are handled uniformly.
 """
 function _prepare_periodic_nd(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     return _prepare_periodic_nd_impl(grids, data, bcs, _extend_grid_vcat, _allocate_array)
 end
 
@@ -629,12 +634,12 @@ end
 # pool reference is carried via a type parameter — concrete dispatch, no Box).
 # ────────────────────────────────────────────────────────
 @inline function _prepare_periodic_nd_impl(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC},
         extend_vector_grid::F_ext,
         allocate_data::F_alloc,
-    ) where {Tg, Tv, N, F_ext, F_alloc}
+    ) where {Tv, N, F_ext, F_alloc}
     # Ultra-fast path: non-periodic call-sites collapse this to a no-op via
     # the `@generated` predicate (zero runtime cost on the hot non-periodic path).
     _has_any_bc(bcs, Val(N), PeriodicBC) || return (grids, data, bcs)
@@ -644,34 +649,12 @@ end
     # Fast path: purely inclusive → no extension needed.
     _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive}) || return (grids, data, bcs)
 
-    # Per-axis grid extension + bc resolution. `map` with `ntuple(identity, Val(N))`
-    # dispatches per-element with concrete (grid, bc) types → each closure call
-    # compiles to a specialization with concrete return type. A `do d …` with
-    # runtime indexing `bcs[d]` / `grids[d]` over a heterogeneous tuple would
-    # leave the return type as `Union{...}` → heap-boxed Refs (~2 KB/query).
-    # See MEMORY.md "ND Constructor Inferrability Pattern".
-    processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
-        bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
-        period = _resolve_exclusive_period(grid_d, bc_d)
-        _validate_exclusive_period(grid_d, period)
-        x_end = first(grid_d) + Tg(period)
-        last(grid_d) < x_end ||
-            _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))
-        # Range axes use type-preserving `_to_float_adding_endpoint`; Vector axes
-        # delegate to the caller-supplied `extend_vector_grid` (vcat vs pool).
-        grid_ext = grid_d isa AbstractRange ?
-            _to_float_adding_endpoint(grid_d, Tg) :
-            extend_vector_grid(grid_d, x_end, Tg)
-        # Promote bc to `:extended` post-extension: the extended grid IS a
-        # closed-cycle layout (length n+1, last point at x[1]+period). The
-        # `:extended` symbol records this promotion so downstream solvers and
-        # cache builders can distinguish "user gave :exclusive, we extended"
-        # from "user gave :inclusive" while still routing through the
-        # `_is_periodic_seam_folded` trait. Without this, BC-aware solvers
-        # (e.g. cubic) would interpret `:exclusive` as "raw n-grid" and
-        # miscount the cycle.
-        return (grid_ext, _bc_after_extend(bc_d))
-    end
+    # Per-axis grid extension + bc resolution. Each axis floats to its OWN eltype
+    # (`float(eltype(grid_d))` computed inside the `map` closure) so heterogeneous unit
+    # axes (s, m) don't collapse to an abstract common `Quantity{Float64}`. The per-element
+    # type is concrete within `map`'s specialization (computed locally, not captured), so it
+    # stays inferred — no closure box, unlike a captured type-valued local.
+    processed = _extend_periodic_nd_axes(grids, bcs, extend_vector_grid)
     grids_out = map(first, processed)
     bcs_out = map(last, processed)
 
@@ -688,6 +671,35 @@ end
     _extend_all_slices!(data_out, data, bcs, Val(N))
 
     return (grids_out, data_out, bcs_out)
+end
+
+# Per-axis exclusive-periodic extension. Each axis floats to its OWN eltype
+# (`Tg = float(eltype(grid_d))` computed inside the specialized closure body, NOT captured
+# from the caller) so heterogeneous unit axes stay concrete per element — `map` specializes
+# the closure per tuple element, so a locally-computed type folds to a constant (no box),
+# unlike a captured type-valued local which Julia 1.10 boxes → abstract grid type.
+@inline function _extend_periodic_nd_axes(
+        grids::Tuple{Vararg{AbstractVector, N}},
+        bcs::Tuple{Vararg{AbstractBC, N}},
+        extend_vector_grid::F_ext,
+    ) where {N, F_ext}
+    return map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
+        bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
+        Tg = float(eltype(grid_d))
+        period = _resolve_exclusive_period(grid_d, bc_d)
+        _validate_exclusive_period(grid_d, period)
+        x_end = first(grid_d) + Tg(period)
+        last(grid_d) < x_end ||
+            _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))
+        # Range axes use type-preserving `_to_float_adding_endpoint`; Vector axes
+        # delegate to the caller-supplied `extend_vector_grid` (vcat vs pool).
+        grid_ext = grid_d isa AbstractRange ?
+            _to_float_adding_endpoint(grid_d, Tg) :
+            extend_vector_grid(grid_d, x_end, Tg)
+        # Promote bc to `:extended` post-extension so downstream solvers / cache
+        # builders route the closed cycle (records the exclusive→extended step).
+        return (grid_ext, _bc_after_extend(bc_d))
+    end
 end
 
 # Cold-path error body (kept out of the happy-path inlined code).
@@ -719,10 +731,10 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
 """
 @inline function _prepare_periodic_nd_pooled(
         pool::AbstractArrayPool,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     return _prepare_periodic_nd_impl(
         grids, data, bcs,
         _PoolGridExtender(pool),

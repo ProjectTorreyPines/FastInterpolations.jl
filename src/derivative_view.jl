@@ -258,7 +258,7 @@ end
 
 # Out-of-place calls (Scalar or Vector)
 @inline function (d::DerivativeView{Order, ITP})(
-        xq::Union{Real, AbstractArray{<:Real}}; deriv = nothing, kwargs...
+        xq::Union{Number, AbstractArray{<:Number}}; deriv = nothing, kwargs...
     ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
     return d.parent(xq; deriv = _deriv_kw(Val(Order)), kwargs...)
@@ -266,7 +266,7 @@ end
 
 # ND queries with Real/AbstractArray (tie-breaker for 1D-vs-ND dispatch)
 @inline function (d::DerivativeView{Order, ITP})(
-        xq::Union{Real, AbstractArray{<:Real}}; deriv = nothing, kwargs...
+        xq::Union{Number, AbstractArray{<:Number}}; deriv = nothing, kwargs...
     ) where {Order, ITP <: AbstractInterpolantND}
     _check_no_deriv_override(Val(Order), deriv)
     return d.parent(xq; deriv = _deriv_kw(Val(Order)), kwargs...)
@@ -283,7 +283,7 @@ end
 # In-place vector query => vector output (single-series interpolants)
 # Note: No element type constraint - parent handles type checking/conversion
 @inline function (d::DerivativeView{Order, ITP})(
-        output::AbstractVector, xq::AbstractVector{<:Real}; deriv = nothing, kwargs...
+        output::AbstractVector, xq::AbstractVector{<:Number}; deriv = nothing, kwargs...
     ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
     return d.parent(output, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
@@ -292,8 +292,59 @@ end
 # In-place scalar query => array output (SeriesInterpolant)
 # Note: No element type constraint - parent handles type checking/conversion
 @inline function (d::DerivativeView{Order, ITP})(
-        out::AbstractArray, xq::Real; deriv = nothing, kwargs...
+        out::AbstractArray, xq::Number; deriv = nothing, kwargs...
     ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
     return d.parent(out, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+
+# In-place shaped array query => same-shape array output (1D parents + the ND
+# fallback below). All-ITP; disjoint from the series-scalar `(AbstractArray, Real)`
+# above and less specific than the `(AbstractVector, AbstractVector{<:Real})` form.
+@inline function (d::DerivativeView{Order, ITP})(
+        output::AbstractArray, xq::AbstractArray{<:Number}; deriv = nothing, kwargs...
+    ) where {Order, ITP}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(output, xq; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+
+# In-place ND batch (AoS/SoA/etc.) => shaped output. The generic `queries`
+# argument needs the three ND-specialized tie-breakers below so that every
+# intersection with the all-ITP in-place methods has a unique most-specific
+# winner (Aqua-verified — removing any one reintroduces an ambiguity).
+@inline function (d::DerivativeView{Order, ITP})(
+        output::AbstractArray, queries; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return d.parent(output, queries; deriv = _deriv_kw(Val(Order)), kwargs...)
+end
+
+# The three tie-breakers below exist SOLELY to disambiguate dispatch against the
+# all-ITP `(AbstractArray,::Real)` / `(AbstractVector,::AbstractVector{<:Real})` /
+# `(AbstractArray,::AbstractArray{<:Real})` in-place forms. A bare Real scalar or
+# Real array is never a valid N-D point query, so they reject up front rather than
+# forward an ill-typed query into the parent (whose handling of it is undefined).
+@noinline _throw_nd_point_query_required() = throw(
+    ArgumentError(
+        "an N-D DerivativeView requires N-D point queries (a coordinate tuple, an AoS array " *
+            "of point tuples, or an SoA tuple of coordinate arrays); a bare Real scalar or Real array is not valid"
+    )
+)
+@inline function (d::DerivativeView{Order, ITP})(
+        ::AbstractArray, ::Number; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return _throw_nd_point_query_required()
+end
+@inline function (d::DerivativeView{Order, ITP})(
+        ::AbstractVector, ::AbstractVector{<:Number}; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return _throw_nd_point_query_required()
+end
+@inline function (d::DerivativeView{Order, ITP})(
+        ::AbstractArray, ::AbstractArray{<:Number}; deriv = nothing, kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    return _throw_nd_point_query_required()
 end

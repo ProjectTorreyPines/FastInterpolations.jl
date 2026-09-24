@@ -64,24 +64,24 @@ cd benchmark && julia --project=. ci_benchmark.jl
 
 Since the full suite runs a large combination of benchmarks, you can easily control which groups are executed by passing arguments to the script. The script supports group numbers, exact group keys, or general substrings:
 
-* **By Group Number** (runs only group 15, `15_phs_eval`):
+* **By Group Number** (runs only group 16, `16_phs`):
   ```bash
-  cd benchmark && julia --project=. ci_benchmark.jl 15
+  cd benchmark && julia --project=. ci_benchmark.jl 16
   ```
 
-* **By Substring** (runs all 1D PHS-specific benchmark groups: `13_phs_oneshot`, `14_phs_construct`, and `15_phs_eval`):
+* **By Substring** (runs every group whose key contains the text — `phs` matches `16_phs`):
   ```bash
   cd benchmark && julia --project=. ci_benchmark.jl phs
   ```
 
 * **By Exact Key**:
   ```bash
-  cd benchmark && julia --project=. ci_benchmark.jl 15_phs_eval
+  cd benchmark && julia --project=. ci_benchmark.jl 16_phs
   ```
 
-* **Combining Multiple Filters** (runs group 9 and group 15):
+* **Combining Multiple Filters** (runs group 9 and group 16):
   ```bash
-  cd benchmark && julia --project=. ci_benchmark.jl 9 15
+  cd benchmark && julia --project=. ci_benchmark.jl 9 16
   ```
 
 ### Comparing Against Baselines

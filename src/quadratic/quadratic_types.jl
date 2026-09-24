@@ -24,7 +24,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 - `BC<:QuadraticBC`: Boundary condition type (retained for adjoint/matrix convenience)
-- `Tc`: Coefficient element type (`_output_eltype(Tv, Tg)` — may be Dual for duck grids)
+- `Tc`: Coefficient element type (`_promote_eltype(_coeff_op, Tg, Tv)` — may be Dual for duck grids)
 
 # Fields
 - `x::X`: x-coordinates (sorted, wrapped — grid is the source of truth for spacing)
@@ -59,29 +59,32 @@ itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, Tc} <: AbstractInterpolant1D{Tg, Tv}
+struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, Tca, Tcd} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
-    a::Vector{Tc}       # Quadratic coefficients (Tc = _output_eltype(Tv, Tg))
-    d::Vector{Tc}       # Slope coefficients (Tc = _output_eltype(Tv, Tg))
+    a::Vector{Tca}      # Quadratic coefficients (order 2 — `_coeff_op2` space, `Y/X²`)
+    d::Vector{Tcd}      # Slope coefficients (order 1 — `_coeff_op` space, `Y/X`)
     extrap::E           # Extrapolation mode (compile-time specialized)
     search_policy::P    # Default search policy (immutable, thread-safe)
     bc::BC              # Boundary condition (retained for Matrix(itp, xq) convenience)
 
     # Inner: `_cache_axis` (insurance, passes the polynomial `bc::QuadraticBC`
     # through — these are not `PeriodicBC` so it just caches h/inv_h) then
-    # `_convert_copy` for ownership. `a`/`d` come freshly-allocated from the
-    # outer ctor's solver.
+    # `_own_or_ref_{axis,values}` for ownership (copy by default, alias under
+    # `StorePolicy(copy=false)`). `a`/`d` always come freshly-allocated from the
+    # outer ctor's solver, so they are never aliased. `Tca ≡ Tcd` for Real
+    # grids; they split only for unit-carrying grids (`Y/X²` vs `Y/X`).
     function QuadraticInterpolant(
             x::AbstractVector, y::AbstractVector,
-            a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
-        ) where {Tc, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
+            a::Vector{Tca}, d::Vector{Tcd}, ev::E, search::P, bc::BC;
+            store::StorePolicy = StorePolicy()
+        ) where {Tca, Tcd, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
-        return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC, Tc}(xc, yc, a, d, ev, search, bc)
+        xc = _store_axis(x, bc, Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
+        return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC, Tca, Tcd}(xc, yc, a, d, ev, search, bc)
     end
 end

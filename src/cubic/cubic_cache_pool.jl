@@ -40,15 +40,18 @@ Abstract type for cache entries. Subtypes must have:
 - `id::UInt` - object identity for fast lookup
 - `x::X` - grid data for equality check
 - `cache` - CubicSplineCache instance
-"""
-abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
-# Map user input grid type to the cache's wrapped axis type. Mirrors
-# `_cache_axis(_convert_copy(x, T), bc)`: Range → `_CachedRange{T, T}`,
-# Vector → `_CachedVector{T, Tinv}`. `:exclusive` periodic adds an outer
-# `_ExclusivePeriodicAxis` wrapper. Cubic always promotes to float, so pin
-# `Tinv = T` to keep `EntryType` concrete.
-@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, T}
+`T` is any bankable grid eltype (`_grid_bankable`): Real floats, unit
+quantities, Duals. Lookup is a linear `isequal` scan — never `hash` (Unitful
+and ForwardDiff both bend the isequal/hash contract, in opposite directions).
+"""
+abstract type AbstractCacheEntry{T, X <: AbstractVector{T}} end
+
+# Banked axis type for an already-normalized cache grid: `_CachedRange{T}` (tag preserved)
+# or `Vector{T}`. Raw ranges are `_to_float`-converted upstream, so they never reach here;
+# `:exclusive` adds an outer `_ExclusivePeriodicAxis`.
+@inline _cached_axis_type(::Type{<:_CachedRange{S, Si, Tag}}, ::Type{T}) where {S, Si, Tag, T} =
+    _CachedRange{T, typeof(inv(oneunit(T))), Tag}
 @inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
     _CachedVector{T, typeof(inv(oneunit(T)))}
 
@@ -61,17 +64,27 @@ abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
     return _ExclusivePeriodicAxis{T, Inner, T}
 end
 
+# Bank-side factorization type — SAME witnesses as `thomas_factorize` (single
+# source of truth): `l` in `_thomas_l_op` space (dimensionless for units),
+# `du` grid space by reference, `inv_d` in `_inv_op` space. Real grids
+# degenerate to the historic `{Vector{T}, Vector{T}, Vector{T}}`.
+@inline _bank_factorization_type(::Type{T}) where {T} = ThomasFactorization{
+    Vector{_promote_eltype(_thomas_l_op, T, T)}, Vector{T},
+    Vector{_promote_eltype(_inv_op, T)},
+}
+
 """
     CacheEntry{T, L, R, X, S}
 
 Cache entry for derivative BC (uses BCPair).
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `T`: bankable grid eltype (Real float, unit quantity, Dual, …)
 - `L`: Left boundary condition type (Deriv1{T} or Deriv2{T})
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
-- `X`: Grid type (Vector{T} or StepRangeLen)
-- `C`: Concrete `CubicSplineCache` parametrization
+- `X`: Grid type (Vector{T} or wrapped range)
+- `C`: Concrete `CubicSplineCache` parametrization (factorization from
+  `_bank_factorization_type` — witness-typed, Real-degenerate)
 
 # Fields
 - `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
@@ -83,7 +96,7 @@ The `x` field stores a snapshot (copy) for Vector inputs, preventing external
 mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
 even on objectid match to detect in-place mutation.
 """
-mutable struct CacheEntry{T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{T, Vector{T}}, BCPair{L, R}}} <: AbstractCacheEntry{T, X}
+mutable struct CacheEntry{T, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, C <: CubicSplineCache{T, <:AbstractVector{T}, <:ThomasFactorization, BCPair{L, R}, Nothing}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X                                  # user-input snapshot (Vector / Range)
     cache::C                              # concrete cache type — preserves wrapped-axis X for inference
@@ -95,7 +108,8 @@ end
 Cache entry for periodic BC (uses PeriodicData).
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `T`: bankable grid eltype; the Sherman-Morrison `q` lives in the `_inv_op`
+  space (`Vector{T}` for Real, `[1/X]` for unit grids)
 - `X`: Grid type (Vector{T} or StepRangeLen)
 - `E`: Endpoint variant (`:inclusive`, `:exclusive`, or `:extended`) — encoded
   so the bank registry holds *separate* banks per variant. The cache content
@@ -112,7 +126,7 @@ Cache entry for periodic BC (uses PeriodicData).
 # Mutation Safety
 See `CacheEntry` documentation for details on mutation safety pattern.
 """
-mutable struct PeriodicCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{T, Vector{T}}, <:PeriodicBC}} <: AbstractCacheEntry{T, X}
+mutable struct PeriodicCacheEntry{T, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, <:ThomasFactorization, <:PeriodicBC, <:AbstractVector}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::C
@@ -361,9 +375,9 @@ Get or create a derivative BC cache bank for the given (T, L, R, X, S) combinati
 Type-Free design: L, R are PointBC subtypes without type parameter constraint.
 Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 """
-@inline function _get_derivative_bank(::Type{X}, ::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
+@inline function _get_derivative_bank(::Type{X}, ::BCPair{L, R}) where {T, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
     Xc = _cached_axis_type(X, T)
-    Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, BCPair{L, R}}
+    Cc = CubicSplineCache{T, Xc, _bank_factorization_type(T), BCPair{L, R}, Nothing}
     EntryType = CacheEntry{T, L, R, X, Cc}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
@@ -385,11 +399,12 @@ that were promoted from `:exclusive` at build time.
 Without partitioning on `C`, a cache built from `check=false` BC would fail to
 fit into a bank typed for `check=true`.
 """
-@inline function _get_periodic_bank(::Type{X}, ::Val{E}, ::Val{C}) where {T <: AbstractFloat, X <: AbstractVector{T}, E, C}
+@inline function _get_periodic_bank(::Type{X}, ::Val{E}, ::Val{C}) where {T, X <: AbstractVector{T}, E, C}
     Xc = _cached_axis_type(X, T, Val(E))
     # `E` ∈ {:inclusive, :exclusive, :extended} — each gets its own bank.
+    # PeriodicBC's period param carries the grid unit; `q` is `_inv_op`-typed.
     bc = PeriodicBC{E, T, C}
-    Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, bc}
+    Cc = CubicSplineCache{T, Xc, _bank_factorization_type(T), bc, Vector{_promote_eltype(_inv_op, T)}}
     EntryType = PeriodicCacheEntry{T, X, E, Cc}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
@@ -489,7 +504,7 @@ end
 # Build cache for derivative BC entry
 # Accepts AbstractVector (not x::X) so views can be passed directly;
 # CubicSplineCache inner constructor handles copy() → Vector.
-@inline function _build_cache(::Type{<:CacheEntry{T, L, R}}, x::AbstractVector{T}, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
+@inline function _build_cache(::Type{<:CacheEntry{T, L, R}}, x::AbstractVector{T}, bc::BCPair{L, R}) where {T, L <: PointBC, R <: PointBC}
     return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
@@ -503,7 +518,7 @@ end
 # (not optional `Nothing`) because cache content is BC-form-dependent: cycle
 # length, period, and seam-cell width all differ between `:inclusive` and
 # `:exclusive`. The entry's E type-param matches `bc`'s E by dispatch.
-@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector{T}, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, E}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector{T}, bc::PeriodicBC{E}) where {T, X, E}
     return _build_periodic_cache(x, bc)
 end
 
@@ -692,6 +707,55 @@ end
     end
 end
 
+# ---------------------------------------------------------------
+# Explicit target float type `Tg` (data-aware bank; one-shot value-match)
+# ---------------------------------------------------------------
+# The 3-arg forms above derive the cache float from the grid alone
+# (`_cache_float_type(eltype(x))`) — an Int grid always lands in the Float64
+# bank. These 4-arg forms take the value-matched float `Tg` (computed at the
+# one-shot surface as `_promote_grid_float(grid_eltype, data_eltype)`) so an
+# Int grid beside Float32 data is cached at Float32 (`cache.x` eltype = `Tg`).
+# Only the Integer/Rational bank routing changes; Float/Range/Dual grids already
+# carry their own float and ignore `Tg` (see the impl overloads below).
+@inline function _get_cubic_cache(
+        x::AbstractVector,
+        bc::BCPair{L, R},
+        autocache::Bool,
+        ::Type{Tg}
+    ) where {L <: PointBC, R <: PointBC, Tg}
+    bc_cache = _cache_bc_pair(bc, Tg)
+    x_norm = _resolve_axis(x)
+    if autocache
+        return _get_derivative_cache_impl(x_norm, bc_cache, Tg)
+    else
+        return _build_derivative_bc_cache(_to_float(x_norm, Tg), bc_cache.left, bc_cache.right)
+    end
+end
+
+@inline function _get_cubic_cache(
+        x::AbstractVector,
+        bc::AbstractBC,
+        autocache::Bool,
+        ::Type{Tg}
+    ) where {Tg}
+    x_norm = _resolve_axis(x)
+    return if autocache
+        if bc isa PeriodicBC
+            return _get_periodic_cache_impl(x_norm, bc, Tg)
+        else
+            return _get_derivative_cache_impl(x_norm, _normalize_bc(bc), Tg)
+        end
+    else
+        x_typed = _to_float(x_norm, Tg)
+        if _is_periodic_bc(bc)
+            return _build_periodic_cache(x_typed, bc)
+        else
+            bc_normalized = _normalize_bc(bc)
+            return _build_derivative_bc_cache(x_typed, bc_normalized.left, bc_normalized.right)
+        end
+    end
+end
+
 
 # ===============================================================
 # Internal: Cache Implementation
@@ -714,7 +778,7 @@ end
 # _CachedRange: bank keyed on _CachedRange{T, T} (Tinv == T for Float grids).
 # objectid is deterministic for isbits → fast hit.
 @inline function _get_derivative_cache_impl(x::_CachedRange{T, T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    bank = _get_derivative_bank(_CachedRange{T, T}, bc_pair)
+    bank = _get_derivative_bank(typeof(x), bc_pair)   # concrete (carries the axis tag)
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
@@ -737,12 +801,51 @@ end
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
-# Duck-typed grids (Dual, etc.): build fresh, no caching.
-# These are ephemeral — cache hit rate ≈ 0%.
-@inline function _get_derivative_cache_impl(x::AbstractVector, bc_pair::BCPair{L, R}) where {L <: PointBC, R <: PointBC}
-    FT = _cache_float_type(eltype(x))
-    return _build_derivative_bc_cache(_to_float(x, FT), bc_pair.left, bc_pair.right)
+# Duck-typed grids (unit-carrying, Dual, …): bank under the EXACT eltype when
+# `_grid_bankable` (type-folded branch); otherwise build fresh. Exact keying is
+# what makes Unitful safe here — cross-unit isequal-hits cannot happen when cm
+# and m grids live in different (type-keyed) banks.
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T, L <: PointBC, R <: PointBC}
+    if _grid_bankable(T)
+        bank = _get_derivative_bank(Vector{T}, bc_pair)
+        return _lookup_or_insert!(bank, x, bc_pair)
+    else
+        return _build_derivative_bc_cache(_to_float(x, _cache_float_type(T)), bc_pair.left, bc_pair.right)
+    end
 end
+
+# Duck `_CachedRange` (unit Range axes: Tinv ≠ T): bank on the concrete wrapper
+# type — `copy` of an isbits range is the range itself, so the entry snapshot
+# stays type-exact and objectid is content-deterministic.
+@inline function _get_derivative_cache_impl(x::_CachedRange{T, Tinv}, bc_pair::BCPair{L, R}) where {T, Tinv, L <: PointBC, R <: PointBC}
+    if _grid_bankable(T)
+        bank = _get_derivative_bank(typeof(x), bc_pair)
+        return _lookup_or_insert!(bank, x, bc_pair)
+    else
+        return _build_derivative_bc_cache(_to_float(x, _cache_float_type(T)), bc_pair.left, bc_pair.right)
+    end
+end
+
+# Duck raw ranges: normalize to the wrapped axis first (defensive — the public
+# path resolves axes before reaching the impl).
+@inline _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{L, R}) where {T, L <: PointBC, R <: PointBC} =
+    _get_derivative_cache_impl(_resolve_axis(x), bc_pair)
+
+# ---- Explicit target float `Tg` (data-aware bank) ----
+# Integer/Rational grids route to the `Vector{Tg}` bank (value-matched) instead
+# of the blind `Vector{float(T)}`. All other grids (Float/Range/Dual) already
+# carry their own float or are ephemeral, so `Tg` is redundant — delegate to the
+# default 3-arg routing.
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}, ::Type{Tg}) where {T <: Integer, L <: PointBC, R <: PointBC, Tg}
+    bank = _get_derivative_bank(Vector{Tg}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
+end
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}, ::Type{Tg}) where {T <: Rational, L <: PointBC, R <: PointBC, Tg}
+    bank = _get_derivative_bank(Vector{Tg}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
+end
+@inline _get_derivative_cache_impl(x::AbstractVector, bc_pair::BCPair{L, R}, ::Type{Tg}) where {L <: PointBC, R <: PointBC, Tg} =
+    _get_derivative_cache_impl(x, bc_pair)
 
 """
 Internal implementation for periodic BC cache lookup. `bc` is threaded through
@@ -757,7 +860,7 @@ end
 
 # _CachedRange: bank keyed on _CachedRange{T, T} (Tinv == T for Float grids).
 @inline function _get_periodic_cache_impl(x::_CachedRange{T, T}, bc::PeriodicBC) where {T <: AbstractFloat}
-    bank = _get_periodic_bank(_CachedRange{T, T}, bc)
+    bank = _get_periodic_bank(typeof(x), bc)   # concrete (carries the axis tag)
     return _lookup_or_insert!(bank, x, bc)
 end
 
@@ -778,7 +881,40 @@ end
     return _lookup_or_insert!(bank, x, bc)
 end
 
-# Duck-typed grids (Dual, etc.): build fresh, no caching.
-@inline function _get_periodic_cache_impl(x::AbstractVector, bc::PeriodicBC)
-    return _build_periodic_cache(_to_float(x, _cache_float_type(eltype(x))), bc)
+# Duck-typed grids (unit-carrying, Dual, …): same trait-gated exact-eltype
+# banking as the derivative pool.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC) where {T}
+    if _grid_bankable(T)
+        bank = _get_periodic_bank(Vector{T}, bc)
+        return _lookup_or_insert!(bank, x, bc)
+    else
+        return _build_periodic_cache(_to_float(x, _cache_float_type(T)), bc)
+    end
 end
+
+@inline function _get_periodic_cache_impl(x::_CachedRange{T, Tinv}, bc::PeriodicBC) where {T, Tinv}
+    if _grid_bankable(T)
+        bank = _get_periodic_bank(typeof(x), bc)
+        return _lookup_or_insert!(bank, x, bc)
+    else
+        return _build_periodic_cache(_to_float(x, _cache_float_type(T)), bc)
+    end
+end
+
+# Duck raw ranges: normalize to the wrapped axis first (defensive).
+@inline _get_periodic_cache_impl(x::AbstractRange{T}, bc::PeriodicBC) where {T} =
+    _get_periodic_cache_impl(_resolve_axis(x), bc)
+
+# ---- Explicit target float `Tg` (data-aware bank) ----
+# Same contract as the derivative impl: Integer/Rational route to `Vector{Tg}`;
+# other grids ignore `Tg` and delegate to the default routing.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC, ::Type{Tg}) where {T <: Integer, Tg}
+    bank = _get_periodic_bank(Vector{Tg}, bc)
+    return _lookup_or_insert!(bank, x, bc)
+end
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC, ::Type{Tg}) where {T <: Rational, Tg}
+    bank = _get_periodic_bank(Vector{Tg}, bc)
+    return _lookup_or_insert!(bank, x, bc)
+end
+@inline _get_periodic_cache_impl(x::AbstractVector, bc::PeriodicBC, ::Type{Tg}) where {Tg} =
+    _get_periodic_cache_impl(x, bc)

@@ -1254,6 +1254,35 @@
         end
     end
 
+    @testset "GriddedQuery show" begin
+        gq = GriddedQuery((range(1.0, 512.0, 1024), collect(range(2.0, 382.0, 768))))
+
+        # compact form: type header + dims + per-axis point counts
+        compact_str = sprint(show, gq)
+        @test occursin("GriddedQuery", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("2}", compact_str)          # N = 2 in the type header
+        @test occursin("1024×768", compact_str)
+
+        # verbose form: dimensionality, per-axis Range/Vector kind, domains
+        verbose_str = sprint(show, MIME("text/plain"), gq)
+        @test occursin("Axes:", verbose_str)
+        @test occursin("2D, 1024×768 points", verbose_str)
+        @test occursin("Range", verbose_str)       # axis 1
+        @test occursin("Vector", verbose_str)      # axis 2
+        @test occursin("[1, 512]", verbose_str)    # axis-1 extent
+        @test occursin("[2, 382]", verbose_str)    # axis-2 extent
+
+        # unsorted axis reports min/max extent (not first/last)
+        gqu = GriddedQuery((Float32[7.3, 2.1, 30.9, 2.1],))
+        vs = sprint(show, MIME("text/plain"), gqu)
+        @test occursin("Float32", vs)
+        @test occursin("[2.1, 30.9]", vs)
+
+        # empty axis renders without throwing
+        @test occursin("(empty)", sprint(show, MIME("text/plain"), GriddedQuery((Float64[], 1.0:10.0))))
+    end
+
     # Direct unit tests of _short_method_name for every local Hermite method
     # type, mirroring the existing "Direct test of _short_bc_name_nd" /
     # "Direct test of _short_side_name_nd" patterns. CubicHermiteInterp isn't

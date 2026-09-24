@@ -83,10 +83,11 @@ Grid-index query coordinate. Wraps an integer index for direct grid-point lookup
 After resolution (internal), carries both the index and the grid coordinate value.
 Search functions short-circuit when they see a `GridIdx` — zero search cost.
 
-`GridIdx <: Real`: it flows through `Tuple{Vararg{Real, N}}` dispatch transparently.
+`GridIdx <: Real`: it flows through `Tuple{Vararg{Number, N}}` dispatch transparently.
 Before resolution, `val = NaN` — a poison sentinel that propagates visibly if
 `_resolve_grididx` is ever skipped. After resolution, `val` holds the grid coordinate
-and arithmetic auto-promotes via `promote_rule` (stripping the `GridIdx` wrapper).
+(payload `T <: Number` — unit axes resolve to their Quantity coordinate) and
+arithmetic auto-promotes via `promote_rule` (stripping the `GridIdx` wrapper).
 
 # Examples
 ```julia
@@ -102,27 +103,39 @@ itp_hetero = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 itp_hetero((0.5, GridIdx(10)))   # search short-circuited on axis 2
 ```
 """
-struct GridIdx{T <: Real} <: Real
+struct GridIdx{T <: Number} <: Real
     idx::Int
     val::T
     function GridIdx(i::Integer)
         i >= 1 || throw(ArgumentError("GridIdx index must be ≥ 1, got $i"))
         return new{Float64}(Int(i), NaN64)
     end
-    function GridIdx{T}(i::Int, v::T) where {T <: Real}
+    function GridIdx{T}(i::Int, v::T) where {T <: Number}
         return new{T}(i, v)
     end
 end
 
 Base.show(io::IO, g::GridIdx) = print(io, "GridIdx(", g.idx, ")")
 
-# GridIdx <: Real: arithmetic works transparently via promotion.
+# GridIdx <: Real: Real arithmetic works transparently via promotion.
 # promote(GridIdx{T}, S) → promote_type(T, S), stripping the GridIdx wrapper.
 # Zero overhead — LLVM compiles to identical code as manual g.val extraction.
+# The rule stays S <: Real ON PURPOSE: Unitful's generic Quantity-vs-Real rules
+# see the wrapper (a Real) and nest (`Quantity{Quantity{…}}`) if we promote
+# against Quantity — unit coordinates instead flow through the direct `-` below.
 Base.promote_rule(::Type{GridIdx{T}}, ::Type{S}) where {T, S <: Real} = promote_type(T, S)
 Base.convert(::Type{T}, g::GridIdx) where {T <: Number} = convert(T, g.val)
+# Self-conversion is the identity: the arm above also matches `T = GridIdx{T}` (it is a
+# Number) and would recurse into `GridIdx{T}(::T)`; `setindex!`/`vect` reach it on 1.10.
+Base.convert(::Type{GridIdx{T}}, g::GridIdx{T}) where {T <: Number} = g
 Base.float(g::GridIdx) = float(g.val)
 (::Type{T})(g::GridIdx) where {T <: AbstractFloat} = T(g.val)
+# Coordinate accessor for the one value-consuming seam (`q - L` → dL / α).
+# Real axes let the wrapper ride its own `Real`-ness through promotion; a unit
+# axis cannot (see the promote_rule note), so the seam reads the payload
+# directly. Identity for every non-GridIdx query — no Real-path cost.
+@inline _coord_value(q) = q
+@inline _coord_value(g::GridIdx) = g.val
 
 """
     _resolve_grididx(q, grid) -> resolved coordinate
@@ -130,7 +143,8 @@ Base.float(g::GridIdx) = float(g.val)
 Resolve a bare `GridIdx(k)` to `GridIdx{T}(k, grid[k])`.
 `Real` values pass through unchanged.
 """
-@inline _resolve_grididx(q::Real, ::AbstractVector) = q
+# Coordinate passthrough: unbounded (duck grids); `GridIdx` stays more specific.
+@inline _resolve_grididx(q, ::AbstractVector) = q
 @inline function _resolve_grididx(g::GridIdx, grid::AbstractVector{Tg}) where {Tg}
     @boundscheck (1 <= g.idx <= length(grid) || _throw_grididx_oob_resolve(g.idx, length(grid)))
     return @inbounds GridIdx{Tg}(g.idx, grid[g.idx])
@@ -147,7 +161,15 @@ end
 # Defined here (loaded early) so that eval_ops.jl and all subsequent files
 # (utils.jl, nd_utils.jl, etc.) can reference it.
 
-"""Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
+"""
+Standard Julia numeric types that should be auto-promoted in convenience wrappers.
+
+This is the **eager-promotion whitelist** (which carrier types `_promote_itp_inputs`
+floats to the grid field). It is **not** a wrap-safety predicate: carriers outside it
+(`FixedPoint`/`N0f8`, `Gray{N0f8}`, AD `Dual`) are intentionally kept un-promoted, so
+arithmetic correctness for them must be handled per-site by `_fielddiff`/`_fieldsum`
+— do not gate divided-difference correctness on membership here.
+"""
 const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
 
 
@@ -327,6 +349,7 @@ struct WrapExtrap <: AbstractExtrap end
 
 """
     InBounds <: AbstractExtrap
+    InBounds(; first = :inclusive, last = :inclusive)
 
 Caller guarantees all queries are within the interpolation domain.
 Skips domain validation for maximum performance.
@@ -335,13 +358,70 @@ Used internally by vector loops after batch `_check_domain` validation
 (NoExtrap → InBounds conversion), and available to advanced users who
 have pre-validated their query points.
 
+The endpoint keywords (each `:inclusive` or `:exclusive`) narrow the promised
+interval at the type level (`InBounds{First, Last}`):
+
+| extrap                                           | caller promises              |
+|:-------------------------------------------------|:-----------------------------|
+| `InBounds()`                                     | `first(x) ≤ xq ≤ last(x)`    |
+| `InBounds(last = :exclusive)`                    | `first(x) ≤ xq < last(x)`    |
+| `InBounds(first = :exclusive)`                   | `first(x) < xq ≤ last(x)`    |
+| `InBounds(first = :exclusive, last = :exclusive)`| `first(x) < xq < last(x)`    |
+
+Like `Base.@inbounds`, violating the promise is undefined for the optimized
+paths: the result may be a wrong cell, an out-of-bounds read, or a
+`BoundsError`. A stricter promise can only be exploited, never required —
+paths without a dedicated lean arm safely treat it as the closed contract.
+Currently `last = :exclusive` selects a no-top-cap direct search on unit-step
+range axes; `first` is accepted for API completeness and future use.
+
 # Example
 ```julia
 # Skip domain check when you know queries are in-domain
 linear_interp(x, y, xq; extrap=InBounds())
+
+# Queries generated in [first(x), last(x)) — never touch the right endpoint
+linear_interp(x, y, xq; extrap=InBounds(last = :exclusive))
+
+# On a built interpolant, `InBounds` is the only per-call `extrap` override: it
+# opts a query into the fast path without rebuilding (any other mode errors —
+# the stored extrapolation contract is not swappable per call).
+itp = linear_interp(x, y; extrap=ClampExtrap())
+itp(xq; extrap=InBounds())   # opt into the in-domain fast path
 ```
 """
-struct InBounds <: AbstractExtrap end
+struct InBounds{First, Last} <: AbstractExtrap
+    function InBounds{First, Last}() where {First, Last}
+        First isa Symbol || error("InBounds type parameter First must be a Symbol")
+        Last isa Symbol || error("InBounds type parameter Last must be a Symbol")
+        First in (:inclusive, :exclusive) ||
+            error("InBounds type parameter First must be :inclusive or :exclusive")
+        Last in (:inclusive, :exclusive) ||
+            error("InBounds type parameter Last must be :inclusive or :exclusive")
+        return new{First, Last}()
+    end
+end
+
+# Keyword constructor with validation — mirrors `PeriodicBC(; endpoint=...)`. The
+# zero-arg `InBounds()` call constant-folds to the closed singleton, so the ~15
+# internal promotion sites (`_check_domain` returns, Clamp/Fill in-domain
+# delegations) stay zero-cost.
+function InBounds(; first::Symbol = :inclusive, last::Symbol = :inclusive)
+    first in (:inclusive, :exclusive) ||
+        throw(ArgumentError("first must be :inclusive or :exclusive, got :$first"))
+    last in (:inclusive, :exclusive) ||
+        throw(ArgumentError("last must be :inclusive or :exclusive, got :$last"))
+    return InBounds{first, last}()
+end
+
+# Kwarg-form show (`GridIdx`/`DerivOp` precedent): round-trips as `InBounds()` /
+# `InBounds(last = :exclusive)` instead of raw type parameters.
+function Base.show(io::IO, ::InBounds{First, Last}) where {First, Last}
+    parts = String[]
+    First === :inclusive || push!(parts, "first = :$First")
+    Last === :inclusive || push!(parts, "last = :$Last")
+    return print(io, "InBounds(", join(parts, ", "), ")")
+end
 
 # ========================================
 # Typed Side Selection Tags (Constant Interpolation)

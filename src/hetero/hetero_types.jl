@@ -20,6 +20,20 @@
 @inline _cache_axis_for_method(g, bc::AbstractBC, ::Type{Tg}, ::AbstractInterpMethod) where {Tg} =
     _cache_axis(g, bc, Tg)
 
+# Method-aware `_store_axis` (the hetero arm of the single ctor axis entry):
+# `cache_axis` is not plumbed here — the one-shot integrate API never builds a
+# hetero interpolant (its single-method signature can't form a per-axis tuple),
+# and interp axes keep the cached wrap (NoInterp axes are raw by design already).
+@inline _store_axis(g, bc::AbstractBC, ::Type{Tg}, m::AbstractInterpMethod, store::StorePolicy) where {Tg} =
+    _own_or_ref_axis(_cache_axis_for_method(g, bc, Tg, m), Tg, store)
+
+# Method-aware unrolled map (hetero arm of `_store_axes` — see store_policy.jl
+# for why the closure-map form is avoided).
+@generated function _store_axes(grids::NTuple{N, AbstractVector}, bcs, methods, ::Type{Tg}, store::StorePolicy) where {N, Tg}
+    exprs = [:(_store_axis(grids[$i], bcs[$i], Tg, methods[$i], store)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
 """
     HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
 
@@ -78,10 +92,11 @@ struct HeteroInterpolantND{
             methods::Tuple{Vararg{AbstractInterpMethod, N}},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
-            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
+            store::StorePolicy = StorePolicy()
         ) where {Tg, N}
         Tv = eltype(data)
-        grids_c = map((g, bc, m) -> _convert_copy(_cache_axis_for_method(g, bc, Tg, m), Tg), grids, bcs, methods)
+        grids_c = _store_axes(grids, bcs, methods, Tg, store)
         return new{Tg, Tv, N, typeof(grids_c), typeof(methods), typeof(extraps), typeof(searches), typeof(data)}(
             grids_c, data, methods, extraps, searches
         )

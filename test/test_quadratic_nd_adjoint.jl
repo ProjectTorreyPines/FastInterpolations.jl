@@ -35,7 +35,15 @@
 
         lhs = dot(Wf, y_bar)
         rhs = dot(vec(f), vec(WTy))
-        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+        # Both sides approximate the same value but sum in different orders/counts,
+        # so the rounding error is bounded by ~eps·Σ|aᵢbᵢ| (the dot-product error
+        # scale), NOT by the possibly-cancelled result. Floor the tolerance there so
+        # a result that cancels near zero (common with random Float32 data) doesn't
+        # trip a false relative-error failure, while real adjoint errors — which are
+        # O(operand scale) — are still caught.
+        err_scale = max(sum(abs, Wf .* y_bar), sum(abs, vec(f) .* vec(WTy)))
+        atol = 8 * eps(real(eltype(Wf))) * err_scale
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol, atol = atol)
     end
 
 
@@ -660,7 +668,15 @@ end
 
         lhs = dot(Wf, y_bar)
         rhs = dot(vec(f), vec(WTy))
-        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+        # Both sides approximate the same value but sum in different orders/counts,
+        # so the rounding error is bounded by ~eps·Σ|aᵢbᵢ| (the dot-product error
+        # scale), NOT by the possibly-cancelled result. Floor the tolerance there so
+        # a result that cancels near zero (common with random Float32 data) doesn't
+        # trip a false relative-error failure, while real adjoint errors — which are
+        # O(operand scale) — are still caught.
+        err_scale = max(sum(abs, Wf .* y_bar), sum(abs, vec(f) .* vec(WTy)))
+        atol = 8 * eps(real(eltype(Wf))) * err_scale
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol, atol = atol)
     end
 
 

@@ -30,12 +30,12 @@
         y::AbstractVector{Tv},
         z::AbstractVector,
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, e)
     dL = xq - xL
     dR = xR - xq
     h = _get_h(x, idx)
@@ -47,8 +47,11 @@
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# (no-op for non-NoExtrap fallback, throws for NoExtrap on OOB) → delegate.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query. The boundary cell (idx ∈
+# [1, n-1]) lets `dL`/`dR` extrapolate past the ends.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -59,8 +62,19 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    return _eval_cubic_at_point(x, y, z, xq, InBounds(), op, searcher)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, extrap_eff)
+    dL = xq - xL
+    dR = xR - xq
+    h = _get_h(x, idx)
+    inv_h = _get_inv_h(x, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx_R]
+        yL = y[idx]; yR = y[idx_R]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
@@ -73,10 +87,14 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
-    xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
+    st = _oob_state(x, xq_primal)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, deriv_oneunit)
     return _eval_cubic_at_point(x, y, z, xq, InBounds(), op, searcher)
 end
 
@@ -103,17 +121,17 @@ end
 # `(first, last)`); the extrap branch (Wrap vs Clamp/Fill vs No/Extend) is
 # the only differentiator and is handled inside `_eval_cubic_at_point`.
 
-"Vector loop for cubic spline. Accepts any Real query type (AD-compatible)."
+"Vector loop for cubic spline. Accepts any query type (duck: AD Dual, Unitful)."
 @inline function _cubic_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
-        x_query::AbstractVector{<:Real},
+        x_query::AbstractArray{Tq},
         ev::E,
         op::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     # Resolve domain here so the inner kernel sees a concrete `ev` type.
     # `_check_domain` for Clamp/Fill/Wrap returns `Union{InBounds, E}` —
     # passing through a function-barrier call lets Julia's union-splitting
@@ -125,15 +143,15 @@ end
 end
 
 @inline function _cubic_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
-        x_query::AbstractVector{<:Real},
+        x_query::AbstractArray{Tq},
         ev::E,
         op::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], ev, op, searcher)
     end
@@ -158,10 +176,10 @@ Uses task-local pool for workspace allocation.
         deriv::DerivOp = EvalValue(),
         search = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc)
 

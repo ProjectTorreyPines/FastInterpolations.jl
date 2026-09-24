@@ -48,8 +48,10 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     # Periodic extension (no-op for NoBC). For PeriodicBC{:exclusive}, the user
     # n-grid is extended to (n+1) closed-cycle form and `bc_eff` flips to
     # `:extended`; `:inclusive` passes through unchanged. Slope-side dispatch
@@ -59,15 +61,15 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
     extrap_p = _promote_extrap(extrap_eff, _value_type(eltype(y_eff), Tg))
     resolved = _resolve_coeffs(coeffs)
     # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-    x_eff = _cache_axis(x_eff, bc_eff, Tg)
+    x_eff = _policy_axis(x_eff, bc_eff, Tg, store)
 
     if resolved isa OnTheFly
-        return PchipInterpolant1D(x_eff, y_eff, PchipSlopes(bc_eff), extrap_p, search)
+        return PchipInterpolant1D(x_eff, y_eff, PchipSlopes(bc_eff), extrap_p, search; store = store)
     end
     # PreCompute: build dy with bc_eff-aware endpoint dispatch.
-    Tdy = _output_eltype(_value_type(eltype(y_eff), Tg), Tg)
+    Tdy = _promote_eltype(_coeff_op, Tg, _value_type(eltype(y_eff), Tg))
     dy = Vector{Tdy}(undef, length(x_eff))
     xf = _to_float(x_eff, Tg)
     _pchip_slopes!(dy, xf, y_eff; bc = bc_eff)
-    return PchipInterpolant1D(x_eff, y_eff, dy, extrap_p, search)
+    return PchipInterpolant1D(x_eff, y_eff, dy, extrap_p, search; store = store)
 end

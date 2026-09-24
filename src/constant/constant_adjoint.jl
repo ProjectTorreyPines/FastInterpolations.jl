@@ -20,7 +20,7 @@
 # ========================================
 
 """
-    ConstantAdjoint{Tg, Tq, BC, SD, EP}
+    ConstantAdjoint{Tg, Tq, BC, SD, EP, I}
 
 Adjoint (transpose) operator for 1D constant interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward constant interpolation weight matrix.
@@ -34,6 +34,8 @@ The same adjoint can be applied to any `ȳ` vector.
 - `BC`: Boundary condition type
 - `SD`: Side selection mode (`NearestSide`, `LeftSide`, `RightSide`)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
+- `I <: _AbstractIndices{2}`: Interval representation — `_ContiguousIndices{2}` (one Int) for
+  ordinary grids, `_ExplicitIndices{2}` (two Int) for periodic-exclusive seam cells
 
 # Fields
 - `anchors`: Pre-computed `_ConstantAnchoredQuery` per query point
@@ -58,8 +60,8 @@ itp = constant_interp(x, f; side=NearestSide())
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct ConstantAdjoint{Tg, Tq, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
-    anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}}
+struct ConstantAdjoint{Tg, Tq, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap, I <: _AbstractIndices{2}} <: AbstractAdjoint1D{Tg}
+    anchors::Vector{_ConstantAnchoredQuery{Tg, Tq, I}}
     grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     x_hi::Tg
     bc::BC
@@ -160,27 +162,34 @@ end
 # ========================================
 
 """
-Restore `state` flags for anchors built with clamped query positions.
+    _bake_constant_clampfill_anchors(x, xq) -> Vector{_ConstantAnchoredQuery}
 
-When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
-gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
-original query position, so scatter can skip OOB contributions.
+Single-pass ClampExtrap/FillExtrap/ExtendExtrap adjoint anchor builder
+(`ExtendExtrap == ClampExtrap` for constant interp, slope 0).
+
+Clamps each query to the actual grid endpoints (`_clamp_to_grid`) for valid
+boundary geometry, anchors it, then restores the OOB side flag from the widened
+(`_oob_state`) classification for genuinely-OOB queries (scatter skips/keeps per
+extrap). In-domain and endpoint-sliver queries keep the anchor as built.
+
+Fuses the former clamp-broadcast + `_anchor_query` + state-fixup three passes
+into one loop — no transient clamped-query array. Construction-time only.
 """
-function _fixup_constant_anchor_state!(
-        anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}},
-        xq_original::AbstractVector,
-        x_lo, x_hi
-    ) where {Tg, Tq}
-    @inbounds for i in eachindex(anchors)
-        xq_i = xq_original[i]
-        (x_lo <= xq_i <= x_hi) && continue
-        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
-        aq = anchors[i]
-        anchors[i] = _ConstantAnchoredQuery{Tg, Tq}(
-            aq.stencil, aq.xq, state, aq.h, aq.dL
-        )
+function _bake_constant_clampfill_anchors(
+        x::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg, Tq <: Real, P <: Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
+    output = Vector{_ConstantAnchoredQuery{Tg, promote_type(Tg, Tq), _interval_type(x)}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        xq_raw = xq[k]
+        aq = _constant_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
+        state = _oob_state(x, xq_raw)
+        output[k] = state == IN_DOMAIN ? aq :
+            typeof(aq)(aq.interval, aq.xq, state, aq.h, aq.dL)
     end
-    return nothing
+    return output
 end
 
 # ========================================
@@ -229,15 +238,17 @@ function constant_adjoint(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
     ) where {Tg}
-    # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening).
-    # Adjoint buffer eltype comes from the protocol's `_output_eltype`.
+    # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening), so the
+    # shared grid check has to be called explicitly here.
+    _check_adjoint_grid_real(Tg, eltype(x_query))
+    # Adjoint buffer eltype comes from the protocol's `_promote_eltype`.
     x_p = x
     xq_p = _promote_query_typed(x_query, Tg)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
     # BC-aware axis wrap: `:exclusive` periodic → `_ExclusivePeriodicAxis` with
-    # logical length n+1. Anchors at the seam cell store stencil = (n, n+1);
+    # logical length n+1. Anchors at the seam cell store interval = (n, n+1);
     # the protocol's exclusive-periodic in-place callable folds f_work[1] +=
     # f_work[n+1] before trim. Right-boundary special case `xq == x_hi` also
     # writes to f_bar[n+1] (the virtual seam endpoint), so it folds correctly.
@@ -248,25 +259,16 @@ function constant_adjoint(
     # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
     # the virtual seam endpoint for `:exclusive`).
     if extrap_eff isa NoExtrap
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo_p <= xq_i <= x_hi_p) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo_p, $x_hi_p]")
-            )
-        end
+        _validate_domain(x_axis, xq_p)
     end
 
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap_eff isa WrapExtrap
     if extrap_eff isa _ClampOrFill || extrap_eff isa ExtendExtrap
-        # For constant interp, ExtendExtrap == ClampExtrap (slope=0).
-        # Clamp OOB queries to boundary for correct anchor geometry.
-        # Then restore side flags so scatter can skip OOB contributions.
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
-        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
-        anchors = _anchor_query(x_axis, xq_clamped, Val(:constant), false)
-        _fixup_constant_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
+        # For constant interp, ExtendExtrap == ClampExtrap (slope=0). OOB queries
+        # get actual-endpoint geometry; the widened (`_oob_state`) classification
+        # restores side flags. Single fused pass (no temp array).
+        anchors = _bake_constant_clampfill_anchors(x_axis, xq_p)
     else
         # WrapExtrap: wraps to domain (covers periodic auto-promotion).
         # NoExtrap: already validated in-domain above.
@@ -274,7 +276,7 @@ function constant_adjoint(
     end
 
     Tq = eltype(anchors).parameters[2]
-    return ConstantAdjoint{Tg, Tq, typeof(bc), typeof(side), typeof(extrap_eff)}(
+    return ConstantAdjoint{Tg, Tq, typeof(bc), typeof(side), typeof(extrap_eff), _interval_type(x_axis)}(
         anchors, length(x_axis), x_hi, bc, side, extrap_eff
     )
 end
@@ -282,7 +284,7 @@ end
 # Scalar query convenience
 function constant_adjoint(
         x::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),

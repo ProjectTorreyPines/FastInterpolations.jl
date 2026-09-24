@@ -74,23 +74,19 @@
         end
     end
 
-    # ── Cubic (anchored / CubicInterpolant) ──────────────────────────────
-    @testset "Cubic anchored" begin
+    # ── Cubic (CubicInterpolant, mixed precision Float32 grid + Float64 query) ──
+    @testset "Cubic" begin
         itp = cubic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
-        aq_in = FastInterpolations._anchor_query(x32, xq_in, Val(:cubic))
-        aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:cubic))
-        aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:cubic))
-        @test @inferred(itp(aq_in)) isa Float64
-        @test @inferred(itp(aq_lo)) isa Float64
-        @test @inferred(itp(aq_hi)) isa Float64
-        @test isnan(itp(aq_lo))
-        @test isnan(itp(aq_hi))
+        @test @inferred(itp(xq_in)) isa Float64
+        @test @inferred(itp(xq_lo)) isa Float64
+        @test @inferred(itp(xq_hi)) isa Float64
+        @test isnan(itp(xq_lo))
+        @test isnan(itp(xq_hi))
 
-        # ClampExtrap anchored path
+        # ClampExtrap path
         itp_c = cubic_interp(x32, y32; extrap = ClampExtrap())
-        aq_lo_c = FastInterpolations._anchor_query(x32, xq_lo, Val(:cubic))
-        @test @inferred(itp_c(aq_lo_c)) isa Float64
-        @test itp_c(aq_lo_c) ≈ Float64(y32[1])
+        @test @inferred(itp_c(xq_lo)) isa Float64
+        @test itp_c(xq_lo) ≈ Float64(y32[1])
     end
 
     # ── Linear (oneshot) ─────────────────────────────────────────────────

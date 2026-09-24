@@ -20,6 +20,23 @@ include("akima/akima.jl")
 include("core/coeff_policy.jl")  # AutoCoeffs resolution (after method types + strategy types, before hetero)
 include("hetero/hetero.jl")
 include("hetero/local_hermite_nd_forward.jl")  # pchip/cardinal/akima ND forwarders to `interp`
+include("hetero/interp_1d.jl")  # 1D bare-vector entry points for `interp`/`interp!`
+
+# Gridded (rectilinear / tensor-product) query — separable evaluation on a grid.
+# Backbone first (defines `_AxisAnchor` + the resolution loop); each method file
+# then owns its payload + `_axis_anchor_type` + `_resolve_anchor` + kernels.
+include("gridded/axis_anchor.jl")       # shared per-axis anchor backbone (multi-method)
+include("gridded/gridded_query.jl")     # GriddedQuery type + protocol + shared helpers
+include("gridded/gridded_linear.jl")    # linear separable path (default method)
+include("gridded/gridded_constant.jl")  # constant gather fast path
+include("gridded/gridded_hermite.jl")   # local-Hermite fullbuffer fast path
+include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractInterpolantND
+include("gridded/gridded_partials.jl")  # cubic/quadratic fused-anchor fast path
+include("linear/linear_series_payloads.jl")  # lean Series layer reusing gridded linear payloads
+include("constant/constant_series_payloads.jl")  # lean Series layer reusing gridded constant gather payload
+include("quadratic/quadratic_series_payloads.jl")  # lean Series layer baking dL, threading op through _quadratic_kernel
+
+# Polyharmonic splines (PHS) — scattered-stencil RBF ND method, independent of the gridded path.
 include("phs/phs.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
@@ -46,6 +63,7 @@ include("nodal_partials.jl")
 # Exports
 export AbstractInterpolant, AbstractInterpolant1D, AbstractHermiteInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series, n_series
+export GriddedQuery
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND
@@ -81,6 +99,7 @@ export AbstractSearchPolicy, BinarySearch, LinearSearch, LinearBinarySearch, Aut
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
 export NoBC, ZeroCurvBC, ZeroSlopeBC, PeriodicBC, MinCurvFit
+export StorePolicy  # copy-vs-reference storage policy for persistent constructors
 export PolyFit, LinearFit, QuadraticFit, CubicFit  # Polynomial fitting BCs
 export Left, Right
 

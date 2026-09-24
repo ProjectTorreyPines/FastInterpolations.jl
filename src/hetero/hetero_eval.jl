@@ -158,9 +158,11 @@ end
 # threads concrete types (itp.methods, itp.grids, itp.data) through the
 # windowing logic. Inlining lets the compiler specialize on the interpolant's
 # concrete type and unroll the per-axis `map` calls into straight-line code.
-@inline function _build_windowed_cell(itp, q_eval, policies, hints, mono)
+@inline function _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
     # Pre-search via per-axis adaptive function barriers (hint state mutated in-place).
-    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # Thread `extraps` so an InBounds range axis leans the WINDOW-location search too (bit-identical
+    # index). Inner `_collapse_dims` still re-promotes per 1D fiber via `itp.extraps`.
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     # Per-axis window: cell-local for windowable methods, full axis for global-solve.
     # `map` over heterogeneous tuples is unrolled by the compiler with no closure
     # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
@@ -189,14 +191,18 @@ end
 #     grids — bit-for-bit identical to the pre-Phase-3 behavior, zero regression.
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    # `extraps` is the domain-checked, per-axis InBounds-promoted tuple. `_handle_all_extraps`
+    # folds Clamp/Wrap/Fill (unchanged by promotion) and no-ops on InBounds/NoExtrap. The inner
+    # `_collapse_dims` keeps the ORIGINAL `itp.extraps` so each 1D fiber promotes for itself.
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
+    Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # Wrap-aware path: routed only when at least one axis is a periodic local
     # Hermite method. Pool scope (and the wrap-aware buffers) live entirely
@@ -207,7 +213,7 @@ end
     end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
         # Pass `nothing` as hints — tiny inner search on 2–6 point fibers is negligible.
         return _collapse_dims(
@@ -230,7 +236,7 @@ end
 # branch in `_interp_nd_oneshot_onthefly`. Pool scope is local to this function
 # so the NoBC `_eval_hetero_nd` branch never enters a `@with_pool` setup.
 #
-# `mono` is intentionally unused: BC-aware search via `_search_all_intervals_stencil`
+# `mono` is intentionally unused: BC-aware search via `_search_all_axis_intervals`
 # is required for `PeriodicBC{:exclusive}` seam queries (`q ≥ x[n]` must return
 # `idx_L = n`, not the clamped `n-1` that the non-BC `_search_all_intervals` would
 # produce). The stencil search resolves `Searcher{...,<:PeriodicBC{:exclusive}}`
@@ -238,7 +244,7 @@ end
 # walking still works inside the resolved Searcher when the user opts in.
 @inline @with_pool pool function _eval_hetero_nd_wrap_aware(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        q_eval::Tuple{Vararg{Real, N}},
+        q_eval::Tuple{Vararg{Number, N}},
         ::Type{Tr},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
@@ -262,12 +268,12 @@ end
 @inline function _build_wrap_aware_cell_components(
         pool,
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        q_eval::Tuple{Vararg{Real, N}},
+        q_eval::Tuple{Vararg{Number, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
-    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints)
-    indices = map(first, stencils)
+    intervals, _, _ = _search_all_axis_intervals(q_eval, itp.grids, policies, hints)
+    indices = map(first, intervals)
     windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), itp.methods, itp.grids, indices)
     grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
     methods_inner = map(_strip_periodic_bc, itp.methods)
@@ -278,14 +284,16 @@ end
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
+    # Direct ND kernel (no inner 1D fibers) → thread the promoted `extraps` into the ND search.
     return _eval_hetero_precomputed(
-        itp.data, itp.grids, itp.methods, itp.extraps,
+        itp.data, itp.grids, itp.methods, extraps,
         query, ops, policies, hints, mono,
     )
 end
@@ -299,12 +307,12 @@ end
 # their cell lifetime fits cleanly inside a single `@with_pool` scope.
 @inline function _build_wrap_aware_cell_heap(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        q_eval::Tuple{Vararg{Real, N}},
+        q_eval::Tuple{Vararg{Number, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
-    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints)
-    indices = map(first, stencils)
+    intervals, _, _ = _search_all_axis_intervals(q_eval, itp.grids, policies, hints)
+    indices = map(first, intervals)
     windows = map(_axis_window_heap, itp.methods, itp.grids, indices)
     grids_local = map(_axis_grid_heap, itp.methods, itp.grids, windows, indices)
     methods_inner = map(_strip_periodic_bc, itp.methods)
@@ -331,14 +339,21 @@ end
 # - NoInterp in methods → _eval_nointerp (pre-slice strategy)
 # - Normal → standard hetero eval (GridIdx search short-circuits via dispatch)
 @inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
+    # Call-time extrap override: `nothing` keeps the stored per-axis extraps;
+    # `InBounds` opts into the in-domain fast-path (broadcast or per-axis).
+    # Resolved via the generic `AbstractInterpolantND` method; other modes throw.
+    extraps0 = _resolve_extrap_override_nd(itp, extrap)
     if _has_nointerp_method(typeof(itp.methods))
+        # InBounds override intentionally not threaded into the generated `_eval_nointerp`
+        # (it reads `itp.extraps`): value-correct, no fast-path — as for the OTF fibers.
         _validate_nointerp_grididx(itp.methods, resolved)
         search_tuple = _resolve_search_nd(search, Val(N))
         return _eval_nointerp(itp, resolved, ops, search_tuple, hint)
@@ -377,22 +392,29 @@ end
         promoted = _promote_grididx_to_nointerp(itp.methods, resolved)
         return _interp_nointerp_oneshot(
             itp.grids, itp.data, resolved, promoted,
-            deriv, itp.extraps, search, hint,
+            deriv, extraps0, search, hint,
         )
     end
-    _validate_nd_domain(itp.grids, resolved, itp.extraps)
-    oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _sample_data(itp))
+    # Promote each axis query to Tc before validate / fill so the OOB/fill VALUE
+    # carries the grid carrier (Dual grid → Dual), matching the OnTheFly collapse.
+    # Identity on Float64; Int grids stay Int. (GridIdx branch above returns early.)
+    qc = map(_promote_coord, resolved, map(eltype, itp.grids))
+    # Validate + per-axis promote (in-domain NoExtrap → InBounds for the search), mirroring the
+    # homogeneous ND scalar path. PreCompute threads `extraps_eff` to its ND search; the OnTheFly
+    # collapse keeps promoting transitively inside each 1D fiber (see `_locate_cell`).
+    extraps_eff = _validate_nd_domain(itp.grids, qc, extraps0)
+    oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_hetero_nd(itp, resolved, ops, policies, hints, mono)
+    return _eval_hetero_nd(itp, qc, extraps_eff, ops, policies, hints, mono)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
-# GridIdx <: Real, so Vararg{Real, N} matches both.
+# GridIdx <: Real, so Vararg{Number, N} matches both.
 @inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
-        q::Vararg{Real, N};
+        q::Vararg{Number, N};
         kw...,
     ) where {Tg, Tv, N}
     return itp(q; kw...)
@@ -412,7 +434,7 @@ end
 # pre-search and store full windows (zero regression).
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -436,7 +458,7 @@ end
     end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
         # Pass user-facing `itp.extraps` here (not InBounds-promoted `extraps`):
         # the recursive 1D collapse runs its own per-axis `_check_domain` and
@@ -460,21 +482,23 @@ end
     ) where {Tg, Tv, N, G, M, E, P}
     data, grids, methods, extraps, q_eval, searches, hints, windows = cell
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
-    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
     return _collapse_dims(Tr, data, grids, methods, extraps, q_eval, ops, searches, hints, windows)
 end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # 6-arg search: per-axis `extraps` let an InBounds range axis take the lean direct
+    # search. Per-axis dispatch (no 1D-style shared core), so ExtendExtrap axes clamp.
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.grids, indices, Ls)
     return (itp.data.partials, indices, hs, inv_hs, dLs)
 end

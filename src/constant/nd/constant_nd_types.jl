@@ -6,7 +6,7 @@
 # Each axis independently selects left or right neighbor based on side mode.
 
 """
-    ConstantInterpolantND{Tg,Tv,N,G,E,SD,P}
+    ConstantInterpolantND{Tg,Tv,N,G,E,SD,P,D}
 
 N-dimensional constant (step) interpolation with per-axis configuration.
 
@@ -20,6 +20,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `E<:Tuple{Vararg{AbstractExtrap, N}}`: Extrapolation mode tuple type
 - `SD<:Tuple{Vararg{AbstractSide, N}}`: Side selection tuple type
 - `P<:NTuple{N, AbstractSearchPolicy}`: Search policy tuple type
+- `D<:AbstractArray{Tv,N}`: Value container — a dense `Array` when owned (default), or an aliased `AbstractArray` (e.g. a `view`) under `StorePolicy(copy=false)`
 
 # Fields
 - `grids`: Tuple of (wrapped) grid vectors, one per dimension
@@ -49,29 +50,33 @@ struct ConstantInterpolantND{
         Tg,
         Tv,
         N,
-        G <: NTuple{N, AbstractVector{Tg}},
+        G <: Tuple{Vararg{AbstractVector, N}},   # per-axis eltypes (mixed units); Tg = promoted tag
         E <: Tuple{Vararg{AbstractExtrap, N}},
         SD <: Tuple{Vararg{AbstractSide, N}},
         P <: NTuple{N, AbstractSearchPolicy},
+        D <: AbstractArray{Tv, N},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    data::Array{Tv, N}
+    data::D
     extraps::E
     sides::SD
     searches::P
 
     # Inner ctor: type params inferred from arg signature.
     function ConstantInterpolantND(
-            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            grids::Tuple{Vararg{AbstractVector, N}},
             data::AbstractArray{Tv, N},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             sides::Tuple{Vararg{AbstractSide, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
-            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
-        ) where {Tg, Tv, N}
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
-        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches)}(
-            grids_c, Array(data), extraps, sides, searches
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
+            store::StorePolicy = StorePolicy()
+        ) where {Tv, N}
+        Tg = _promote_grid_eltype(grids)   # abstract for mixed units (tag only)
+        grids_c = _store_axes(grids, bcs, Tg, store)
+        data_c = _own_or_ref_data(data, store)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches), typeof(data_c)}(
+            grids_c, data_c, extraps, sides, searches
         )
     end
 end
@@ -80,7 +85,9 @@ end
 @inline grid_type(::ConstantInterpolantND{Tg}) where {Tg} = Tg
 @inline value_type(::ConstantInterpolantND{Tg, Tv}) where {Tg, Tv} = Tv
 
-# Mirrors the 1D override: trait routes to `_constant_kernel_shape` so the
-# inferred return matches the kernel's actual `y * one(dL)` shape.
-@inline _output_eltype(::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+# Mirrors the 1D override: trait routes to `_select_op` so the inferred return
+# matches the kernel's actual `y * one(dL)` shape. The axis fold is the shared
+# `_nd_value_eltype` — feeding the struct's joined `Tg` instead would box the
+# buffer on a mixed-unit grid (`s` × `m` has no concrete common type).
+@inline _promote_eltype(itp::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _nd_value_eltype(_select_op, Tv, itp.grids, Tq)

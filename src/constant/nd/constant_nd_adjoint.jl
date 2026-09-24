@@ -44,7 +44,7 @@ function _bake_constant_nd_anchors(
 
     # Tq widens to query precision so narrower grids never truncate.
     Tq = promote_type(Tg, _query_eltype(queries))
-    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq}}}(undef, nq)
+    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq, _ExplicitIndices{2}}}}(undef, nq)
     @inbounds for q in 1:nq
         query_q = _extract_query_point(queries, q, Val(N))
         per_axis = ntuple(Val(N)) do d
@@ -54,15 +54,11 @@ function _bake_constant_nd_anchors(
             h = _get_h(grids[d], idx)
             dL = xq_d - xL
 
-            # Determine OOB side flag
-            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
-            state_flag = if is_oob
-                xq_raw < first(grids[d]) ? OOB_LEFT : OOB_RIGHT
-            else
-                IN_DOMAIN
-            end
+            # OOB side flag via the shared (widened) classifier — a query at the
+            # true `_CachedRange` endpoint is IN_DOMAIN, matching the forward.
+            state_flag = _oob_state(grids[d], xq_raw)
 
-            return _ConstantAnchoredQuery{Tg, Tq}(_IdxPair(idx, idxR), xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tq, _ExplicitIndices{2}}(_ExplicitIndices(idx, idxR), xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end
@@ -241,7 +237,7 @@ end
         grids::NTuple{N, AbstractVector}, queries, bc, side, extrap
     ) where {N}
     # Grid stays raw (no `float()` widening); adjoint buffer eltype comes
-    # from the protocol's `_output_eltype`.
+    # from the protocol's `_promote_eltype`.
     Tg = _promote_grid_eltype(grids)
     grids_typed = _convert_grids_typed(grids, Tg)
 

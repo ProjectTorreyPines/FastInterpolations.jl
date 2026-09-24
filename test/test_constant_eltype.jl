@@ -467,6 +467,8 @@ end
     end
 
     @testset "1D persistent: Int data + Float fill → InexactError on construction" begin
+        # Constant returns data values verbatim, so the fill lives in `Tv`: a
+        # float fill on Int data is rejected at construction (Int has no NaN).
         x = Float64.(0:4)
         y = [10, 20, 30, 40, 50]
         @test_throws InexactError constant_interp(x, y; extrap = FillExtrap(NaN))
@@ -489,7 +491,7 @@ end
     import FastInterpolations: ConstantInterpolantND
 
     @testset "1D Series scalar — Int y + Float xq → Float carrier" begin
-        # Series persistent now routes through `_constant_kernel_shape` like
+        # Series persistent now routes through `_select_op` like
         # the plain 1D path — `Int y + Float xq` widens to Float.
         x = collect(0.0:0.1:1.0)
         y1 = collect(1:11)
@@ -521,7 +523,7 @@ end
 # end-to-end via the forward/adjoint dot-product identity.
 @testitem "Constant anchor: Tq = promote_type(Tg, eltype(xq))" begin
     using LinearAlgebra: dot
-    import FastInterpolations: ConstantAdjoint, _ConstantAnchoredQuery
+    import FastInterpolations: ConstantAdjoint, _ConstantAnchoredQuery, _ContiguousIndices
 
     @testset "Int grid + Float query — 1D adjoint, dot identity" begin
         x = collect(0:9)
@@ -532,7 +534,7 @@ end
         itp = constant_interp(x, y)
         adj = constant_adjoint(x, xq)
         @test adj isa ConstantAdjoint{Int, Float64}
-        @test eltype(adj.anchors) === _ConstantAnchoredQuery{Int, Float64}
+        @test eltype(adj.anchors) === _ConstantAnchoredQuery{Int, Float64, _ContiguousIndices{2}}
         @test dot(itp.(xq), y_bar) ≈ dot(y, adj(y_bar))
     end
 
@@ -617,7 +619,7 @@ end
     end
 
     @testset "Float xq carrier — plain and Series oneshot agree" begin
-        # Both plain and Series route through `_constant_kernel_shape` →
+        # Both plain and Series route through `_select_op` →
         # `Int y + Float xq → Float`.
         @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Float64}
         @test constant_interp(x, s, 0.5) isa Vector{Float64}
@@ -633,7 +635,7 @@ end
 end
 
 # ============================================================================
-# Group 10: Natural promote — output eltype = `_output_eltype(Tv, Tg, Tq)`
+# Group 10: Natural promote — output eltype = `_promote_eltype(Tv, Tg, Tq)`
 # ============================================================================
 # Constant's kernel propagates `Tq` via `* one(dL)`, so scalar / `itp([xq])` /
 # `itp.([xq])` / oneshot all agree on the naturally-promoted type. `Int y` +
@@ -654,7 +656,7 @@ end
 
     @testset "1D Int y + Int xq — scalar/batch both stay Int" begin
         # Constant's `y * one(dL)` kernel produces Int for fully-Int chain.
-        # Trait routes through `_constant_kernel_shape`, so batch matches.
+        # Trait routes through `_select_op`, so batch matches.
         itp = constant_interp([0, 1, 2, 3], [10, 20, 30, 40])
         @test itp(0) === 10
         @test itp([0, 1]) isa Vector{Int}

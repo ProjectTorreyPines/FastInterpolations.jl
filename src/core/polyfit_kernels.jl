@@ -99,8 +99,15 @@ end
 # Computes first derivative directly using known stencil coefficients.
 # Dispatches on PolyFit{D} (degree) and LeftSide/RightSide (endpoint).
 
+# Widen a stencil tuple into the coefficient field `Tc`. A `v -> convert(Tc, v)`
+# closure would capture the caller's local `Tc = _promote_eltype(...)` and box on
+# Julia 1.10's inference (the type doesn't propagate into the closure body — same
+# issue as series_utils `_alloc_series_batch_outputs`). Threading `Tc` as a
+# `::Type{Tc}` argument keeps it concrete → zero-alloc on the LTS, no-cost on 1.11+.
+@inline _convert_stencil(::Type{Tc}, f::Tuple) where {Tc} = map(Base.Fix1(convert, Tc), f)
+
 """
-    _compute_deriv1(::PolyFit{D}, ::Val{Side}, f::NTuple, inv_h) -> T
+    _compute_deriv1(::PolyFit{D}, ::Val{Side}, f::NTuple, inv_h) -> Tc
 
 Compute first derivative on uniform grid using D+1 point stencil.
 
@@ -114,82 +121,109 @@ Compute first derivative on uniform grid using D+1 point stencil.
 - PolyFit{1} (LinearFit): 2 points, O(h) accuracy
 - PolyFit{2} (QuadraticFit): 3 points, O(h²) accuracy
 - PolyFit{3} (CubicFit): 4 points, O(h³) accuracy
+
+# Returns
+`Tc = _promote_eltype(_coeff_op, …)` — the coefficient field. Widens a narrow stencil
+eltype (e.g. UInt8/N0f8) so the divided difference is wrap-free; `Tc ≡ T` for floats.
 """
 # PolyFit{1} (LinearFit) - 2 points, O(h)
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, T}, inv_h::T) where {T}
-    return (f[2] - f[1]) * inv_h
+    Tc = _promote_eltype(_coeff_op, T, T)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, T}, inv_h::T) where {T}
-    return (f[2] - f[1]) * inv_h  # Same as left for linear
+    Tc = _promote_eltype(_coeff_op, T, T)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h  # Same as left for linear
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²)
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: -(3, -4, 1) / 2
+    Tc = _promote_eltype(_coeff_op, T, T)
+    fp = _convert_stencil(Tc, f)
     coeff = -inv_h / 2
-    return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
+    return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: (1, -4, 3) / 2
+    Tc = _promote_eltype(_coeff_op, T, T)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 2
-    return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
+    return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³)
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-11, 18, -9, 2) / 6
+    Tc = _promote_eltype(_coeff_op, T, T)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
-    return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
+    return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-2, 9, -18, 11) / 6
+    Tc = _promote_eltype(_coeff_op, T, T)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
-    return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
+    return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff
 end
 
 # ----------------------------------------
-# Mixed-type _compute_deriv1 for Complex value support
-# f::NTuple{N,Tv} values (can be Complex)
-# inv_h::Tg inverse grid spacing (always real)
-# Returns Tv (same as value type)
+# Mixed-type _compute_deriv1 (Complex / unit / narrow value support)
+# f::NTuple{N,Tv} values; inv_h::Tg is the INVERSE spacing (1/X space).
+# The stencil lift target is the VALUE-space field (`_value_space_eltype`:
+# wrap-free for narrow eltypes, ratio-shaped so 1/X in the width slot still
+# cancels) — feeding `Tg` (= 1/X) into a spacing-shaped witness like
+# `_coeff_op` mints h·y-typed garbage on unit grids. The trailing `* inv_h`
+# lands the result in coefficient space [Y/X].
 # ----------------------------------------
 
 # PolyFit{1} (LinearFit) - 2 points, O(h) - Mixed type
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
-    return (f[2] - f[1]) * inv_h  # Tv * Tg → Tv
+    Tc = _value_space_eltype(Tg, Tv)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
-    return (f[2] - f[1]) * inv_h
+    Tc = _value_space_eltype(Tg, Tv)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²) - Mixed type
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: -(3, -4, 1) / 2
+    Tc = _value_space_eltype(Tg, Tv)
+    fp = _convert_stencil(Tc, f)
     coeff = -inv_h / 2
-    return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
+    return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (1, -4, 3) / 2
+    Tc = _value_space_eltype(Tg, Tv)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 2
-    return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
+    return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³) - Mixed type
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-11, 18, -9, 2) / 6
+    Tc = _value_space_eltype(Tg, Tv)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
-    return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
+    return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-2, 9, -18, 11) / 6
+    Tc = _value_space_eltype(Tg, Tv)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
-    return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
+    return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff
 end
 
 # Generic fallback for D > 3 (uses barycentric differentiation)
@@ -197,6 +231,8 @@ end
 @inline @with_pool pool function _compute_deriv1(
         pf::PolyFit{D}, side::AbstractSide, f::NTuple{N, T}, inv_h::T
     ) where {D, N, T}
+    # Unit-carrying T (type-folded branch): delegate to the reference-node body.
+    T === typeof(one(inv_h)) || return _compute_deriv1_refnodes(pf, side, f, inv_h)
     # Compute coefficients on reference grid t = 0, 1, ..., D
     coeffs = acquire!(pool, T, N)
     β = acquire!(pool, T, N)
@@ -210,6 +246,24 @@ end
     end
     return s
 end
+
+# Generic D > 3, mixed carriers: barycentric intermediates are unit-
+# heterogeneous (β ∈ X^(1-N)), so compute coefficients on the dimensionless
+# reference nodes t = 0..D and land each `cᵢ·inv_h` term in [Y/X].
+@inline function _compute_deriv1_refnodes(
+        pf::PolyFit{D}, side::AbstractSide, f::NTuple{N}, inv_h
+    ) where {D, N}
+    T1 = typeof(one(inv_h))
+    ct = _compute_deriv1_coeffs(pf, side, ntuple(i -> T1(i - 1), Val(N)))
+    s = 0 * (f[1] * inv_h)
+    @inbounds for i in 1:N
+        s = muladd(ct[i] * inv_h, f[i], s)
+    end
+    return s
+end
+
+@inline _compute_deriv1(pf::PolyFit{D}, side::AbstractSide, f::NTuple{N, Tv}, inv_h::Tg) where {D, N, Tv, Tg} =
+    _compute_deriv1_refnodes(pf, side, f, inv_h)
 
 
 # ----------------------------------------
@@ -293,10 +347,19 @@ end
 @inline @with_pool pool function _compute_deriv1_coeffs(
         pf::PolyFit{D}, side::Union{LeftSide, RightSide}, x::NTuple{N, T}
     ) where {D, N, T}
-    c = acquire!(pool, T, N)
-    β = acquire!(pool, T, N)
-    _compute_deriv1_coeffs!(c, β, pf, side, x)
-    return ntuple(i -> @inbounds(c[i]), Val(N))
+    if T === typeof(one(x[1]))
+        c = acquire!(pool, T, N)
+        β = acquire!(pool, T, N)
+        _compute_deriv1_coeffs!(c, β, pf, side, x)
+        return ntuple(i -> @inbounds(c[i]), Val(N))
+    else
+        # Unit-carrying x: same kernels on the exact reparameterization
+        # t = (xᵢ−x₁)·inv(x₂−x₁); dP/dx = (dP/dt)·(dt/dx) restores [1/X].
+        inv_href = inv(x[2] - x[1])
+        t = ntuple(i -> (x[i] - x[1]) * inv_href, Val(N))
+        ct = _compute_deriv1_coeffs(pf, side, t)
+        return ntuple(i -> ct[i] * inv_href, Val(N))
+    end
 end
 
 
@@ -564,7 +627,8 @@ end
 # Mixed-type _estimate_endpoint_derivative for Complex value support
 # xs::AbstractVector{Tg} grid coordinates (always real)
 # ys::AbstractVector{Tv} function values (can be Complex)
-# Returns Tv (same as value type)
+# Returns: Range overload → Tc = _promote_eltype(_coeff_op, Tg, Tv) (via _compute_deriv1);
+#          Vector overload → Tv (via _weighted_sum)
 # ----------------------------------------
 @inline function _estimate_endpoint_derivative(
         xs::AbstractRange{Tg}, ys::AbstractVector{Tv}, side::AbstractSide, pf::PolyFit{D}

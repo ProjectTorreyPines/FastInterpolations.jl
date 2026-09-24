@@ -57,14 +57,23 @@ data_c = [sin(xi) * cos(yj) * zk + im * cos(xi) for xi in x, yj in y, zk in z]
 itp_c = cubic_interp((x, y, z), data_c)
 ```
 """
-function cubic_interp(
+# Public ND constructor (N≥2; N=1 is intercepted by the collapse method below and
+# only reaches the ND builder for the no-1D-equivalent `coeffs=OnTheFly()` case).
+@inline cubic_interp(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}; kwargs...) where {N} =
+    _cubic_interp_nd(grids, data; kwargs...)
+
+function _cubic_interp_nd(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute()
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
+    # Gate on the RAW per-axis eltypes BEFORE float promotion — a non-reparameterizable
+    # duck Number would die deep inside `_nd_promote_grids` otherwise.
+    _check_nd_reparam_grid(grids)
     # Zero-allocation type promotion + grid conversion
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
 
@@ -83,9 +92,12 @@ function cubic_interp(
     # OnTheFly → delegate to HeteroInterpolantND (sequential 1D collapse)
     if coeffs isa OnTheFly
         methods = map(CubicInterp, bcs)
-        return _build_hetero_nd(grids, data, methods, extrap, search)
+        return _build_hetero_nd(grids, data, methods, extrap, search; store = store)
     end
 
+    # PreCompute keeps no raw data (it builds a 2^N nodal-derivatives array) →
+    # data-ref is structurally N/A; warn + copy if reference was requested.
+    _check_store(store, "cubic ND PreCompute (CubicInterpolantND)")
     return _build_nd_interpolant(grids_typed, data_typed, bcs, extraps_val, searches, coeffs)
 end
 
@@ -99,13 +111,13 @@ end
 Build CubicInterpolantND with precomputed coefficients.
 """
 function _build_nd_interpolant(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ::PreCompute
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Extend grids/data for exclusive periodic axes; periodic bcs are
     # promoted to `:extended` per axis (via `_bc_after_extend` inside the
     # helper) so downstream dispatch reflects the closed-cycle layout.
@@ -139,6 +151,34 @@ function _build_nd_interpolant(
     # extraps_val already resolved to concrete AbstractExtrap instances at API boundary
     # (via _resolve_extrap_nd in cubic_interp)
     return CubicInterpolantND(grids, nodal_derivs, bcs_store, extraps_val, searches)
+end
+
+# ── N=1 collapse (shared rationale in linear_nd_interpolant.jl) ──
+# Cubic is the one method where 1D and ND differ in a kwarg: 1D is inherently
+# PreCompute (`autocache::Bool`, no `coeffs`), ND accepts `coeffs`. `coeffs` is a
+# compile-time-known kwarg, so the `coeffs isa OnTheFly` guard folds away — the common
+# path forwards to the lean 1D method; OnTheFly (local, no 1D equivalent) stays on the
+# factored ND internals. The 1D branch passes a bare-vector grid (`only(grids)`), so it
+# hits the genuine 1D method and is never re-intercepted (no infinite recursion).
+@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector; coeffs::AbstractCoeffStrategy = PreCompute(), kwargs...)
+    coeffs isa OnTheFly && return _cubic_interp_nd(grids, data; coeffs, kwargs...)
+    return cubic_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+end
+
+# Scalar one-shot: bare scalar → `(q,)` → ND scalar one-shot (handles coeffs natively).
+@inline cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
+    eltype(only(grids)) <: Real ? cubic_interp(grids, data, (q,); kwargs...) :
+    cubic_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)   # duck: gated 1D one-shot
+
+# Batch one-shot: any batch container → `_scalar_query` → lean 1D (see linear_nd_interpolant.jl);
+# explicit OnTheFly keeps the raw container on the ND internals.
+@inline function cubic_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+    coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_alloc(grids, data, q; coeffs, kwargs...)
+    return cubic_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+end
+@inline function cubic_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; coeffs::AbstractCoeffStrategy = AutoCoeffs(), kwargs...)
+    coeffs isa OnTheFly && return _cubic_interp_nd_oneshot_batch!(output, grids, data, q; coeffs, kwargs...)
+    return cubic_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
 end
 
 # OnTheFly is handled in cubic_interp() above (delegates to _build_hetero_nd).

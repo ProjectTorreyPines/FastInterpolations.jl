@@ -5,7 +5,7 @@
 # N-dimensional quadratic interpolation with:
 # - Tg/Tv type separation (grid vs value types)
 # - @generated tensor product for zero-allocation O(1) evaluation
-# - N=2 specialization for optimal performance
+# - Generic-N tensor-product locate (no N=2 specialization — verified equal-or-slower)
 # - AD support (query type preserved through evaluation)
 #
 # Key difference from cubic: uses 3 nodal values (fL, fR, dfL) per dimension
@@ -28,10 +28,12 @@ Note: Unlike Hermite, quadratic works in physical coordinates so `h` is not need
 """
 @inline function _quadratic_kernel_nd(
         op::AbstractEvalOp,
-        fL, fR, dfL,
-        inv_h, dL
-    )
-    s = (fR - fL) * inv_h    # secant slope
+        fL::Tv, fR, dfL,
+        inv_h::Tinv, dL
+    ) where {Tinv, Tv}
+    # No `h` here (physical coords) — `inv_h` is the only spacing arg and is its own
+    # type `Tinv` (≠ grid `Tg`: `inv(Int)::Float`). Witness the coeff field through it.
+    s = _fielddiff(_promote_eltype(_coeff_op, Tinv, Tv), fR, fL) * inv_h    # secant slope
     a = (s - dfL) * inv_h     # quadratic coefficient
     return _quadratic_kernel(op, a, dfL, fL, dL)
 end
@@ -60,17 +62,13 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
 """
 # Single-point evaluation
 @inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    resolved = map(_resolve_grididx, query, itp.grids)
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints = _ensure_hint_nd(hint, Val(N))
-    mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_scalar_query(itp, query, deriv, extrap, search, hint)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
@@ -83,54 +81,43 @@ end
 # ========================================
 
 # Generic N-dimensional. `extraps` carries batch-level InBounds promotion
-# from `_check_domain_nd` when applicable; scalar callers route via the
+# from `_validate_nd_domain` when applicable; scalar callers route via the
 # 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::QuadraticInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, extraps)
-    # Wrapped grids carry cached `h`/`inv_h` directly — use the spacings-free
-    # overloads (5-arg `_search_all_intervals`, 4-arg `_compute_all_local_params`)
-    # shared with Linear/Constant/Hetero ND.
-    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
+    # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
+    # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
+    # `_compute_all_local_params` uses the spacings-free overload (cached h/inv_h).
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
+    # Non-Real axes: the scaled store is [Y]-homogeneous, so the kernel consumes
+    # dimensionless local params (the width-tag dispatch routes; Real = exact old width).
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls, Tg)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
 
-# N=2 specialization: direct destructuring eliminates ntuple closure overhead
-@inline function _locate_cell(
-        itp::QuadraticInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        extraps::Tuple{AbstractExtrap, AbstractExtrap},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, extraps, policies, hints, mono
-    )
+# No N=2 specialization: the generic-N locate above inlines to the same code at
+# N=2, so a hand-destructured 2D variant is equal-or-slower (verified via
+# same-process method-swap A/B).
 
-    hx = _get_h(itp.grids[1], ix);  hy = _get_h(itp.grids[2], iy)
-    inv_hx = _get_inv_h(itp.grids[1], ix); inv_hy = _get_inv_h(itp.grids[2], iy)
-    dLx = x_eval - xL;  dLy = y_eval - yL
-
-    return (itp.nodal_derivs.partials, (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy))
-end
-
-# Evaluate kernel at a pre-located cell with given derivative ops
+# Evaluate kernel at a pre-located cell with given derivative ops. Non-Real axes
+# run dimensionless over the [Y]-scaled store — `_restore_nd_deriv_scale`
+# re-attaches the per-axis grid⁻ᵏ units at this single seam.
 @inline function _eval_at_cell(
-        ::QuadraticInterpolantND,
+        itp::QuadraticInterpolantND{Tg},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
-    ) where {N}
-    partials, indices, hs, inv_hs, dLs = cell
-    return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
+    ) where {Tg, N}
+    partials, indices, _, inv_hs, dLs = cell   # `hs` in the cell tuple is unused by quadratic
+    r = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
+    return _restore_nd_deriv_scale(r, itp.grids, ops)
 end
 
 # Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).
@@ -146,18 +133,18 @@ end
 @inline @generated function _eval_nd_quad_cell(
         partials::AbstractArray{Tv, NP1},
         indices::NTuple{N, Int},
-        hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},
-        dLs::Tuple{Vararg{Real, N}},
+        dLs::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tv, Tg, N, NP1}
     NP1 == N + 1 || error("NP1 must equal N+1")
 
     stmts = Expr[]
 
-    # Unpack tuples using destructuring
+    # Unpack tuples using destructuring. Quadratic reads only `inv_h`/`dL` — the
+    # cell width `h` never reaches `_quadratic_kernel_nd` (physical-coord form).
     for (prefix, source) in [
-            ("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
+            ("idx_", :indices), ("inv_h_", :inv_hs),
             ("dL_", :dLs), ("op_", :ops),
         ]
         syms = ntuple(d -> Symbol(prefix, d), N)

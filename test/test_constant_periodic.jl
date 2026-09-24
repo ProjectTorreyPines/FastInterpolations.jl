@@ -309,7 +309,7 @@
         # The unified `_constant_nd_kernel` is @generated and addresses one of
         # 2^N corners per query via runtime offsets. Existing seam-cell tests
         # are N=2 only; this exercises the N=3 unroll with axis-1 wrap, pinning
-        # the `ifelse(offset==0, stencils[d][1], stencils[d][2])` corner-pick
+        # the `ifelse(offset==0, intervals[d][1], intervals[d][2])` corner-pick
         # for any N.
         x = collect(range(0.0, step = 1.0, length = 4))    # axis 1 periodic, period 4
         yy = collect(range(0.0, step = 1.0, length = 3))   # axis 2 NoBC

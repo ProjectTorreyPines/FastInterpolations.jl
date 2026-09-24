@@ -136,6 +136,23 @@
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
+    @testset "Zero allocation (in-place vector, sorted len≥8 → LinearBinarySearch arm)" begin
+        # A sorted query of length ≥ 8 flips `_is_likely_monotone` to true, so the
+        # default AutoSearch resolves to the LinearBinarySearch/RefHint arm — the
+        # adaptive branch the 4-query test above never reaches (len < 8 ⇒ BinarySearch).
+        # The policy is chosen inside `_fill_series_anchors_resolved!`, so the Union
+        # never reaches the build loop and the batch stays zero-alloc on this arm too.
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = collect(range(0.05, 0.95, 16))   # sorted, length 16 ≥ 8
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            constant_interp!(outputs, x, s, xqs)  # warmup
+            constant_interp!(outputs, x, s, xqs)  # second warmup (JIT settle under @testitem)
+            return @allocated constant_interp!(outputs, x, s, xqs)
+        end
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+    end
+
     @testset "Eltype contract: fully-Int chain stays Int" begin
         # Series routes through the canonical kernel-shape trait, so the
         # output eltype promotes via `xq - xL`. The "stays Int" contract

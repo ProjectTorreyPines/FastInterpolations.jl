@@ -108,7 +108,7 @@
 
     # Float32 grid + Float64 period: `WrapExtrap(x, bc)` must cast the period to
     # the grid's float type, otherwise OOB-wrapped queries widen to Float64 and
-    # break the preallocated `_CubicAnchoredQuery{Float32, Float32}` buffer.
+    # break the preallocated `_CubicAdjointAnchor{Float32, Float32}` buffer.
     @testset "Float32 grid + Float64 period vector series" begin
         x32 = collect(range(0.0f0, step = 0.1f0, length = 10))   # Float32, span 0.9
         # Keep y in Float32 (default `2π` is Float64 → broadcast widens).
@@ -253,6 +253,61 @@
             return @allocated cubic_interp!(outputs, x, s, xqs)
         end
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation (in-place vector, sorted len≥8 → LinearBinarySearch arm)" begin
+        # A sorted query of length ≥ 8 flips `_is_likely_monotone` to true, so the
+        # default AutoSearch resolves to the LinearBinarySearch/RefHint arm — the
+        # adaptive branch the 4-query tests above never reach (len < 8 ⇒ BinarySearch).
+        # The policy is chosen inside `_fill_series_anchors_resolved!`, so the Union
+        # never reaches the build loop and the batch stays zero-alloc on this arm too.
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = collect(range(0.05, 0.95, 16))   # sorted, length 16 ≥ 8
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs)  # warmup
+            cubic_interp!(outputs, x, s, xqs)  # second warmup (JIT settle under @testitem)
+            return @allocated cubic_interp!(outputs, x, s, xqs)
+        end
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation (in-place vector, OOB stateful wrappers)" begin
+        # Fill/Clamp OOB select the stateful payload wrapper; deriv ≥ 4 selects the
+        # zero payload. Both must stay warm-alloc-free on the vector-batch surface.
+        # extrap/op are baked in as literals, NOT passed as args (under the @testset
+        # try/catch, LTS won't const-propagate through extrap/op arguments). Two
+        # warmup calls, not one: the first-ever call of each (extrap, DerivOp{k})
+        # specialization pays a one-time ~190 KB JIT cost that a single warmup does
+        # not fully absorb on LTS; the second clears it. A recurring per-call box
+        # (e.g. a runtime-typed anchor) would survive both warmups and still trip.
+        function measure_fill_d0(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]                # OOB-left, in, OOB-right
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(999.0), deriv = DerivOp(0))
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(999.0), deriv = DerivOp(0))
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(999.0), deriv = DerivOp(0))
+        end
+        function measure_clamp_d3(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = ClampExtrap(), deriv = DerivOp(3))
+            cubic_interp!(outputs, x, s, xqs; extrap = ClampExtrap(), deriv = DerivOp(3))
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = ClampExtrap(), deriv = DerivOp(3))
+        end
+        function measure_fill_d5(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(NaN), deriv = DerivOp(5))
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(NaN), deriv = DerivOp(5))
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(NaN), deriv = DerivOp(5))
+        end
+        @test measure_fill_d0(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+        @test measure_clamp_d3(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+        @test measure_fill_d5(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Extrapolation modes" begin

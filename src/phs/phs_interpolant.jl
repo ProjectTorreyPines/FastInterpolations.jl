@@ -244,3 +244,17 @@ end
 
 # Allocating batch evaluation is handled by AbstractInterpolantND protocol,
 # which forwards to our in-place callable above via dynamic dispatch.
+
+# N = 1 GriddedQuery forwards. A 1-axis `GriddedQuery` is an `AbstractVector`, so
+# the generic in-place gridded functor (`AbstractInterpolantND{,,1}` × `GriddedQuery`)
+# splits with the batch callable above (`PHSInterpolantND` × `AbstractVector`): each
+# wins one argument. PHS has no separable gridded kernel, so mirror the 1-D
+# contract — a 1-axis GriddedQuery is its coordinate vector — and forward both
+# forms to the SoA batch path.
+@inline (itp::PHSInterpolantND{Tg, Tv, 1})(
+    out::AbstractVector,
+    gq::GriddedQuery{<:Tuple{Any}};
+    kwargs...,
+) where {Tg, Tv} = itp(out, (gq.axes[1],); kwargs...)
+@inline (itp::PHSInterpolantND{Tg, Tv, 1})(gq::GriddedQuery{<:Tuple{Any}}; kwargs...) where {Tg, Tv} =
+    itp((gq.axes[1],); kwargs...)

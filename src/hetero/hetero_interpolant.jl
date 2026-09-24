@@ -242,27 +242,27 @@ NoInterp axes only need `length(grid) == size(data, d)` (≥1 points).
     ) where {N, M <: Tuple}
     checks = [
         quote
-                ng = length(grids[$i])
-                nd = size(data, $i)
-                if ng != nd
-                    throw(
-                        DimensionMismatch(
-                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
-                        )
+            ng = length(grids[$i])
+            nd = size(data, $i)
+            if ng != nd
+                throw(
+                    DimensionMismatch(
+                        "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
                     )
-            end
-                $(
-                    if !(fieldtype(M, i) <: NoInterp)
-                        :(
-                            if ng < 2
-                                throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
-                        end
-                        )
-                else
-                        :()
-                end
                 )
-            end for i in 1:N
+            end
+            $(
+                if !(fieldtype(M, i) <: NoInterp)
+                    :(
+                        if ng < 2
+                            throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+                        end
+                    )
+                else
+                    :()
+                end
+            )
+        end for i in 1:N
     ]
     return quote
         $(checks...)
@@ -286,7 +286,8 @@ function _build_hetero_nd(
         data::AbstractArray{Tv_raw, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extrap,
-        search,
+        search;
+        store::StorePolicy = StorePolicy(),
     ) where {N, Tv_raw}
     # 1. Validate grid dimensions (NoInterp axes exempt from 2-point minimum)
     if _has_nointerp_method(typeof(methods))
@@ -296,8 +297,9 @@ function _build_hetero_nd(
     end
 
     # 2-5. Promote grid + data types
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
+    data_typed = _own_or_ref_data(data, Tv, store)
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
@@ -323,7 +325,7 @@ function _build_hetero_nd(
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    return HeteroInterpolantND(grids_typed, data_typed, methods, extraps, searches; bcs = bcs)
+    return HeteroInterpolantND(grids_typed, data_typed, methods, extraps, searches; bcs = bcs, store = store)
 end
 
 # ========================================
@@ -342,6 +344,7 @@ function _build_hetero_precomputed(
     else
         _validate_nd_grids(grids, data)
     end
+    _check_nd_hetero_grid(_promote_grid_eltype(grids))
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     bcs_periodic = map(_bc_for_periodic_check, methods)
     # 4-arg expand-only — materialize deferred until after extension (post-extension
@@ -379,7 +382,7 @@ end
 # ========================================
 
 """
-    interp(grids, data; method, coeffs=PreCompute(), extrap=NoExtrap(), search=AutoSearch())
+    interp(grids, data; method, coeffs=AutoCoeffs(), extrap=NoExtrap(), search=AutoSearch(), store=StorePolicy())
 
 Unified N-dimensional interpolation constructor with per-axis method specification.
 
@@ -403,6 +406,9 @@ Automatically dispatches to the optimal implementation:
   - `OnTheFly()`: Build 1D per query (zero build cost, O(n) eval)
 - `extrap=NoExtrap()`: Extrapolation mode(s) — single or per-axis tuple
 - `search=AutoSearch()`: Search policy(ies) — single or per-axis tuple
+- `store=StorePolicy()`: Grid/data storage policy. `StorePolicy(copy=false)` aliases
+  the caller's arrays (zero-copy) on the **OnTheFly** path; **PreCompute** retains
+  only derived partials, so it warns once and copies. See [`StorePolicy`](@ref).
 
 # Examples
 ```julia
@@ -430,8 +436,9 @@ function interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        store::StorePolicy = StorePolicy(),
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
     coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
     # Validate before any path. The OnTheFly hetero shortcut below skips
     # `_interp_nd_dispatch` (which is the only other validation site), so we
@@ -442,9 +449,12 @@ function interp(
 
     # OnTheFly → always Hetero path (no specialized ND type supports OnTheFly natively)
     if coeffs_resolved isa OnTheFly
-        return _build_hetero_nd(grids, data, method_tuple, extrap, search)
+        return _build_hetero_nd(grids, data, method_tuple, extrap, search; store = store)
     end
 
-    # PreCompute → homogeneous dispatch to specialized ND types
+    # PreCompute → homogeneous dispatch to specialized ND types. Reference is not
+    # threaded through this path (the specialized PreCompute builders own their data);
+    # warn + copy if it was requested.
+    _check_store(store, "interp(...; coeffs=PreCompute())")
     return _interp_nd_dispatch(grids, data, method_tuple, coeffs_resolved, extrap, search)
 end

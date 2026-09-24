@@ -156,11 +156,12 @@ All three transposes are computed together on first scalar query.
 # Thread Safety
 Same RCU pattern as LazyTranspose.
 """
-mutable struct LazyTransposeTriple{Tv, Tc}
-    @atomic snapshot::Union{Nothing, Tuple{Matrix{Tv}, Matrix{Tc}, Matrix{Tc}}}
+mutable struct LazyTransposeTriple{Tv, Ta, Td}
+    @atomic snapshot::Union{Nothing, Tuple{Matrix{Tv}, Matrix{Ta}, Matrix{Td}}}
 
-    LazyTransposeTriple{Tv, Tc}() where {Tv, Tc} = new{Tv, Tc}(nothing)
-    LazyTransposeTriple{Tv}() where {Tv} = new{Tv, Tv}(nothing)  # backward compat
+    LazyTransposeTriple{Tv, Ta, Td}() where {Tv, Ta, Td} = new{Tv, Ta, Td}(nothing)
+    LazyTransposeTriple{Tv, Tc}() where {Tv, Tc} = new{Tv, Tc, Tc}(nothing)
+    LazyTransposeTriple{Tv}() where {Tv} = new{Tv, Tv, Tv}(nothing)
 end
 
 """
@@ -185,14 +186,14 @@ Ensure point-contiguous transpose triple exists. Thread-safe via atomic RCU patt
 Tuple of transposed matrices (y_point, a_point, d_point), each (n_series × n_points).
 """
 @inline function _ensure_transpose_triple!(
-        ltt::LazyTransposeTriple{Tv, Tc},
+        ltt::LazyTransposeTriple{Tv, Ta, Td},
         y::Matrix{Tv},
-        a::Matrix{Tc},
-        d::Matrix{Tc}
-    ) where {Tv, Tc}
+        a::Matrix{Ta},
+        d::Matrix{Td}
+    ) where {Tv, Ta, Td}
     # Fast path: check if already populated
     snap = @atomic :acquire ltt.snapshot
-    snap !== nothing && return snap::Tuple{Matrix{Tv}, Matrix{Tc}, Matrix{Tc}}
+    snap !== nothing && return snap::Tuple{Matrix{Tv}, Matrix{Ta}, Matrix{Td}}
 
     # Slow path: compute all three transposes
     y_point = permutedims(y)
@@ -235,7 +236,12 @@ end
 
 Pre-compute transpose triple before hot loops. Returns the holder for chaining.
 """
-function precompute_transpose!(ltt::LazyTransposeTriple{Tv, Tc}, y::Matrix{Tv}, a::Matrix{Tc}, d::Matrix{Tc}) where {Tv, Tc}
+function precompute_transpose!(
+        ltt::LazyTransposeTriple{Tv, Ta, Td},
+        y::Matrix{Tv},
+        a::Matrix{Ta},
+        d::Matrix{Td}
+    ) where {Tv, Ta, Td}
     _ensure_transpose_triple!(ltt, y, a, d)
     return ltt
 end

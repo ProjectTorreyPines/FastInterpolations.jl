@@ -31,27 +31,29 @@ itp(0.5)
         tension::Real = 0.0,
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     # Periodic extension (no-op for NoBC). bc_eff flips :exclusive → :extended
     # post-extension; :inclusive passes through. Slope-side dispatches on bc_eff.
     x_eff, y_eff, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     Tg = _promote_grid_float(eltype(x_eff), eltype(y_eff))
     extrap_p = _promote_extrap(extrap_eff, _value_type(eltype(y_eff), Tg))
     resolved = _resolve_coeffs(coeffs)
-    tens_t = Tg(tension)
+    tens_t = _as_dimensionless(tension, Tg)   # dimensionless shape param at grid precision
     # Caching wrap (zero-copy of buffer): post-extension grid → `_CachedVector`
     # (Vector) / `_CachedRange` (Range). Ownership copy in inner ctor's
     # `_convert_copy(x, Tg)`. Mirrors Linear/Constant 1D outer flow.
-    x_eff = _cache_axis(x_eff, bc_eff, Tg)
+    x_eff = _policy_axis(x_eff, bc_eff, Tg, store)
 
     if resolved isa OnTheFly
-        return CardinalInterpolant1D(x_eff, y_eff, CardinalSlopes(tens_t, bc_eff), extrap_p, search, tens_t)
+        return CardinalInterpolant1D(x_eff, y_eff, CardinalSlopes(tens_t, bc_eff), extrap_p, search, tens_t; store = store)
     end
     # PreCompute
-    Tdy = _output_eltype(_value_type(eltype(y_eff), Tg), Tg)
+    Tdy = _promote_eltype(_coeff_op, Tg, _value_type(eltype(y_eff), Tg))
     dy = Vector{Tdy}(undef, length(x_eff))
     xf = _to_float(x_eff, Tg)
     _cardinal_slopes!(dy, xf, y_eff, tens_t; bc = bc_eff)
-    return CardinalInterpolant1D(x_eff, y_eff, dy, extrap_p, search, tens_t)
+    return CardinalInterpolant1D(x_eff, y_eff, dy, extrap_p, search, tens_t; store = store)
 end

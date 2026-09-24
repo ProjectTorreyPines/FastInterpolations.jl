@@ -1170,15 +1170,17 @@ end
         @testset "hessian — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)
             itp_ref = cubic_interp((xg, yg), data_2d_flat)
-            H = hessian(itp, q2d)
+            # `@inferred`: the 2nd-deriv element type is a compile-time witness fold
+            # (`_deriv_eltype`), so a value duck type (no `one`/`oneunit`) stays inferable.
+            H = @inferred hessian(itp, q2d)
             H_ref = hessian(itp_ref, q2d)
             @test size(H) == (2, 2)
             @test H[1, 1] isa MyDuck
-            @test _val(H[1, 1]) ≈ H_ref[1, 1]
-            # Off-diagonal: data is linear (xi+2yj) so ∂²f/∂x∂y ≈ 0.
+            @test isapprox(_val(H[1, 1]), H_ref[1, 1]; atol = 1.0e-14)
+            # Data is linear (xi+2yj), so every 2nd derivative here is a numerical zero.
             # FMA contraction produces different near-zero rounding artifacts; use atol.
             @test isapprox(_val(H[1, 2]), H_ref[1, 2]; atol = 1.0e-14)
-            @test _val(H[2, 2]) ≈ H_ref[2, 2]
+            @test isapprox(_val(H[2, 2]), H_ref[2, 2]; atol = 1.0e-14)
         end
         @testset "hessian! — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)
@@ -1188,7 +1190,7 @@ end
             hessian!(H, itp, q2d)
             hessian!(H_ref, itp_ref, q2d)
             @test H[1, 1] isa MyDuck
-            @test _val(H[1, 1]) ≈ H_ref[1, 1]
+            @test isapprox(_val(H[1, 1]), H_ref[1, 1]; atol = 1.0e-14)
             @test isapprox(_val(H[2, 1]), H_ref[2, 1]; atol = 1.0e-14)
         end
         @testset "laplacian — cubic" begin
@@ -1197,7 +1199,7 @@ end
             lap = laplacian(itp, q2d)
             lap_ref = laplacian(itp_ref, q2d)
             @test lap isa MyDuck
-            @test _val(lap) ≈ lap_ref
+            @test isapprox(_val(lap), lap_ref; atol = 1.0e-14)
         end
         @testset "laplacian — quadratic" begin
             itp = quadratic_interp((xg, yg), data_2d)
@@ -1549,9 +1551,13 @@ end
     # standard numeric promotion is unaffected by duck-typing paths.
     # ================================================================
     @testset "33. Contract boundaries" begin
-        # DuckFloat5 has no convert(DuckFloat5, Float64) → cross-type Deriv must fail
-        @testset "cubic Deriv1(0.0) fails without convert" begin
-            @test_throws MethodError cubic_interp(x_vec, y_generic; bc = Deriv1(0.0))
+        # MyDuck has no convert from Float64 → a cross-type Deriv payload must
+        # fail. Exception (the #201 rule, extended to the bare-PointBC arm):
+        # a STRUCTURAL Real zero is dimensionally unambiguous and mints into the
+        # payload space, so `Deriv1(0.0)` builds; a nonzero one still fails.
+        @testset "cubic Deriv1: structural zero mints, nonzero fails" begin
+            @test cubic_interp(x_vec, y_generic; bc = Deriv1(0.0)) isa CubicInterpolant
+            @test_throws MethodError cubic_interp(x_vec, y_generic; bc = Deriv1(0.25))
         end
         @testset "quadratic Left(Deriv1(0.0)) fails without convert" begin
             @test_throws MethodError quadratic_interp(
@@ -1835,4 +1841,126 @@ end
         end
     end
 
+end
+
+# Single-arg full-domain integrate duck contract: values see only `*`/`+` (see
+# `_integrate_op`) plus the accumulator seed `zero(Tout)`. Deliberately NO `/` —
+# only the Real grid step h may be divided. Local duck (not the snippet's MyDuck):
+# MyDuck omits `zero` to keep the eval-path pins minimal.
+@testitem "Duck Typing: 1D full-domain integrate (Vector + Range grids)" begin
+    struct IntDuck
+        v::Float64
+    end
+    Base.:+(a::IntDuck, b::IntDuck) = IntDuck(a.v + b.v)
+    Base.:*(a::Real, b::IntDuck) = IntDuck(a * b.v)
+    Base.:*(a::IntDuck, b::Real) = IntDuck(a.v * b)
+    Base.zero(::Type{IntDuck}) = IntDuck(0.0)
+
+    x_vec = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    x_rng = range(0.0, 6.0, 7)
+    yf = 2 .* x_vec .+ 1
+    yd = IntDuck.(yf)
+    for (name, x) in [("Vector", x_vec), ("Range", x_rng)]
+        @testset "linear ($name grid)" begin
+            itp = linear_interp(x, yd)
+            itp_ref = linear_interp(x, yf)
+            r = integrate(itp)
+            @test r isa IntDuck
+            @test r.v ≈ integrate(itp_ref)
+        end
+    end
+end
+
+# ND duck integrate exercises the separable engine's non-Number zero init
+# (`_nd_int_zero` → `0 * sample`) — the path the retired generic per-cell engine
+# used to serve. Rank-1 families (Linear/Constant) build without differentiating
+# the duck payload, so they're the clean pin for the ND value contract.
+@testitem "duck ND integrate — separable engine (full + bounded)" begin
+    struct NdDuck
+        v::Float64
+    end
+    Base.:+(a::NdDuck, b::NdDuck) = NdDuck(a.v + b.v)
+    Base.:-(a::NdDuck, b::NdDuck) = NdDuck(a.v - b.v)
+    Base.:*(a::Real, b::NdDuck) = NdDuck(a * b.v)
+    Base.:*(a::NdDuck, b::Real) = NdDuck(a.v * b)
+    Base.zero(::Type{NdDuck}) = NdDuck(0.0)
+    _v(d::NdDuck) = d.v
+
+    x = [0.0, 0.5, 1.3, 2.0, 3.0]           # Vector × Range → also mixed-grid path
+    y = range(0.0, 2.0, length = 6)
+    dat = [NdDuck(sin(xi) + 2yj) for xi in x, yj in y]
+    ref = [d.v for d in dat]
+    lo = (0.3, 0.4);  hi = (2.6, 1.7)
+
+    @testset "linear ND (rank-1 payload)" begin
+        itp = linear_interp((x, y), dat);  rf = linear_interp((x, y), ref)
+        @test integrate(itp) isa NdDuck
+        @test _v(integrate(itp)) ≈ integrate(rf) rtol = 1.0e-12
+        @test _v(integrate(itp, lo, hi)) ≈ integrate(rf, lo, hi) rtol = 1.0e-12
+    end
+
+    @testset "constant ND (rank-1, side weights)" begin
+        itp = constant_interp((x, y), dat);  rf = constant_interp((x, y), ref)
+        @test _v(integrate(itp)) ≈ integrate(rf) rtol = 1.0e-12
+        @test _v(integrate(itp, lo, hi)) ≈ integrate(rf, lo, hi) rtol = 1.0e-12
+    end
+end
+
+# Multi-channel vector values (SVector): unlike the scalar-wrapper ducks above,
+# SVector{N} defines `zero`/`+`/`*` AND survives the rank-2 (cubic) differentiated
+# payload, so it pins channel-wise integration end to end — the result is a fresh
+# SVector with each channel integrated independently. Reference per channel: the
+# integral of that channel's own scalar interpolant.
+@testitem "SVector-valued integrate — channel-wise (1D + ND, all ranks)" begin
+    using StaticArrays
+
+    # integrate channel `c` via its own scalar interpolant (`map` keeps 1D/ND shape)
+    chan(mk, grids, data, c, args...) = integrate(mk(grids, map(d -> d[c], data)), args...)
+
+    @testset "1D — full + bounded + cumulative" begin
+        x = range(0.0, 2.0, length = 7)
+        data = [SVector(sin(xi), xi^2, 1.0) for xi in x]
+        for mk in (linear_interp, cubic_interp, constant_interp)
+            itp = mk(x, data)
+            I = integrate(itp)
+            @test I isa SVector{3, Float64}
+            @test I ≈ SVector(ntuple(c -> chan(mk, x, data, c), 3)) rtol = 1.0e-12
+            @test integrate(itp, 0.3, 1.6) ≈
+                SVector(ntuple(c -> chan(mk, x, data, c, 0.3, 1.6), 3)) rtol = 1.0e-12
+            C = cumulative_integrate(itp)
+            @test C[1] == zero(SVector{3, Float64})
+            @test C[end] ≈ I rtol = 1.0e-12
+        end
+    end
+
+    @testset "ND — full + bounded (rank-1 linear/constant + rank-2 cubic)" begin
+        x = range(0.0, 2.0, length = 6);  y = range(0.0, 3.0, length = 5)
+        data = [SVector(sin(xi) + yj, xi * yj, 2.0) for xi in x, yj in y]
+        lo = (0.3, 0.4);  hi = (1.7, 2.5)
+        for mk in (linear_interp, cubic_interp, constant_interp)
+            itp = mk((x, y), data)
+            I = integrate(itp)
+            @test I isa SVector{3, Float64}
+            @test I ≈ SVector(ntuple(c -> chan(mk, (x, y), data, c), 3)) rtol = 1.0e-12
+            @test integrate(itp, lo, hi) ≈
+                SVector(ntuple(c -> chan(mk, (x, y), data, c, lo, hi), 3)) rtol = 1.0e-12
+        end
+    end
+end
+
+@testitem "Duck Typing: Real-zero BC payloads rehydrate duck-safely (BCPair + cache)" setup = [DuckTypeSetup] begin
+    # Structural Real zeros (user BCPair, cache markers) must mint the duck-space
+    # zero via `0 * value-witness` — `one`/`oneunit(Tv)` are not duck-contract ops.
+    ref = cubic_interp(x_vec, y_generic; bc = ZeroCurvBC())
+
+    @testset "user BCPair with Real zeros beside duck data" begin
+        itp = cubic_interp(x_vec, y_generic; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
+        @test _val(itp(xq)) === _val(ref(xq))
+    end
+
+    @testset "cache markers (Deriv{Float64} zeros) rehydrate against duck values" begin
+        cache = CubicSplineCache(x_vec; bc = ZeroCurvBC())
+        itp_c = cubic_interp(cache, y_generic)
+        @test _val(itp_c(xq)) === _val(ref(xq))
+    end
 end

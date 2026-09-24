@@ -748,10 +748,10 @@ end
 # Coverage: phs_eval.jl missed lines — Batch 1
 # ======================================================
 
-@testitem "PHS eval — non-uniform grid (VectorSpacing binary search)" begin
-    # A Vector grid creates VectorSpacing which triggers the O(log n) binary
-    # search path in _phs_find_base_node instead of the O(1) ScalarSpacing formula.
-    x = collect(range(0.0, 2π, 20))  # Vector{Float64} → VectorSpacing
+@testitem "PHS eval — non-uniform grid (_CachedVector binary search)" begin
+    # A Vector grid is wrapped as _CachedVector, which triggers the O(log n) binary
+    # search path in _phs_find_base_node instead of the O(1) _CachedRange formula.
+    x = collect(range(0.0, 2π, 20))  # Vector{Float64} → _CachedVector
     data = sin.(x)
     itp = phs_interp((x,), data; stencil_size = 7, degree = 3)
     @test itp.grids[1] isa FastInterpolations._CachedVector  # ensure binary search path
@@ -1083,4 +1083,23 @@ end
     # 9. phs_kernels.jl: lines 469-476 (_phs_diff generated function)
     diff_res = FastInterpolations._phs_diff(query, base_coords, (0, 0), itp.hs)
     @test length(diff_res) == 2
+end
+
+@testitem "PHS ND — 1-axis GriddedQuery forwards to the coordinate-vector batch path" setup = [AllocConstants] begin
+    # A 1-axis GriddedQuery is an AbstractVector, so the generic N=1 in-place
+    # gridded functor (`AbstractInterpolantND{,,1}` × `GriddedQuery`) and the PHS
+    # batch callable (`PHSInterpolantND` × `AbstractVector`) split: each wins one
+    # argument. The PHS N=1 forwards close the split by treating the query as its
+    # coordinate vector, so the result equals the SoA batch form `itp((xq,))`.
+    x = range(0.0, 1.0, 11)
+    itp = phs_interp((x,), sin.(x); stencil_size = 4, degree = 3)
+    xq = range(0.05, 0.95, 7)
+    gq = GriddedQuery((xq,))
+    ref = itp((xq,))
+
+    out = zeros(7)
+    @test itp(out, gq) === out
+    @test out == ref
+    @test itp(gq) == ref
+    @test length(itp(gq)) == length(xq)
 end

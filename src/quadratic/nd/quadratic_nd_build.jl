@@ -253,21 +253,22 @@ end
 # Generic ND Partial Derivative Computation (Quadratic)
 # ========================================
 
+# Raw/heterogeneous grids: each dimension differentiates independently via `grids[D]`.
 @inline _build_nd_partials_dim_quadratic!(
     partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
+    grids::NTuple{N, AbstractVector},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg, N, NP1} =
+) where {Tv, N, NP1} =
     _build_nd_partials_dim_quadratic!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim_quadratic!(
         partials::AbstractArray{Tv, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         bcs::NTuple{N, AbstractBC},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg, D, N, NP1}
+    ) where {Tv, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -292,10 +293,10 @@ recurrence for 1D differentiation instead of Thomas tridiagonal.
 """
 function _compute_nd_partials_quadratic!(
         partials::AbstractArray{Tz, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tz, Tv, Tg, N, NP1}
+    ) where {Tz, Tv, N, NP1}
     # Validate dimensions
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
@@ -330,19 +331,25 @@ Compute all partial derivatives for N-dimensional quadratic interpolation.
 - `_NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs_quadratic(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
+    # Non-Real axes solve on their dimensionless twins (mirrors the cubic
+    # scaled-store build); Real axes pass through untouched.
+    _check_nd_reparam_grid(grids)
+    grids_solve, bcs_solve = _reparam_solve_frame(grids, bcs, data)
+
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
-    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _output_eltype(Tv, Tg)
+    # Tz widens Tv with the solve-grid eltype: Dual grids → Dual-typed derivatives;
+    # unit grids solve dimensionless → Tz stays in the value space.
+    Tz = _promote_eltype(_coeff_op, _promote_grid_eltype(grids_solve), Tv)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
     partials = Array{Tz, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
-    _compute_nd_partials_quadratic!(partials, grids, data, bcs)
+    _compute_nd_partials_quadratic!(partials, grids_solve, data, bcs_solve)
 
     return _NodalDerivativesND{Tz, N, N + 1}(partials)
 end

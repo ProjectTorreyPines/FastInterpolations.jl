@@ -107,13 +107,14 @@ end
         return nothing
     end
 
-    # Recompute secants for all intervals (O(n), no allocation needed beyond stack)
-    # We'll do a single forward pass, maintaining running secant values.
-
+    # Recompute secants via the SAME `_forward_secant` helper the forward uses, so the
+    # `sign(δ)` / harmonic-mean branches see bit-identical secants — a ≤1-ULP `/h` vs
+    # `*inv_h` gap can flip a branch at an exact tie. `_forward_secant` also widens
+    # narrow/fixed-point y before the difference (N0f8 reaches here un-promoted).
     @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = (y[2] - y[1]) / h_prev
+    @inbounds δ_prev = _forward_secant(x, y, 1)
     @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = (y[3] - y[2]) / h_curr
+    @inbounds δ_curr = _forward_secant(x, y, 2)
 
     # ── Left endpoint (k=1) ──────────────────────────────────────────────
     # d = ((2h1+h2)*δ1 - h1*δ2) / (h1+h2)
@@ -155,18 +156,21 @@ end
     # ── Interior slopes (k=2..n-1) ──────────────────────────────────────
     # Reset running secants
     @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = (y[2] - y[1]) / h_prev
+    @inbounds δ_prev = _forward_secant(x, y, 1)
     @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = (y[3] - y[2]) / h_curr
+    @inbounds δ_curr = _forward_secant(x, y, 2)
 
     @inbounds for k in 2:(n - 1)
-        if sign(δ_prev) != sign(δ_curr)
-            # Clamped: dy[k] = 0 → all derivatives zero, skip
+        # `den` is the forward's single-division denominator, rebuilt so the flat-data guard
+        # below is the SAME test: there dy[k] = 0, while `D` would divide by δ² == 0 → NaN.
+        w1 = 2 * h_curr + h_prev
+        w2 = h_curr + 2 * h_prev
+        den = w1 * δ_curr + w2 * δ_prev
+        if sign(δ_prev) != sign(δ_curr) || iszero(_extract_primal(den))
+            # Clamped or flat: dy[k] = 0 → all derivatives zero, skip
         else
             # Active: weighted harmonic mean
             # dy[k] = S / D where S = w1+w2, D = w1/δ_prev + w2/δ_curr
-            w1 = 2 * h_curr + h_prev
-            w2 = h_curr + 2 * h_prev
             S = w1 + w2
             D = w1 / δ_prev + w2 / δ_curr
             D2 = D * D
@@ -193,7 +197,7 @@ end
             h_prev = h_curr
             δ_prev = δ_curr
             h_curr = x[k + 2] - x[k + 1]
-            δ_curr = (y[k + 2] - y[k + 1]) / h_curr
+            δ_curr = _forward_secant(x, y, k + 1)
         end
     end
 
@@ -303,8 +307,10 @@ end
     @inbounds begin
         h_prev = x[j_prev + 1] - x[j_prev]
         h_curr = x[j_curr + 1] - x[j_curr]
-        δ_prev = (y[j_prev + 1] - y[j_prev]) / h_prev
-        δ_curr = (y[j_curr + 1] - y[j_curr]) / h_curr
+        # Match the forward's `_forward_secant` (`*inv_h`) bit-for-bit so the `sign(δ)`
+        # branch agrees with ForwardDiff; `h_*` retained for the ∂δ/∂y partials.
+        δ_prev = _forward_secant(x, y, j_prev)
+        δ_curr = _forward_secant(x, y, j_curr)
 
         # Zero-clamped branch: dy[k] = 0 → all derivatives zero, skip.
         sign(δ_prev) != sign(δ_curr) && return nothing
@@ -314,6 +320,8 @@ end
         #   w1 = 2*h_curr+h_prev,  w2 = h_curr+2*h_prev.
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
+        # Flat branch: the forward's own denominator, so the same zero guard (dy[k] = 0).
+        iszero(_extract_primal(w1 * δ_curr + w2 * δ_prev)) && return nothing
         S = w1 + w2
         D = w1 / δ_prev + w2 / δ_curr
         D2 = D * D
@@ -429,13 +437,7 @@ function pchip_adjoint(
     # fires inside `_periodic_extend_1d` for periodic BCs, so non-periodic
     # NoExtrap still validates here).
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = first(x_ext), last(x_ext)
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
-                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
-            )
-        end
+        _validate_domain(x_ext, xq_p)
     end
 
     # Bake anchors against the extended axis. `_cache_axis(x_ext, NoBC())`
@@ -455,7 +457,7 @@ end
 function pchip_adjoint(
         x::AbstractVector,
         y::AbstractVector,
-        x_query::Real;
+        x_query::Number;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
     )

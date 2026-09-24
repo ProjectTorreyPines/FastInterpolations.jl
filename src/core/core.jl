@@ -7,19 +7,23 @@ include("bc_types.jl")         # 3. Boundary condition types
 include("interp_method_types.jl") # 3b. Per-axis method specification (CubicMethod, etc.)
 include("coeff_types.jl")         # 3c. AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs
 include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels (Lagrange, etc.)
-include("axis_types.jl")       # 4b. Axis struct definitions (_CachedRange / _CachedVector / _ExclusivePeriodicAxis) — central types-first
+include("axis_types.jl")       # 4b. Axis struct definitions (_CachedRange / _CachedVector / _ExclusivePeriodicAxis / _ReparamAxis) — central types-first
 include("cached_range.jl")     # 5. _CachedRange methods (_to_float, _get_h, _resolve_axis, _cache_axis*)
 include("cached_vector.jl")    # 5c. _CachedVector methods (build ctor, _get_h, _resolve_axis, _cache_axis*)
 include("search.jl")           # 6. Search policy + interval search
-include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
+include("axis_indices.jl")     # 6a. Compact/explicit fixed-size per-axis indices
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
+include("store_policy.jl")     # 7b. StorePolicy (copy vs reference storage) + own/ref helpers
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
 include("periodic_axis.jl")    # 8b. _ExclusivePeriodicAxis wrapper (axis-side representation transform for `:exclusive` BC on Vector grids)
 include("periodic_data.jl")    # 8c. _ExclusivePeriodicData wrapper (data-side cyclic-indexing companion)
 include("anchor_common.jl")    # 8c. Shared _AnchorLoc + _anchor_loc (all methods, 1D/ND)
+include("axis_anchor_types.jl") # 8d. _AxisAnchor backbone types + _StatefulPayload (method payloads live with each method; gridded resolution loop stays in gridded/)
+include("series_lean_anchors.jl") # 8e. Family-agnostic lean Series build loop (dispatches on interp method; family payloads/kernels live per-method)
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)
+include("nd1_query_adapter.jl")        # 9b-1. N=1 scalar-query adapter (_scalar_query: point containers → 1D batch)
 include("interpolant_protocol.jl")     # 9c. Interpolant callable interface (1D + ND)
 include("adjoint_protocol.jl")         # 9d. Adjoint callable interface (1D + ND)
 include("nd_adjoint_scatter.jl")       # 9e. Shared ND adjoint scatter (_NDAdjointAnchor, _scatter_nd!)

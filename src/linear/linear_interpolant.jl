@@ -19,7 +19,7 @@ end
     return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
-# Linear uses the default `_arithmetic_kernel_shape` route (inherited from
+# Linear uses the default `_interp_op` route (inherited from
 # `AbstractInterpolant1D`) — no explicit override needed.
 
 # ========================================
@@ -29,10 +29,10 @@ end
 # union-splitting the per-iter dispatch. Args must be fully typed — untyped
 # blocks SROA of RefHint's Ref (16 B/call alloc).
 @inline function _linear_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray,
         extrap::E,
         deriv::O,
         searcher::P
@@ -42,10 +42,10 @@ end
 end
 
 @inline function _linear_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray,
         extrap::E,
         deriv::O,
         searcher::P
@@ -149,13 +149,15 @@ function linear_interp end
         y::AbstractVector{TY};
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic).
     # OneShot path continues to use the lazy wrapper (linear_oneshot.jl).
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    x_eff = _cache_axis(x_ext, bc_eff, Tg)
+    x_eff = _policy_axis(x_ext, bc_eff, Tg, store)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return LinearInterpolant(x_eff, y_ext, extrap_p, search; bc = bc_eff)
+    return LinearInterpolant(x_eff, y_ext, extrap_p, search; bc = bc_eff, store = store)
 end

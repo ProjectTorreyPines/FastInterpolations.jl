@@ -6,9 +6,9 @@
 # Provides `cubic_interp(x, Series(y1,y2,...), xq; bc=...)` without constructing
 # a CubicSeriesInterpolant. Uses pool allocation for z-buffer reuse.
 #
-# Include order: ... → cubic_anchor.jl → cubic_oneshot_series.jl → ...
-# Shared kernel: _cubic_eval_kernel(y, z, aq, op) in cubic_anchor.jl
-# Shared extrap: _cubic_eval_at_anchor(y, z, aq, op, extrap) in cubic_anchor.jl
+# Include order: ... → cubic_anchor.jl → cubic_series_payloads.jl → this file.
+# Eval goes through the lean payload adapters (`_cubic_series_eval`,
+# `_cubic_payload_kernel`) in cubic_series_payloads.jl.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                      INTERNAL: NON-PERIODIC CORE                         ║
@@ -27,52 +27,25 @@
         searcher
     ) where {Tg}
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
+    # One lean op/extrap-aware anchor, built from the statically-typed `extrap`
+    # (same helpers as the vector one-shot path); raw-vector eval per series.
+    A = _cubic_series_anchor_type(op, extrap, cache.x, _coord_eltype(typeof(xq), eltype(cache.x)))
+    a = _build_series_anchor(CubicInterp(), A, cache.x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
-    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), _series_eltype(s))
     n = length(first(vecs))
     z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, n)
         _solve_system!(z, cache, y_buf, bc)
-        output[k] = _cubic_eval_at_anchor(y_buf, z, aq, op, extrap)
+        output[k] = _cubic_series_eval(y_buf, z, a, extrap)
     end
     return output
 end
 
-# Build a seam-aware cubic anchor for one query against a (possibly raw
-# n-size) periodic cache. Bypasses `_anchor_query_impl` because that helper's
-# `_anchor_loc` discards `idx_R`, so it cannot represent the periodic-exclusive
-# seam pair `(n, 1)`. Search returns the 4-tuple directly; `_periodic_cell_h`
-# supplies the seam-aware width (`bc.h_n` at the seam, spacing accessor
-# elsewhere). Used by both scalar and vector periodic series helpers.
-@inline function _build_periodic_cubic_anchor(
-        cache::CubicSplineCache,
-        xq,
-        extrap_p::AbstractExtrap,
-        searcher::Searcher,
-    )
-    # `cache.x` is the wrapped axis: `_CachedRange`/`_CachedVector` for
-    # `:inclusive`, `_ExclusivePeriodicAxis` for `:exclusive` (virtual length n+1
-    # with cached `_x_max`). `_wrap_to_domain(xq, cache.x)` reads `(first, last)`
-    # uniformly. The wrapper's `search_interval` returns `idx_R = 1` at seam so
-    # raw `y[idx_R]` indexing in the eval kernel works without a data wrapper.
-    xq_wrapped = _wrap_to_domain(xq, cache.x)
-    idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
-    h = _get_h(cache.x, idxL)
-    inv_h = _get_inv_h(cache.x, idxL)
-    dL = xq_wrapped - xL
-    dR = xR - xq_wrapped
-    w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
-    w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
-    w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
-    w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
-    return _CubicAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
-end
-
-# Periodic scalar: zero-copy. One search → seam-aware `_IdxPair` anchor → loop
+# Periodic scalar: zero-copy. One search → seam-aware `_ExplicitIndices` anchor → loop
 # solve+eval per series. No grid extension, no `y_p` rebuild.
 #
 # Mirrors `_linear_oneshot_series_periodic!`: wrap query, search once, anchor
@@ -101,18 +74,25 @@ end
 
     # Build cache on the user's grid (BC-aware: `_build_periodic_cache`).
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
-    aq = _build_periodic_cubic_anchor(cache, xq, extrap_p, searcher)
+    # Seam-aware LEAN anchor (bare payload — periodic eval always wraps in-domain).
+    Tg_c = eltype(cache.x)
+    Tinv_c = _promote_eltype(_inv_op, _promote_grid_float(Tg_c, Tg_c))
+    TinvN_c = typeof(_deriv_oneunit(oneunit(Tg_c), op))
+    A = _AxisAnchor{
+        _interval_type(cache.x),
+        _cubic_series_payload_type(op, _coord_eltype(typeof(xq), Tg_c), Tg_c, Tinv_c, TinvN_c),
+    }
+    a = _build_periodic_series_anchor(A, cache, xq, searcher)
 
     # Solve + eval per series. For `:exclusive` periodic, wrap each `vecs[k]`
     # with `_ExclusivePeriodicData` so it reports virtual length n+1 to match
     # `length(cache.x)`; the solver and kernel see uniform indexing.
-    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, length(cache.x))
     @inbounds for k in 1:K
         y_eff = _resolve_data(vecs[k], bc)
         _solve_system!(z, cache, y_eff, cache.bc)
-        output[k] = _cubic_eval_kernel(y_eff, z, aq, op)
+        output[k] = _cubic_payload_kernel(y_eff, z, a)
     end
     return output
 end
@@ -129,7 +109,7 @@ end
         op::AbstractEvalOp,
         autocache::Bool,
         search::AbstractSearchPolicy
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     vecs = _series_vectors(s)
     n = length(x)
     K = n_series(s)
@@ -142,28 +122,33 @@ end
     end
 
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
 
-    # Pre-fill seam-aware anchors via `_build_periodic_cubic_anchor`.
+    # Pre-fill seam-aware LEAN anchors (bare payload — periodic eval has no
+    # extrap dispatch, queries always wrap in-domain).
     Tg_c = eltype(cache.x)
-    Tq_w = promote_type(Tq, Tg_c)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
+    Tq_w = _coord_eltype(Tq, Tg_c)
+    Tinv_c = _promote_eltype(_inv_op, _promote_grid_float(Tg_c, Tg_c))
+    TinvN_c = typeof(_deriv_oneunit(oneunit(Tg_c), op))
+    A = _AxisAnchor{
+        _interval_type(cache.x), _cubic_series_payload_type(op, Tq_w, Tg_c, Tinv_c, TinvN_c),
+    }
+    anchors = acquire!(pool, A, length(xqs))
     # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for
     # `:exclusive`) — axis-level seam dispatch fires via `g.period`. No `bc` thread.
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     @inbounds for j in eachindex(xqs)
-        aq_vec[j] = _build_periodic_cubic_anchor(cache, xqs[j], extrap_p, searcher)
+        anchors[j] = _build_periodic_series_anchor(A, cache, xqs[j], searcher)
     end
 
     # Solve per series, eval at all queries. For `:exclusive`, wrap `vecs[k]`
     # via `_ExclusivePeriodicData` so it reports virtual n+1 like `cache.x`.
-    Tz = _output_eltype(_series_eltype(s), Tg_c)
+    Tz = _promote_eltype(_coeff_op2, Tg_c, _series_eltype(s))
     z = acquire!(pool, Tz, length(cache.x))
     @inbounds for k in 1:K
         y_eff = _resolve_data(vecs[k], bc)
         _solve_system!(z, cache, y_eff, cache.bc)
         for j in eachindex(xqs)
-            outputs[k][j] = _cubic_eval_kernel(y_eff, z, aq_vec[j], op)
+            outputs[k][j] = _cubic_payload_kernel(y_eff, z, anchors[j])
         end
     end
     return outputs
@@ -195,13 +180,16 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
     Tg_actual = eltype(x)
-    output = Vector{_output_eltype(_arithmetic_kernel_shape, Tg_actual, _series_eltype(s), Tq)}(undef, K)
+    T_out = _deriv_eltype(
+        _promote_eltype(_interp_op, Tg_actual, _series_eltype(s), Tq), Tg_actual, deriv
+    )
+    output = Vector{T_out}(undef, K)
     # Periodic helper searches against `cache.x` (wrapped from the cache pool),
     # so axis-level dispatch handles seam — no `bc` thread into the Searcher.
     searcher = _resolve_search(x, xq, search, hint)
@@ -209,7 +197,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
     end
-    bc_pair = _normalize_bc(bc)
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     _cubic_oneshot_series_bcpair!(output, x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
     return output
 end
@@ -227,7 +215,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
@@ -237,7 +225,7 @@ end
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
     end
-    bc_pair = _normalize_bc(bc)
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     _cubic_oneshot_series_bcpair!(output, x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
     return output
 end
@@ -258,7 +246,7 @@ end
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     K = n_series(s)
@@ -272,19 +260,21 @@ end
         return _cubic_oneshot_series_periodic_vec!(pool, outputs, x, s, xqs, bc, deriv, autocache, search)
     end
 
-    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
-    extrap_eff = _check_domain(x, xqs, extrap)
-
-    bc_pair = _normalize_bc(bc)
+    bc_pair = _normalize_bc(bc, x, first(_series_vectors(s)))
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
-    # Pre-compute anchors once (search Q times, not K×Q)
-    Tq_w = promote_type(Tq, eltype(cache.x))
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
-    searcher = _resolve_search(cache.x, xqs, search, nothing)
-    _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)
+    # Pre-compute lean op/extrap-aware anchors once (search Q times, not K×Q),
+    # built from the statically-typed `extrap` so the pooled anchor vector stays
+    # concretely typed. `_check_domain`'s in-domain promotion returns a Union for
+    # Clamp/Fill/Wrap; deriving the anchor type from it would box the pool acquire.
+    # Mirrors the persistent batch entry: per-query state comes from the search and
+    # NoExtrap throws OOB inside this build, before any output is written.
+    Tq_w = _coord_eltype(Tq, eltype(cache.x))
+    A = _cubic_series_anchor_type(deriv, extrap, cache.x, Tq_w)
+    anchors = acquire!(pool, A, length(xqs))
+    _fill_series_anchors_resolved!(CubicInterp(), anchors, cache.x, xqs, extrap, extrap isa WrapExtrap, search, nothing)
 
-    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
 
@@ -295,7 +285,7 @@ end
         copyto!(y_buf, 1, vecs[k], 1, n)
         _solve_system!(z, cache, y_buf, bc_pair)
         for j in eachindex(xqs)
-            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], z, aq_vec[j], deriv, extrap_eff)
+            outputs[k][j] = _cubic_series_eval(vecs[k], z, anchors[j], extrap)
         end
     end
     return outputs
@@ -310,10 +300,12 @@ function cubic_interp(
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
+    ) where {Tg, Tq <: Number}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    Tv = _output_eltype(_arithmetic_kernel_shape, Tg_float, _series_eltype(s), Tq)
+    Tv = _deriv_eltype(
+        _promote_eltype(_interp_op, Tg_float, _series_eltype(s), Tq), Tg_float, deriv
+    )
     outputs = _alloc_series_batch_outputs(Tv, K, length(xqs))
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs

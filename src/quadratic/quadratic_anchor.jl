@@ -169,7 +169,7 @@ The same `buffer` object, filled with anchored queries.
 # Note
 When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
 - If `Tq === S`: uses `xq[k]` directly (preserves precision)
-- Otherwise: uses `_promote_for_anchor(xq[k], Tg)` for lossless promotion
+- Otherwise: uses `_promote_coord(xq[k], Tg)` for lossless promotion
 """
 @inline function _fill_anchors!(
         buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
@@ -184,7 +184,7 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
 
     @inbounds for k in eachindex(xq)
         # Promote query point: preserves precision when S is wider than Tg
-        xq_promoted = _promote_for_anchor(xq[k], Tg)
+        xq_promoted = _promote_coord(xq[k], Tg)
         buffer[k] = _quadratic_anchor_query_impl(x, xq_promoted, wrap, searcher_resolved)
     end
     return buffer
@@ -217,7 +217,7 @@ while preserving the full Dual value for `dL` computation.
     # Compute dL: offset from interval start (preserves Dual type)
     dL = loc.xq - loc.xL
 
-    return _QuadraticAnchoredQuery(loc.idx, loc.xq, loc.state, dL, Tg)
+    return _QuadraticAnchoredQuery(loc.idxL, loc.xq, loc.state, dL, Tg)
 end
 
 # ========================================
@@ -282,11 +282,11 @@ end
 # Clamp/Fill extrapolation: boundary value if OOB
 @inline function _quadratic_eval_at_anchor(
         y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
-        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
+        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill, deriv_oneunit
     ) where {Tv, Tc}
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq, deriv_oneunit)
     end
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
@@ -317,7 +317,10 @@ end
 # Clamp/Fill: delegate to shared
 @inline _quadratic_anchor_dispatch(
     itp::QuadraticInterpolant, aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ext::_ClampOrFill
-) = _quadratic_eval_at_anchor(itp.y, itp.a, itp.d, aq, op, ext)
+) = _quadratic_eval_at_anchor(
+    itp.y, itp.a, itp.d, aq, op, ext,
+    _deriv_oneunit(oneunit(eltype(itp.x)), op)
+)
 
 # ========================================
 # Vector Evaluation with Anchors
@@ -333,7 +336,7 @@ function (itp::QuadraticInterpolant{Tg, Tv})(
         aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
     ) where {Tg, Tv, Tq <: Real}
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)

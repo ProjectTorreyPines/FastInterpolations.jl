@@ -19,15 +19,20 @@
         y::AbstractVector{Tv},
         dy::AbstractVector,
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Compile-time cell-geometry types at the value-matched width (y ∪ dy): the
+    # converts are no-ops for float/duck/Unitful axes and float an Int axis's
+    # `inv(h)::Float64` to the value width. dL keeps query blood (Dual partials).
+    Tw = _hermite_grid_float(Tg, Tv, eltype(dy))
+    Tinv = _promote_eltype(_inv_op, Tw)
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
     dL = xq - xL
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
+    h = convert(Tw, _get_h(x, idx))
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
@@ -43,8 +48,17 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    return _hermite_eval_at_point(x, y, dy, xq, InBounds(), op, searcher)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search).
+    # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
+    # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    Tw = _hermite_grid_float(Tg, Tv, eltype(dy))
+    Tinv = _promote_eltype(_inv_op, Tw)
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
+    dL = xq - xL
+    h = convert(Tw, _get_h(x, idx))
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
@@ -57,13 +71,14 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
-    if xq_primal < _extract_primal(first(x))
-        return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > _extract_primal(last(x))
-        return _eval_extrapolation(op, last(y), extrap, xq)
-    end
+    st = _oob_state(x, xq_primal)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, deriv_oneunit)
     return _hermite_eval_at_point(x, y, dy, xq, InBounds(), op, searcher)
 end
 
@@ -88,29 +103,29 @@ end
 # more robust than relying on LLVM loop unswitching, which can give up on
 # union splitting when the inner kernel exceeds heuristic size thresholds.
 @inline function _hermite_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap_eff = _check_domain(x, xq, extrap)
     return _hermite_vector_loop_inner!(output, x, y, dy, xq, extrap_eff, deriv, searcher)
 end
 
 @inline function _hermite_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
     end
@@ -129,18 +144,23 @@ end
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Compile-time value-matched width (value space = y — slopes derive from y):
+    # local slopes AND the kernel cell geometry all run at `Tw`, so a raw Int
+    # axis stops minting `inv(Int)::Float64` beside narrower data. dL keeps
+    # query blood (Dual-query safety).
+    Tw = _promote_grid_float(Tg, Tv)
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
     n = _data_length(x)
-    dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx_R, n)
+    dyL = _local_slope(Tw, sm, x, y, idx, n)
+    dyR = _local_slope(Tw, sm, x, y, idx_R, n)
     dL = xq - xL
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
+    h = _get_h(Tw, x, idx)
+    inv_h = _get_inv_h(Tw, x, idx)
     yr = _raw(y)
     @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
@@ -155,8 +175,21 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    return _hermite_eval_at_point(x, y, sm, xq, InBounds(), op, searcher)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search).
+    # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
+    # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    # Value-matched width for slopes + cell geometry — see the InBounds arm above.
+    Tw = _promote_grid_float(Tg, Tv)
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
+    n = _data_length(x)
+    dyL = _local_slope(Tw, sm, x, y, idx, n)
+    dyR = _local_slope(Tw, sm, x, y, idx_R, n)
+    dL = xq - xL
+    h = _get_h(Tw, x, idx)
+    inv_h = _get_inv_h(Tw, x, idx)
+    yr = _raw(y)
+    @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -168,13 +201,14 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
-    if xq_primal < _extract_primal(first(x))
-        return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > _extract_primal(last(x))
-        return _eval_extrapolation(op, last(y), extrap, xq)
-    end
+    st = _oob_state(x, xq_primal)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, deriv_oneunit)
     return _hermite_eval_at_point(x, y, sm, xq, InBounds(), op, searcher)
 end
 
@@ -195,29 +229,29 @@ end
 # resolves domain, inner sees concrete `extrap` (see pre-baked-slopes
 # variant above for rationale).
 @inline function _hermite_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap_eff = _check_domain(x, xq, extrap)
     return _hermite_vector_loop_inner!(output, x, y, sm, xq, extrap_eff, deriv, searcher)
 end
 
 @inline function _hermite_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, sm, xq[i], extrap, deriv, searcher)
     end

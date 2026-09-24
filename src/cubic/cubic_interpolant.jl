@@ -31,161 +31,6 @@ end
 end
 
 # ========================================
-# Anchored Query Evaluation
-# ========================================
-
-"""
-    (itp::CubicInterpolant)(aq::_CubicAnchoredQuery; deriv::DerivOp=EvalValue()) -> Tv
-
-Evaluate cubic spline using precomputed anchor weights.
-
-This is the ultra-fast evaluation path that skips interval search and
-geometry computation. The caller must ensure the anchor was built for
-the same grid as the interpolant. Derivatives are selected at evaluation time via
-the `deriv` keyword, matching `itp(xq; deriv=...)`.
-
-# Performance
-- 4 loads (yL, yR, zL, zR)
-- 4 weight loads (from anchor struct, likely in registers)
-- 3 FMAs + 1 mul (dot product)
-- Total: ~8 FP ops vs ~14 for standard path + no interval search
-
-# Example
-```julia
-x = collect(range(0.0, 1.0, 101))
-itp = cubic_interp(x, sin.(2π .* x))
-aq = _anchor_query(x, 0.35, Val(:cubic))
-
-itp(aq)  # Ultra-fast evaluation
-```
-"""
-@inline function (itp::CubicInterpolant{Tg, Tv})(aq::_CubicAnchoredQuery{Tg, Tq}; deriv::DerivOp = EvalValue()) where {Tg, Tv, Tq <: Real}
-    # Fast path: inside domain (most common case)
-    if aq.state == IN_DOMAIN
-        return _eval_anchored_kernel(itp, aq, deriv)
-    end
-
-    # Outside domain: dispatch on extrapolation mode
-    return _eval_anchored_extrap(itp, aq, itp.extrap, deriv)
-end
-
-"""
-    _eval_anchored_kernel(itp, aq, op) -> Tv
-
-Thin wrapper: delegates to shared `_cubic_eval_kernel(y, z, aq, op)` in cubic_anchor.jl.
-"""
-@inline _eval_anchored_kernel(itp::CubicInterpolant, aq::_CubicAnchoredQuery, op::AbstractEvalOp) =
-    _cubic_eval_kernel(itp.y, itp.z, aq, op)
-
-# ========================================
-# Anchored Extrapolation Handlers (thin wrappers)
-# ========================================
-
-# NoExtrap - throw DomainError with enriched bounds
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg, Tv, Tq <: Real}
-    x_min, x_max = first(itp.cache.x), last(itp.cache.x)
-    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
-end
-
-# ClampExtrap / FillExtrap - delegate to shared
-@inline _eval_anchored_extrap(itp::CubicInterpolant, aq::_CubicAnchoredQuery, extrap::_ClampOrFill, op::AbstractEvalOp) =
-    _cubic_eval_at_anchor(itp.y, itp.z, aq, op, extrap)
-
-# ExtendExtrap - delegate to shared kernel
-@inline _eval_anchored_extrap(itp::CubicInterpolant, aq::_CubicAnchoredQuery, ::ExtendExtrap, op::AbstractEvalOp) =
-    _cubic_eval_kernel(itp.y, itp.z, aq, op)
-
-# WrapExtrap - delegate to shared kernel
-@inline _eval_anchored_extrap(itp::CubicInterpolant, aq::_CubicAnchoredQuery, ::WrapExtrap, op::AbstractEvalOp) =
-    _cubic_eval_kernel(itp.y, itp.z, aq, op)
-
-# ========================================
-# Vector Anchored Query Evaluation
-# ========================================
-
-"""
-    _eval_anchored_vector_loop!(output, itp, aq, op) -> output
-
-Internal kernel for batch anchored evaluation.
-
-Iterates through anchor vector, dispatching each to existing scalar kernels:
-- `_eval_anchored_kernel` for inside-domain (state == IN_DOMAIN)
-- `_eval_anchored_extrap` for outside-domain (state != IN_DOMAIN)
-
-For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
-"""
-@inline function _eval_anchored_vector_loop!(
-        output::AbstractVector{Tv},
-        itp::CubicInterpolant{Tg, Tv},
-        aq::AbstractVector{<:_CubicAnchoredQuery{Tg}},
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds for k in eachindex(aq, output)
-        aq_k = aq[k]
-        if aq_k.state == IN_DOMAIN
-            # Fast path: inside domain
-            output[k] = _eval_anchored_kernel(itp, aq_k, op)
-        else
-            # Extrapolation path (may throw for NoExtrap)
-            output[k] = _eval_anchored_extrap(itp, aq_k, itp.extrap, op)
-        end
-    end
-    return output
-end
-
-"""
-    (itp::CubicInterpolant{Tg,Tv})(aq::AbstractVector{<:_CubicAnchoredQuery{Tg}}; deriv::DerivOp=EvalValue()) -> Vector{Tv}
-
-Evaluate cubic spline at multiple anchored query points (allocating).
-
-# Extrapolation Behavior
-- `NoExtrap()`: Throws `DomainError` on **first** out-of-domain anchor
-- `ClampExtrap()`: Returns boundary value (or zero for derivatives)
-- `ExtendExtrap()`: Uses boundary polynomial extrapolation
-- `WrapExtrap()`: Uses pre-wrapped coordinates from anchor construction
-
-# Example
-```julia
-x = collect(range(0.0, 1.0, 101))
-itp = cubic_interp(x, sin.(2π .* x))
-aq_vec = _anchor_query(x, [0.15, 0.35, 0.5], Val(:cubic))
-
-vals = itp(aq_vec)            # Value
-derivs = itp(aq_vec; deriv=DerivOp(1)) # First derivative
-```
-"""
-function (itp::CubicInterpolant{Tg, Tv})(
-        aq::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}};
-        deriv::DerivOp = EvalValue()
-    ) where {Tg, Tv, Tq <: Real}
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss from anchor
-    output = Vector{T_out}(undef, length(aq))
-    _eval_anchored_vector_loop!(output, itp, aq, deriv)
-    return output
-end
-
-"""
-    (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector{Tv}, aq::AbstractVector{<:_CubicAnchoredQuery{Tg}}; deriv::DerivOp=EvalValue()) -> AbstractVector{Tv}
-
-Evaluate cubic spline at multiple anchored query points (in-place, zero-allocation).
-
-# Example
-```julia
-output = Vector{Float64}(undef, length(aq_vec))
-itp(output, aq_vec; deriv=DerivOp(1))  # Zero allocation after warmup
-```
-"""
-function (itp::CubicInterpolant{Tg, Tv})(
-        output::AbstractVector{Tv},
-        aq::AbstractVector{<:_CubicAnchoredQuery{Tg}};
-        deriv::DerivOp = EvalValue()
-    ) where {Tg, Tv}
-    @assert length(output) == length(aq) "output length ($(length(output))) must match aq length ($(length(aq)))"
-    _eval_anchored_vector_loop!(output, itp, aq, deriv)
-    return output
-end
-
-# ========================================
 # Internal Build Helpers
 # ========================================
 # These helpers unify the interpolant construction logic,
@@ -207,17 +52,19 @@ so the pool memory can be safely reused after this function returns.
         bc_pair::BCPair{L, R},
         extrap::AbstractExtrap,
         autocache::Bool,
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch();
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, L <: PointBC, R <: PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
-    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
-    extrap_p = _resolve_extrap(extrap, cache.x, Tv)
-    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search)
+    # 3-arg form: promote the FillExtrap value into the solved value space
+    # (`cache.x` is the float axis) — no-op for other extraps.
+    extrap_p = _resolve_extrap(extrap, cache.x, _value_type(Tv, eltype(cache.x)))
+    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search; store = store)
 end
 
 """
@@ -236,19 +83,20 @@ so the pool memory can be safely reused after this function returns.
         y::AbstractVector{Tv},
         bc::PeriodicBC,
         autocache::Bool,
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch();
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(bc, y)
     cache = _get_cubic_cache(x, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
-    Tz = _output_eltype(eltype(y), eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), eltype(y))
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc)
     # Normalize stored bc to `:inclusive` (matching cache state) with period
     # materialized for introspection. Prevents re-extension when this
     # interpolant is later passed to `cubic_adjoint(itp.cache.x; bc=itp.bc)`.
     bc_normalized = _with_resolved_period(_bc_after_extend(bc), cache.bc.period)
-    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(), search)
+    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(), search; store = store)
 end
 
 # ========================================
@@ -317,30 +165,32 @@ val = itp(0.5)  # returns ComplexF64
         bc::AbstractBC,
         extrap::AbstractExtrap,
         autocache::Bool,
-        search::P = AutoSearch()
+        search::P = AutoSearch();
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     if _is_periodic_bc(bc)
-        return _build_interpolant_periodic(x, y, bc, autocache, search)
+        return _build_interpolant_periodic(x, y, bc, autocache, search; store = store)
     else
-        bc_pair = _normalize_bc(bc, first(y))
-        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
+        bc_pair = _normalize_bc(bc, x, y)
+        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search; store = store)
     end
 end
 
-# Unified entry: handles all grid types including duck-typed (Dual).
+# Unified entry: ONE native path for every grid eltype (Real, Dual,
+# unit-carrying). BC payloads travel verbatim — the solver's RHS rules promote
+# them in place (never pre-convert into value space).
 function cubic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv};
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
-        search::P = AutoSearch()
-    ) where {Tg, Tv, P <: AbstractSearchPolicy}
-    Tg_f = _promote_grid_float(Tg, Tv)
-    xc = _store_grid(x, Tg_f)
-    Tv_out = _value_type(Tv, Tg_f)
-    bc_promoted = _promote_bc(bc, Tv_out)
-    return _cubic_interp_impl(xc, y, bc_promoted, extrap, autocache, search)
+        search::P = AutoSearch(),
+        store::StorePolicy = StorePolicy()
+    ) where {Tg <: Number, Tv, P <: AbstractSearchPolicy}
+    _check_grid_orderable(Tg)
+    xc = _store_grid(x, _promote_grid_float(Tg, Tv))
+    return _cubic_interp_impl(xc, y, bc, extrap, autocache, search; store = store)
 end
 
 """
@@ -366,22 +216,25 @@ so the pool memory can be safely reused after this function returns.
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv};
         extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
+        search::P = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op2, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
-    _solve_system!(tmp_z, cache, y, cache.bc)
+    # Rehydrate structural placeholder payloads (cache stores value-free zeros).
+    bc_solve = cache.bc isa PeriodicBC ? cache.bc : _normalize_bc(cache.bc, cache.x, y)
+    _solve_system!(tmp_z, cache, y, bc_solve)
 
     if cache.bc isa PeriodicBC
         _check_periodic_endpoints(y)
         # Store cache.bc verbatim (already :extended/:inclusive normalized).
-        return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search)
+        return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search; store = store)
     end
 
-    # cache.bc is BCPair - use it directly.
-    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
-    extrap_p = _resolve_extrap(extrap, cache.x, Tv)
-    return CubicInterpolant(cache, y, tmp_z, cache.bc, extrap_p, search)
+    # 3-arg form: promote the FillExtrap value into the solved value space
+    # (`cache.x` is the float axis) — no-op for other extraps.
+    extrap_p = _resolve_extrap(extrap, cache.x, _value_type(Tv, eltype(cache.x)))
+    return CubicInterpolant(cache, y, tmp_z, bc_solve, extrap_p, search; store = store)
 end
 
 

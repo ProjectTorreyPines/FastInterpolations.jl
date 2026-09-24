@@ -102,6 +102,11 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 @inline Base.first(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1]
 @inline Base.last(g::_ExclusivePeriodicAxis) = g._x_max
 
+# Classification bounds: inner's widened left endpoint (so the true left endpoint
+# maps to the first cell, not the seam) + the virtual seam `_x_max`. Wrap-fold
+# geometry still uses the actual `inner[1]`/`_x_max`.
+@inline _domain_bounds(g::_ExclusivePeriodicAxis) = (_domain_bounds(g.inner)[1], g._x_max)
+
 # Forward `step` to inner — meaningful only when inner is a Range/`_CachedRange`
 # (uniform-spacing). Vector inners will hit the inner's `MethodError(::step)`,
 # which is the desired behavior: callers asking for `step` already assume a
@@ -218,6 +223,14 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int) =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx) : @inbounds(inv(g._x_max - g.inner[idx]))
 
+# Width-first shield (`_ExclusivePeriodicAxis <: AbstractVector` — must not fall
+# into the raw-span row in cached_vector.jl): interior cells thread `Tw` into the
+# inner's own width-first row; the seam converts its span first (span-then-convert,
+# see cached_vector.jl), so the reciprocal is born at `Tw`.
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, g::_ExclusivePeriodicAxis, idx::Int) where {Tw} =
+    idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx) :
+    @inbounds(inv(convert(Tw, g._x_max - g.inner[idx])))
+
 # No `_CachedRange`-specific specialization for `_get_h` / `_get_inv_h`: the
 # generic wrapper overload above already does the right thing for both
 # `_CachedRange` and `_CachedVector` / `Vector` inners — interior cells
@@ -236,8 +249,13 @@ end
 #   - `g.inner[1]` instead of `first(g)` → `inner.lo` directly (no Base.first
 #     dispatch through wrapper → inner getindex chain).
 #   - `g._x_max` → cached field, single load.
-@inline _wrap_to_domain(xq, g::_ExclusivePeriodicAxis) =
-    _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
+@inline function _wrap_to_domain(xq, g::_ExclusivePeriodicAxis)
+    # In-domain by the inner's widened bounds → no fold (the true left endpoint
+    # must stay in the first cell, not fold to the seam). Only genuinely-OOB
+    # queries fold against the actual seam span `[inner[1], _x_max]`.
+    _is_inbounds(g, xq) && return xq
+    return _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
+end
 
 # 4-arg `(g, idx, xL, xR)` form. Search already produced all four; dispatch
 # picks the per-type cheapest path.
@@ -246,10 +264,24 @@ end
 #   - `idx == length(g.inner)` (seam cell): inner's idx-lookup would index
 #      out of `inv_h` (length n-1). Use `xR - xL` directly — caller already
 #      has `xR == g._x_max` from search, so this is the natural seam width.
-@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::TL, xR::TR) where {TL, TR} =
     idx < length(g.inner) ? _get_h(g.inner, idx, xL, xR) : xR - xL
-@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::TL, xR::TR) where {TL, TR} =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
+
+# Width-first search-result form: interior delegates to the inner axis's row
+# (cached reciprocal when wrapped); the seam cell has no stored width — span-first
+# from the search endpoints (`xR == g._x_max`), reciprocal born at `Tw`.
+@inline Base.@propagate_inbounds function _get_inv_h(
+        ::Type{Tw},
+        g::_ExclusivePeriodicAxis,
+        idx::Int,
+        xL::TL,
+        xR::TR,
+    ) where {Tw, TL, TR}
+    return idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx, xL, xR) :
+        inv(convert(Tw, xR - xL))
+end
 
 # `_alpha_of` for the wrapper: seam-aware so the value computation shares a
 # denominator with the 4-arg `_get_inv_h` at the seam cell.
@@ -269,8 +301,8 @@ end
 # `inner[end] < _x_max`, so `inner[idx+1] == _x_max` is unreachable for
 # interior cells. At the seam, the wrapper's `search_interval` returns
 # `xR = g._x_max` by direct field read — bit-equal to the comparand here.
-@inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
-    R == g._x_max ? (q - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
+@inline _alpha_of(q, L, R, g::_ExclusivePeriodicAxis) =
+    R == g._x_max ? (_coord_value(q) - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
 
 # ========================================
 # View specialization: preserve wrapper for full-virtual range
@@ -395,6 +427,12 @@ end
 # `_CachedRange`/`_CachedVector` → wrapper) live in their owner files
 # (`cached_range.jl` / `cached_vector.jl`).
 @inline _resolve_axis(g::_ExclusivePeriodicAxis) = g
+# 2-arg/3-arg `:exclusive`: a pre-wrapped axis passes through — do NOT re-wrap. Without these,
+# `_ExclusivePeriodicAxis <: AbstractVector` sends it into the raw-Vector `:exclusive` arms
+# (`cached_vector.jl`), nesting toward length (n+1)+1 and throwing in the ctor. Mirrors the
+# `_cache_axis` passthroughs below; non-exclusive 2-/3-arg forms already fall to the raw `= x` arm.
+@inline _resolve_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
+@inline _resolve_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
@@ -480,7 +518,7 @@ query is past `g.inner[n]`, return the seam tuple `(n, x[n], x[1]+period)`.
 Otherwise delegate to standard binary search on the raw inner Vector — zero
 wrapper overhead for the hot loop.
 """
-@inline function _search_binary(g::_ExclusivePeriodicAxis{T}, xq::Real) where {T}
+@inline function _search_binary(g::_ExclusivePeriodicAxis{T}, xq) where {T}
     n = length(g.inner)
     @inbounds if xq >= g.inner[n]
         return n, g.inner[n], g.inner[1] + g.period
@@ -526,7 +564,7 @@ end
 # in O(1) (single mul/floor/clamp). Forcing `_search_binary` instead would
 # downgrade Range axes to O(log n), which scales as the bench shows
 # (Range Per-excl: 3.5 ns @ N=10 → 44 ns @ N=10000).
-@inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real)
+@inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq)
     n = length(g.inner)
     @inbounds if xq >= g.inner[n]
         # Seam-cell write-back: `_search_interval_real` is the path that
@@ -540,3 +578,18 @@ end
     idx, xL, xR = _search_interval_real(s, g.inner, xq)
     return idx, idx + 1, xL, xR
 end
+
+# InBounds fast path must NOT bypass the seam. The generic
+# `search_interval(s, x::AbstractVector, xq, ::InBounds)` (search.jl) routes any `AbstractVector`
+# — including `_ExclusivePeriodicAxis` — into `_search_interval_real_inbounds`, which delegates to
+# `_search_interval_real(s, g, xq)`: undefined for the periodic axis (the *inner* range is the
+# searchable object, and a seam query needs the wrap cell). A periodic axis is never genuinely
+# `InBounds`-lean (WrapExtrap semantics), so route it to the seam-aware 3-arg search verbatim —
+# restoring the pre-lean-work dispatch. Reached e.g. from `_cubic_interp_periodic_scalar`'s
+# in-bounds branch, which passes `InBounds()` on a `_ExclusivePeriodicAxis` grid.
+@inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq, ::InBounds) =
+    search_interval(s, g, xq)
+# Disambiguate `_ExclusivePeriodicAxis × GridIdx × InBounds` (vs the generic GridIdx short-circuit)
+# → seam-aware 3-arg search, which has its own periodic `::GridIdx` overload.
+@inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::GridIdx, ::InBounds) =
+    search_interval(s, g, xq)

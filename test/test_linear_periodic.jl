@@ -154,7 +154,7 @@
     end
 
     @testset "ND Exclusive — auto-infer period on ND oneshot (regression)" begin
-        # Same class of bug as above, via _search_all_intervals_stencil → _resolve_search per axis.
+        # Same class of bug as above, via _search_all_axis_intervals → _resolve_search per axis.
         x = range(0.5, step = 1.0, length = 3)         # axis-1 periodic-exclusive (period auto)
         y = range(0.0, 1.0, length = 4)                # axis-2 NoBC
         data = [10xi + yj for xi in x, yj in y]
@@ -530,7 +530,7 @@
         # The unified `_multilinear_sum` is @generated and unrolls to 2^N corners.
         # Existing seam-cell tests are N=2 only; this exercises the N=3 unroll
         # with a wrapped corner on axis 1, ensuring the @generated body addresses
-        # `stencils[1][2] == 1` (wrap) correctly for any N.
+        # `intervals[1][2] == 1` (wrap) correctly for any N.
         x = collect(range(0.0, step = 1.0, length = 4))    # axis 1 periodic, period 4
         yy = collect(range(0.0, step = 1.0, length = 3))   # axis 2 NoBC
         zz = collect(range(0.0, step = 1.0, length = 3))   # axis 3 NoBC

@@ -108,7 +108,7 @@ struct CubicHermiteInterpolantND{
             searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ) where {Tg, Tv, N, NP1}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        grids_c = _convert_cache_axes(grids, bcs, Tg)
         return new{Tg, Tv, N, NP1, typeof(grids_c), typeof(bcs), typeof(extraps), typeof(searches)}(
             grids_c, nodal_derivs, bcs, extraps, searches,
         )

@@ -25,10 +25,23 @@ end
 # `dL` carrier (e.g. `Dual` grid + `Float` xq → `Dual` dL). Trait infers the
 # exact return type via `promote_op`, so scalar/batch agree (Int×Int×Int → Int;
 # SVector × Dual → SVector{Dual}; Float y × Dual grid → Dual; etc.).
-@inline _constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)
+@inline _select_op(xL, yv, xq) = yv * one(xq - xL)
 
-@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+# Constant's exception to the default axis resolution (`_axis_grid_eltype` in
+# core): selection never divides by the spacing, so the axis is NOT value-matched
+# to a float — an Int grid stays Int, which is what keeps `Int` data returning
+# `Int` instead of `Float64`.
+@inline _axis_grid_eltype(::typeof(_select_op), ::Type{Tg}, ::Type{Tv}) where {Tg, Tv} = Tg
+
+# A `GridIdx` query resolves to `GridIdx{Tg}(k, x[k])` before the kernel reads it, so its
+# output witness is the axis type — the unresolved wrapper's `Float64` payload would
+# select Int data into a Float64 buffer. One arm serves the 1D, persistent, unified and
+# ND traits (all fold through this call).
+@inline _promote_eltype(::typeof(_select_op), ::Type{Tg}, ::Type{Tv}, ::Type{<:GridIdx}) where {Tg, Tv} =
+    _promote_eltype(_select_op, Tg, Tv, Tg)
+
+@inline _promote_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    _promote_eltype(_select_op, Tg, Tv, Tq)
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
@@ -38,10 +51,10 @@ end
 # of RefHint's Ref, causing 16-byte heap allocation per call.
 # ─────────────────────────────────────────────────────────────
 @inline function _constant_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::AbstractVector{<:Real},
+        xq::AbstractArray,
         extrap::E,
         side::SD,
         deriv::O,
@@ -119,12 +132,17 @@ end
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv}
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
+    ) where {Tg <: Number, Tv}
+    _check_grid_orderable(Tg)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic/Linear).
     # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    x_eff = _cache_axis(x_ext, bc_eff, Tg)
+    x_eff = _policy_axis(x_ext, bc_eff, Tg, store)
+    # Constant returns data values verbatim, so the fill lives in `Tv`: it is
+    # promoted there at construction, and one that `Tv` cannot represent (a NaN
+    # beside Int data) is rejected up front rather than at eval.
     extrap_p = _promote_extrap(extrap_eff, Tv)
-    return ConstantInterpolant(x_eff, y_ext, extrap_p, side, search; bc = bc_eff)
+    return ConstantInterpolant(x_eff, y_ext, extrap_p, side, search; bc = bc_eff, store = store)
 end

@@ -21,13 +21,16 @@ _CachedRange(x::AbstractRange{T}) where {T} = _to_float(x, T)
 Base.length(r::_CachedRange) = r.len
 Base.size(r::_CachedRange) = (r.len,)
 Base.first(r::_CachedRange) = r.lo
+# `_OneTo`: lo ≡ 1 is a type invariant — the literal return lets `lo == 1` tests
+# (e.g. the index-space search arm) constant-fold, like the `_get_h` ≡ one() fold.
+Base.first(r::_CachedRange{T, Tinv, _OneTo}) where {T, Tinv} = one(T)
 Base.last(r::_CachedRange) = r.hi
 Base.step(r::_CachedRange) = r.h
 function Base.getindex(r::_CachedRange, i::Int)
     @boundscheck checkbounds(r, i)
     i == 1 && return r.lo
     i == r.len && return r.hi
-    return muladd(i - 1, r.h, r.lo)
+    return muladd(i - 1, _get_h(r), r.lo)   # accessor: unit-step family folds the ×h
 end
 
 # Range slicing — return a new _CachedRange instead of falling back to a generic
@@ -40,12 +43,22 @@ end
 # Without this method, any code that windows or slices a `_CachedRange` (e.g. the
 # Hermite ND cell-local OnTheFly path in hetero_eval.jl) would silently degrade
 # its grid to a non-range type.
-@inline function Base.getindex(r::_CachedRange{T, Tinv}, idx::AbstractUnitRange{<:Integer}) where {T, Tinv}
+# Slice preserves the axis tag and re-derives its domain bracket through the
+# `_cached_range` factory: a sub-range of a unit-step grid is still unit-step, and a
+# sub-range of a `_WidenedDomain` grid stays widened — its endpoints are `muladd`
+# reconstructions too, so they keep the ±1-ULP cushion (a boundary-touching slice
+# recovers the original `prevfloat(lo)`/`nextfloat(hi)`).
+# Exception: `_OneTo` demotes to `_UnitStep` (`i_lo` is runtime, so the type-level
+# `lo ≡ 1` invariant can't survive a slice) — same folds; a 1-based slice still hits
+# the search's `lo == 1` arm.
+@inline _slice_tag(tag::_AbstractAxisTag) = tag
+@inline _slice_tag(::_OneTo) = _UnitStep()
+@inline function Base.getindex(r::_CachedRange{T, Tinv, Tag}, idx::AbstractUnitRange{<:Integer}) where {T, Tinv, Tag}
     @boundscheck checkbounds(r, idx)
     new_len = length(idx)
     # Empty slice: return a length-0 _CachedRange anchored at r.lo (callers that
     # would dereference this hit the same checkbounds wall they would on r itself).
-    new_len == 0 && return _CachedRange{T, Tinv}(r.lo, r.lo, r.h, r.inv_h, 0)
+    new_len == 0 && return _cached_range(_slice_tag(Tag()), r.lo, r.lo, r.h, r.inv_h, 0)
     i_lo = Int(first(idx))
     i_hi = Int(last(idx))
     # Reuse cached endpoints when the slice touches them — preserves the exact-bit
@@ -53,7 +66,7 @@ end
     # any downstream Tg-precision comparison stable.
     new_lo = i_lo == 1 ? r.lo : muladd(i_lo - 1, r.h, r.lo)
     new_hi = i_hi == r.len ? r.hi : muladd(i_hi - 1, r.h, r.lo)
-    return _CachedRange{T, Tinv}(new_lo, new_hi, r.h, r.inv_h, new_len)
+    return _cached_range(_slice_tag(Tag()), new_lo, new_hi, r.h, r.inv_h, new_len)
 end
 
 # `view` follows `getindex` semantics for ranges — both return a fresh range, no
@@ -77,11 +90,33 @@ on `StepRangeLen`, `LinRange`, `OrdinalRange`, etc.
 function _to_float(x::AbstractRange, ::Type{T}) where {T}
     h = T(step(x))
     inv_h = inv(h)
-    return _CachedRange{T, typeof(inv_h)}(T(first(x)), T(last(x)), h, inv_h, length(x))
+    return _cached_range(_Generic(), T(first(x)), T(last(x)), h, inv_h, length(x))
+end
+
+# Unit-step fast-path: `AbstractUnitRange` (`UnitRange` etc.) has step ≡ 1 by
+# type, so the grid is built from literal constants (`h = one(T)`, `inv_h = one(Tinv)`)
+# with no runtime division — `inv` is only in the compile-time type
+# `Tinv = typeof(inv(oneunit(T)))` (Float64 for `T=Int`, `T` for Float, per the
+# `_CachedRange` contract; skips the generic path's runtime `inv(step(x))`).
+# `T <: Real` = the index-space demotion gate (value-space ≡ index-space holds only
+# there; `one ≡ oneunit`). Non-Real targets fall to the generic arm above.
+@inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T <: Real}
+    Tinv = typeof(inv(oneunit(T)))
+    return _cached_range(_UnitStep(), T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
+end
+
+# `Base.OneTo`: 1-based by type → `_OneTo` tag (index-space search; `first` folds).
+# `1:n` deliberately keeps `_UnitStep` — a runtime `first(x) == 1` tag promotion would
+# make the interpolant type value-dependent (2^N Union in ND); the search's predicted
+# `lo == 1` arm covers that case instead.
+@inline function _to_float(x::Base.OneTo, ::Type{T}) where {T <: Real}   # demotion gate (see above)
+    Tinv = typeof(inv(oneunit(T)))
+    return _cached_range(_OneTo(), one(T), T(last(x)), one(T), one(Tinv), length(x))
 end
 
 # x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.
-# lo/hi may be ±1 ULP vs exact; domain_lo/domain_hi widened for safe _check_domain.
+# lo/hi may be ±1 ULP vs exact; the `_WidenedDomain` factory widens the domain bracket
+# for safe `_check_domain`.
 # ARM: TwicePrecision is fast, so generic AbstractRange path above is used instead.
 @static if Sys.ARCH === :x86_64
     function _to_float(
@@ -91,24 +126,21 @@ end
         h = FT(x.step)
         lo = muladd(1 - x.offset, h, FT(x.ref))
         hi = muladd(x.len - x.offset, h, FT(x.ref))
-
-        domain_lo = prevfloat(lo)
-        domain_hi = nextfloat(hi)
-        return _CachedRange{FT, FT}(lo, hi, h, inv(h), length(x), domain_lo, domain_hi)
+        return _cached_range(_WidenedDomain(), lo, hi, h, inv(h), length(x))
     end
 end
 
 # _CachedRange same-type pass-through: already normalized, return as-is.
 _to_float(x::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = x
 
-# _CachedRange type-mismatch (e.g. Float32 → Float64 via _convert_grid):
-# Uses 5-arg constructor (domain = exact). Any x86_64 domain widening from the source
-# is intentionally dropped: the type conversion itself introduces fresh rounding,
-# so re-widening would need to be based on the new FT, not the old T.
-function _to_float(x::_CachedRange, ::Type{T}) where {T}
+# _CachedRange type-mismatch (e.g. Float32 → Float64 via _convert_grid): re-derive the
+# domain bracket on the new-`T` endpoints through the factory, so a `_WidenedDomain`
+# source stays widened — its `prevfloat`/`nextfloat` cushion is recomputed for `T`,
+# which is the correct basis after the conversion's fresh rounding.
+function _to_float(x::_CachedRange{S, Si, Tag}, ::Type{T}) where {S, Si, Tag, T}
     h = T(x.h)
     inv_h = inv(h)
-    return _CachedRange{T, typeof(inv_h)}(T(x.lo), T(x.hi), h, inv_h, x.len)
+    return _cached_range(Tag(), T(x.lo), T(x.hi), h, inv_h, x.len)
 end
 
 """
@@ -123,9 +155,9 @@ Dispatch:
 """
 # domain_hi = hi_new (exact): the extension uses cached plain-T fields only
 # (no TwicePrecision involved), so no additional rounding uncertainty.
-@inline function _to_float_adding_endpoint(x::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv}
+@inline function _to_float_adding_endpoint(x::_CachedRange{T, Tinv, Tag}, ::Type{T}) where {T, Tinv, Tag}
     hi_new = x.hi + x.h
-    return _CachedRange{T, Tinv}(
+    return _CachedRange{T, Tinv, Tag}(
         x.lo, hi_new, x.h, x.inv_h, x.len + 1,
         x.domain_lo, hi_new
     )
@@ -145,12 +177,47 @@ end
 @inline _convert_copy(r::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = r
 @inline _convert_copy(r::_CachedRange, ::Type{T}) where {T} = _to_float(r, T)
 
-# 4-arg grid-based accessors: `(x, idx, xL, xR)`. All four are produced by
-# `search_interval`; the dispatch picks the cheapest field per axis type.
-# `_CachedRange` ignores all three because `h`/`inv_h` are scalar fields
-# (uniform spacing — same value for every cell).
-@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.h
-@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.inv_h
+# `_get_h` / `_get_inv_h` accessors. A `_CachedRange` is uniform, so one cached
+# `h`/`inv_h` answers every cell: all shapes delegate to the no-arg form, where the
+# `_UnitStep` (h ≡ inv_h ≡ 1) literal `one(T)` lives — LLVM then folds every
+# downstream `×h`/`×inv_h` to identity.
+@inline _get_h(x::_CachedRange) = x.h
+@inline _get_inv_h(x::_CachedRange) = x.inv_h
+@inline _get_h(::_CachedRange{T, Tinv, Tag}) where {T, Tinv, Tag <: _AbstractUnitStep} = one(T)
+@inline _get_inv_h(::_CachedRange{T, Tinv, Tag}) where {T, Tinv, Tag <: _AbstractUnitStep} = one(Tinv)
+# Inverse of the 2-cell span x[i+1]-x[i-1] (central-difference / cardinal interior).
+# A uniform range has span = 2h, so inv = inv_h/2; `_UnitStep` folds to one/2 = 0.5
+# (no division). 0.5 is exact (power of two) → one cached load + one multiply.
+@inline function _get_inv_2cell(x::_CachedRange, i::Int)
+    inv_h = _get_inv_h(x, i)
+    # Half must be DIMENSIONLESS at inv_h's precision — `oftype(inv_h, 0.5)`
+    # would demand (and wrongly square) inverse-coordinate units.
+    return inv_h * oftype(one(inv_h), 0.5)
+end
+# idx-shaped forms — `(x, idx)` (solver/coeff) and `(x, idx, xL, xR)` (from
+# `search_interval`) — ignore the extra args and delegate to the no-arg form.
+@inline _get_h(x::_CachedRange, ::Int) = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int) = _get_inv_h(x)
+@inline _get_h(x::_CachedRange, ::Int, ::TL, ::TR) where {TL, TR} = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int, ::TL, ::TR) where {TL, TR} = _get_inv_h(x)
+
+# Raw `AbstractRange` (non-_CachedRange) fallback via `step()` — pre-normalization paths only.
+@inline _get_h(x::AbstractRange, ::Int) = step(x)
+@inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
+
+# ── Width-first forms (Range hierarchy) — see cached_vector.jl for the contract.
+# `_CachedRange` reuses the cached reciprocal (convert is a no-op once the axis
+# is value-matched, e.g. `_CachedRange{Tw}` from `_resolve_axis(x, Tw)`); a raw
+# range differences via `step()` in its own eltype, converts the span, then divides.
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_h(x, i))
+@inline _get_inv_2cell(::Type{Tw}, x::_CachedRange, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_2cell(x, i))
+@inline _get_inv_h(::Type{Tw}, x::AbstractRange, ::Int) where {Tw} =
+    inv(convert(Tw, step(x)))
+# Search-result form: endpoints ignored — the cached (or step-derived) reciprocal wins.
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::TL, ::TR) where {Tw, TL, TR} =
+    _get_inv_h(Tw, x, i)
 
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping
@@ -158,12 +225,37 @@ end
 @inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(c::_CachedRange) = c
+# Tg-typed 2-arg (no BC): value-matched one-shot normalization — an Int/OneTo grid
+# beside Float32 data resolves to `_CachedRange{Float32}`, not the blind Float64.
+@inline _resolve_axis(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _resolve_axis(c::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
 
-# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
-@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
+# Shared convert-first wrapper for EVERY `:exclusive` axis site (one-shot + persistent, Range +
+# Vector — see cached_vector.jl). Resolving the period AGAINST the already-converted inner
+# (`_resolve_bc_period` normalizes it to the inner's eltype) is what stops a wider period literal
+# from re-widening a value-matched Tg axis through the `_ExclusivePeriodicAxis` ctor's seam
+# promote. Callers pass the inner at the width they want (`_to_float(x, Tg)` / raw / `_CachedVector`).
+@inline function _wrap_exclusive(inner, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(inner, bc)
+    return _ExclusivePeriodicAxis(inner, bc_resolved.period)
 end
+
+# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis` (natural float width).
+@inline _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_to_float(x, float(eltype(x))), bc)
+
+# 3-arg Tg-aware one-shot resolution — value-matched grid float so an Int/OneTo grid beside
+# Float32 data floats to Float32 (not the blind `float(eltype)`=Float64), matching the persistent
+# path and the natural `promote_type(grid, data, query)` output. Mirrors `_cache_axis(x, bc, Tg)`.
+@inline _resolve_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _resolve_axis(c::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
+# `:exclusive` — convert-first to Tg, then `_wrap_exclusive` resolves the period against the
+# Tg-typed inner. Diagonal (`_CachedRange` × `:exclusive`) is load-bearing against ambiguity
+# between the two arms above; `_convert_copy` keeps the Tg-matched wrap allocation-free.
+@inline _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_to_float(x, Tg), bc)
+@inline _resolve_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_convert_copy(c, Tg), bc)
 
 # ========================================
 # `_cache_axis` — persistent-path Range wrapping
@@ -175,25 +267,20 @@ end
 @inline _cache_axis(c::_CachedRange) = c
 @inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
 
-# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis`.
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
-end
-@inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
+# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis` (natural float width).
+@inline _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_to_float(x, float(eltype(x))), bc)
+@inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(c, bc)
 
 # 3-arg Tg-aware. Raw Range respects Tg via `_to_float`. Pre-wrapped passes
 # through — downstream `_convert_copy(_, Tg)` enforces Tg (intentional contract;
 # see DISPATCH TABLE in `periodic_axis.jl`).
 @inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 @inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
-end
+# Convert-first delegate (mirrors the Vector-side 3-arg): the 2-arg `_CachedRange`
+# arm resolves the period against the Tg-typed axis, so the period follows Tg.
+@inline _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _cache_axis(_to_float(x, Tg), bc)
 @inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
 
 # ========================================
@@ -202,3 +289,8 @@ end
 # Range types have stack-only `_CachedRange` — no pool buffer needed.
 @inline _cache_axis_pooled(_, x::AbstractRange) = _to_float(x, float(eltype(x)))
 @inline _cache_axis_pooled(_, x::_CachedRange) = x
+# 3-arg Tg-aware. Also load-bearing for dispatch: `AbstractRange <: AbstractVector`, so
+# without these a Range would fall into the pooled-Vector 3-arg overload (cached_vector.jl)
+# and lose its stack `_CachedRange` form.
+@inline _cache_axis_pooled(_, x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _cache_axis_pooled(_, x::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)

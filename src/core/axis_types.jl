@@ -37,10 +37,27 @@ normalized to `_CachedRange` via `_to_float` at public API boundaries.
 - `lo::T`, `hi::T` — cached `first`/`last`
 - `h::T`, `inv_h::Tinv` — cached `step` and reciprocal
 - `len::Int` — cached length
-- `domain_lo::T`, `domain_hi::T` — safe bounds for domain checks (= `lo`/`hi`
-  on the exact path; widened by ≈1 ULP on the x86_64 TwicePrecision fast path)
+- `domain_lo::T`, `domain_hi::T` — domain bracket read by `_domain_bounds` only for
+  a `_WidenedDomain` grid (widened ≈1 ULP on the x86_64 TwicePrecision fast path);
+  carried equal to `lo`/`hi` for `_Generic`/`_UnitStep`, which read `lo`/`hi` directly
 """
-struct _CachedRange{T, Tinv} <: AbstractRange{T}
+# Grid tag (3rd type param): a type-level marker for grid properties, kept open so
+# future kinds (log-spaced, reversed, …) — and `_CachedVector` — can reuse
+# `_AbstractAxisTag`. The `_AbstractUnitStep` family (mirrors Base's AbstractUnitRange)
+# pins step ≡ 1, folding ×h/×inv_h through the accessors; `_OneTo` additionally pins
+# `lo ≡ 1` (`first` returns a literal → `lo == 1` tests constant-fold). `_WidenedDomain`
+# lets `_domain_bounds` read the widened x86_64 bracket instead of `lo`/`hi`. Every
+# other call site dispatches on `::_CachedRange{T,Tinv}`, which matches all tags.
+abstract type _AbstractAxisTag end
+struct _Generic <: _AbstractAxisTag end       # default: step is a runtime field
+abstract type _AbstractUnitStep <: _AbstractAxisTag end
+struct _UnitStep <: _AbstractUnitStep end     # step ≡ 1 (from an AbstractUnitRange grid)
+struct _OneTo <: _AbstractUnitStep end        # step ≡ 1 AND lo ≡ 1 (from a Base.OneTo grid)
+# Widened 1-ULP domain bracket (x86_64 TwicePrecision reconstruction cushion);
+# mutually exclusive with the unit-step family.
+struct _WidenedDomain <: _AbstractAxisTag end
+
+struct _CachedRange{T, Tinv, Tag <: _AbstractAxisTag} <: AbstractRange{T}
     lo::T
     hi::T
     h::T
@@ -50,9 +67,21 @@ struct _CachedRange{T, Tinv} <: AbstractRange{T}
     domain_hi::T
 end
 
-# Exact 5-arg ctor: `domain_lo == lo`, `domain_hi == hi` (non-TwicePrecision).
-@inline function _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv}(lo, hi, h, inv_h, len, lo, hi)
+# Construction factory — the single home of domain-bracket construction: build a
+# `_CachedRange` from raw geometry, deriving `domain_lo`/`domain_hi` from the tag
+# *instance* (idiomatic trait dispatch, as with `NoExtrap()` / `EvalValue()`). Fresh
+# conversion, slicing, and diff-type rebuilds all route through it, so a tag's domain
+# invariant always holds — a `_WidenedDomain` range is *always* widened, never an
+# exact bracket under a widened tag. The generic method recovers the concrete tag via
+# `typeof(tag)` (constant-folded under specialization); `T`/`Tinv` are inferred from
+# the value arguments, so call sites carry no type parameters. The raw 7-arg inner
+# ctor stays for explicit-domain rebuilds (e.g. the asymmetric bracket in
+# `_to_float_adding_endpoint`).
+@inline function _cached_range(tag::_AbstractAxisTag, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
+    return _CachedRange{T, Tinv, typeof(tag)}(lo, hi, h, inv_h, len, lo, hi)
+end
+@inline function _cached_range(::_WidenedDomain, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
+    return _CachedRange{T, Tinv, _WidenedDomain}(lo, hi, h, inv_h, len, prevfloat(lo), nextfloat(hi))
 end
 
 # Identity passthrough — re-wrapping would discard the cached fields.
@@ -107,9 +136,50 @@ struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector
     end
 end
 
-# Convenience outer ctor — type params inferred from inputs.
-@inline _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg} =
-    _ExclusivePeriodicAxis{Tg, typeof(inner), typeof(period)}(inner, period)
+# ─────────────────────────────────────────────────────────────────────────────
+# _ReparamAxis — lazy dimensionless twin of a non-Real axis
+# ─────────────────────────────────────────────────────────────────────────────
+"""
+    _ReparamAxis{T, X<:AbstractVector, W, U} <: AbstractVector{T}
+
+Lazy `_reparam_op` view of a unit-carrying axis: element `i` is
+`inner[i] * scale` with `scale = inv(oneunit(eltype(inner)))`.
+
+The solver-family scaled store keeps `[Y]`-homogeneous partials, which pair
+with DIMENSIONLESS cell widths — and both consumers (the fiber solve and the
+separable integrate engine) only ever ask an axis for `getindex` and
+`_get_h`/`_get_inv_h`. So the twin needs no array of its own: it is a view,
+and its widths come from the parent's cache times a scalar.
+
+Methods + the outer ctor live in `nd_utils.jl` beside `_reparam_grids`, the
+only producer.
+
+# Fields
+- `inner::X` — the physical axis (possibly itself wrapped).
+- `scale::W` — the canonical `_deriv_oneunit(…, DerivOp(1))` witness.
+- `unit::U` — `oneunit(eltype(inner))`; restores `inv_h` without a division.
+"""
+struct _ReparamAxis{T, X <: AbstractVector, W, U} <: AbstractVector{T}
+    inner::X
+    scale::W
+    unit::U
+end
+
+# Convenience outer ctor — type params inferred from inputs. The element type
+# must hold the virtual seam point `inner[1] + period`, so widen a narrow grid
+# eltype against the period type before wrapping (an Int grid with a float period
+# would otherwise force `Int(period)` and throw). Zero-copy in the common
+# float-grid case (the period is float, so the widen is a no-op there).
+@inline function _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg}
+    Te = promote_type(Tg, typeof(period))
+    inner_e = _widen_axis_inner(inner, Te)
+    return _ExclusivePeriodicAxis{Te, typeof(inner_e), typeof(period)}(inner_e, period)
+end
+
+# Widen the wrapped grid to `Te` only when needed — dispatch (not a `?:`) keeps
+# the no-op case zero-copy and type-stable for the per-query one-shot path.
+@inline _widen_axis_inner(inner::AbstractVector{Te}, ::Type{Te}) where {Te} = inner
+@inline _widen_axis_inner(inner::AbstractVector, ::Type{Te}) where {Te} = _convert_copy(inner, Te)
 
 # Inner-ctor validation. No-op for Vector inners (period unverifiable);
 # Range inners cross-validate against `step × length` (= one period for the

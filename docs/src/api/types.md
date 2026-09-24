@@ -52,6 +52,12 @@ interp
 interp!
 ```
 
+### Query Containers
+
+```@docs
+GriddedQuery
+```
+
 ### Type Accessors
 
 ```@docs
@@ -154,6 +160,14 @@ AutoSearch
 BinarySearch
 LinearBinarySearch
 LinearSearch
+```
+
+## Storage Policy
+
+`StorePolicy` selects whether persistent interpolant constructors **copy** their inputs (the default, for immutability) or **alias** them (opt-in zero-copy reference storage). See the docstring for per-method support and the lifetime contract.
+
+```@docs
+StorePolicy
 ```
 
 ## Series Input Wrapper

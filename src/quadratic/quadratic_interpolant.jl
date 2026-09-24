@@ -27,31 +27,31 @@ end
 # blocks SROA of RefHint's Ref (16 B/call alloc).
 # ─────────────────────────────────────────────────────────────
 @inline function _quadratic_vector_loop!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
-        xq::AbstractVector{<:Real},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap_eff = _check_domain(x, xq, extrap)
     return _quadratic_vector_loop_inner!(output, x, y, a, d, xq, extrap_eff, deriv, searcher)
 end
 
 @inline function _quadratic_vector_loop_inner!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
-        xq::AbstractVector{<:Real},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
+        xq::AbstractArray{Tq},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
     end
@@ -63,7 +63,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=AutoSearch()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=AutoSearch(), store=StorePolicy()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -73,6 +73,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
+- `store::StorePolicy`: Copy (default) or alias the grid/values; see [`StorePolicy`](@ref)
 
 # Returns
 `QuadraticInterpolant` object for scalar/broadcast evaluation.
@@ -124,21 +125,23 @@ end
         y::AbstractVector{TY};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
+    ) where {TX <: Number, TY}
+    _check_grid_orderable(TX)
     Tg = _promote_grid_float(TX, TY)
     Tv = _value_type(TY, Tg)
     # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,
     # Vector → `_CachedVector{Tg, Tinv}` aliasing user buffer. Mirrors
-    # Linear/Constant — outer is reference-only, inner constructor takes
-    # ownership via `_convert_copy(x, Tg)` / `_convert_copy(y, Tv)`.
-    x_eff = _cache_axis(x, NoBC(), Tg)
+    # Linear/Constant — outer is reference-only; the inner constructor copies
+    # (default) or aliases per `store` via `_own_or_ref_{axis,values}`.
+    x_eff = _policy_axis(x, NoBC(), Tg, store)
     bc_p = _normalize_bc(bc, first(y))
 
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_eff))
 
-    # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg)).
+    # Compute coefficients (d::Tc, a::Tc where Tc = _promote_eltype(_coeff_op, Tg, Tv)).
     # Solver's output buffer is allocated with the right element type
     # regardless of y's raw eltype, so passing raw y is safe. The wrapped
     # axis `x_eff` carries `h`/`inv_h` directly via `_get_h(x, i)`.
@@ -146,5 +149,5 @@ end
 
     # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, x_eff, Tv)
-    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p)
+    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p; store = store)
 end

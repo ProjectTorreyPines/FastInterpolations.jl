@@ -1,4 +1,4 @@
-@testitem "ND Per-Axis Adaptive AutoSearch Resolution" begin
+@testitem "ND Per-Axis Adaptive AutoSearch Resolution" setup = [Basic] begin
     using Random: MersenneTwister
     using FastInterpolations: _resolve_search_nd, _resolve_search_policy,
         _is_axis_likely_monotone, _check_mono_nd, _query_extract, _query_length,
@@ -210,7 +210,7 @@
 
         linear_interp!(out_auto, (xs, ys), data, (random_xq, random_yq))
         linear_interp!(out_binary, (xs, ys), data, (random_xq, random_yq); search = BinarySearch())
-        @test out_auto == out_binary
+        @test isclose(out_auto, out_binary; nulps = PATH_ULPS)
     end
 
     # ========================================

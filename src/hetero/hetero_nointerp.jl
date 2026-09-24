@@ -35,9 +35,9 @@ Example: `data` is 3D, `query = (0.5, GridIdx(5), 0.3)` → `@view data[:, 5, :]
     idx_exprs = [d in grididx_dims ? :(query[$d].idx) : :(:) for d in 1:N]
     bounds_checks = [
         :(
-                1 <= query[$d].idx <= size(data, $d) ||
+            1 <= query[$d].idx <= size(data, $d) ||
                 _throw_grididx_oob($d, query[$d].idx, size(data, $d))
-            )
+        )
             for d in grididx_dims
     ]
     return quote
@@ -225,9 +225,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     # Use grid length as the canonical size (works for both _HeteroPartials and raw Array)
     bounds_checks = [
         :(
-                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+            1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                 _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-            )
+        )
             for d in nointerp_dims
     ]
 
@@ -384,7 +384,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
                 rsrc = ($(r_searches...),)
                 search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
                 hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-                Tr = _output_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
+                Tr = _promote_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
 
                 # Pre-search: mutates user hints (real-axis subset) to absolute indices.
                 idxs_r, _, _ = _search_all_intervals(q_eval, rg, search_r, hint_r)
@@ -419,7 +419,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-            Tr = _output_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
+            Tr = _promote_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
             full_windows_r = ($(r_full_windows...),)
             result = _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r, full_windows_r)
             $deriv_zero_wrap
@@ -433,7 +433,7 @@ end
 # Pre-slices data at GridIdx positions, filters all tuples to Real-only axes,
 # then delegates to the existing reduced-dim interp one-shot API.
 #
-# Dispatch: Tuple{Float64, GridIdx} does NOT match Tuple{Vararg{Real, N}},
+# Dispatch: Tuple{Float64, GridIdx} does NOT match Tuple{Vararg{Number, N}},
 # so Julia selects this method only when at least one GridIdx is present.
 
 """
@@ -470,7 +470,7 @@ function _interp_nointerp_oneshot(
         extrap,
         search,
         hint,
-    ) where {N, Q <: Tuple{Vararg{Real, N}}}
+    ) where {N, Q <: Tuple{Vararg{Number, N}}}
     _validate_grididx_query_oneshot(query, data)
 
     # Pre-slice data and filter all tuples to Real-only axes
@@ -489,7 +489,7 @@ function _interp_nointerp_oneshot(
     if grids_r === ()
         if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
             Tg = float(_promote_grid_eltype(grids))
-            return data_r[] * zero(_output_eltype(eltype(data), Tg))
+            return data_r[] * zero(_promote_eltype(eltype(data), Tg))
         end
         return data_r[]
     end
@@ -543,7 +543,7 @@ end
 # the optimal locate-once path (_locate_cell once → _eval_at_cell per component).
 @inline function gradient(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _gradient_generic(itp, query, hint)
@@ -553,7 +553,7 @@ end
 
 @inline function hessian(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _hessian_generic(itp, query, hint)
@@ -564,7 +564,7 @@ end
 @inline function hessian!(
         H::AbstractMatrix,
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _hessian_generic!(H, itp, query, hint)
@@ -574,7 +574,7 @@ end
 
 @inline function laplacian(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _laplacian_generic(itp, query, hint)
@@ -584,7 +584,7 @@ end
 
 @inline function value_gradient(
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _value_gradient_generic(itp, query, hint)
@@ -597,7 +597,7 @@ end
 @inline function gradient!(
         G::AbstractVector,
         itp::HeteroInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{Number, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     _has_nointerp_method(typeof(itp.methods)) || return _gradient_generic!(G, itp, query, hint)
@@ -623,7 +623,7 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
 @generated function _gradient_nointerp(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     # Use promoted type for zero (handles Float32 data + Float64 query)
@@ -645,9 +645,9 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
         # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
         bounds_checks = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         return quote
@@ -673,7 +673,7 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
 @generated function _hessian_nointerp(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -705,9 +705,9 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
         # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
         bounds_checks = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         return quote
@@ -738,7 +738,7 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
         H::AbstractMatrix,
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -775,9 +775,9 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
         # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
         bounds_checks = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         return quote
@@ -816,23 +816,23 @@ Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated ax
 @generated function _laplacian_nointerp(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Number, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     terms = [
         begin
-                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
-                :(_eval_nointerp(itp, query, $ops, itp.searches, hint))
-            end for i in 1:N if !(i in nointerp_dims)
+            ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+            :(_eval_nointerp(itp, query, $ops, itp.searches, hint))
+        end for i in 1:N if !(i in nointerp_dims)
     ]
 
     if isempty(terms)
         # All-NoInterp: validate query before returning zero
         bounds_checks_lap = [
             :(
-                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
                     _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
-                )
+            )
                 for d in nointerp_dims
         ]
         # Use promoted type for zero (handles Float32 data + Float64 query)
@@ -874,9 +874,9 @@ expand to standard batch format and let the normal path handle them.
     N = fieldcount(Q)
     exprs = [
         if fieldtype(Q, d) <: GridIdx && !(fieldtype(M, d) <: NoInterp)
-                :(fill(grids[$d][queries[$d].idx], nq))
+            :(fill(grids[$d][queries[$d].idx], nq))
         else
-                :(queries[$d])
+            :(queries[$d])
         end
             for d in 1:N
     ]
@@ -938,7 +938,7 @@ function _interp_batch_with_grididx!(
         hint = nothing,
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
 
     # Quick check: filter Real-only axes for batch length
     queries_r_initial = _filter_real_batch_queries(queries)

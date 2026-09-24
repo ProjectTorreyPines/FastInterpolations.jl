@@ -8,6 +8,21 @@
 @noinline _throw_grid_too_small(n::Int) =
     throw(ArgumentError("x must have at least 2 elements, got $n"))
 
+# ── Branchless clamp ──
+# Float: `min(max(x, lo), hi)` lowers to 2 ops (`fmax; fmin`); `Base.clamp(x, lo, hi)`
+# lowers to 4 (`fcmp; fcsel; fcmp; fcsel`) — also branchless (conditional-select, NOT
+# branches), but a longer dependency chain. So min/max is a constant ~2-op win on the
+# critical path, independent of query distribution: there is no branch to mispredict, so
+# the margin is flat across OOB ratios (measured on arm64, incl. 0% OOB). Int: both forms
+# emit identical branchless code (`cmp; csinc; cmp; csel`), so the search-index clamps are
+# unaffected — the helper is used there only to keep one consistent call site.
+@inline _clamp(x, lo, hi) = min(max(x, lo), hi)
+# A GridIdx is in-domain by construction (bounds-checked at resolution), so clamping it to
+# the grid domain is a no-op: skip the `min/max` entirely and pass it through. This also
+# keeps the value a GridIdx so the downstream `search_interval` takes the index
+# short-circuit instead of promoting it to a plain, searched coordinate.
+@inline _clamp(xq::GridIdx, ::Any, ::Any) = xq
+
 # ========================================
 # Interval Search (IN search.jl)
 # ========================================
@@ -35,21 +50,10 @@ _to_float(x::AbstractVector{T}, ::Type{T}) where {T} = x
 """
     _to_float(x::AbstractVector, ::Type{T}) where {T}
 
-Convert a Vector to target type (element-wise broadcast).
-For standard numerics (Int→Float64, Float32→Float64), emits a one-time warning
-since this allocates a new vector. For duck types (e.g. `Dual{Int}→Dual{Float64}`),
-the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
+Convert a Vector to target type (element-wise broadcast). For duck types
+(e.g. `Dual{Int}→Dual{Float64}`), `T.(x)` dispatches to ForwardDiff's `convert`.
 """
-function _to_float(x::AbstractVector, ::Type{T}) where {T}
-    _warn_type_conversion(T)
-    return T.(x)
-end
-
-@noinline function _warn_type_conversion(::Type{T}) where {T}
-    @warn "Non-matching vector element type detected — allocating type conversion. " *
-        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
-    return nothing
-end
+_to_float(x::AbstractVector, ::Type{T}) where {T} = T.(x)
 
 # ========================================
 # Value Type Helpers (for Complex support)
@@ -91,12 +95,70 @@ _promote_grid_float(Int, Dual)       # → Float64 (duck: float(Int) only)
 ```
 """
 @inline function _promote_grid_float(::Type{Tg}, ::Type{Tv}) where {Tg, Tv}
+    # Duck grids pass through RAW: cross-family `promote_type` yields abstract
+    # types (e.g. `Quantity` × `Float64`), and `float` is not part of the duck
+    # contract. Precision widening is a Real-family concern only.
+    Tg <: Real || return Tg
     if Tv <: _PromotableValue
         return float(promote_type(Tg, _real_eltype(Tv)))
     else
         return float(Tg)
     end
 end
+
+# Build-entry guard: a grid axis must be orderable (search/sort call `isless`).
+# `Real` fast path folds to a no-op; the generic arm runs one `hasmethod` at
+# build time and turns e.g. a Complex grid into an actionable error instead of a
+# deep search-internal `MethodError`. Necessary, not sufficient (an ordered type
+# may still lack grid arithmetic) — see the duck-grid contract docs.
+@inline _check_grid_orderable(::Type{<:Real}) = nothing
+@noinline function _check_grid_orderable(::Type{Tg}) where {Tg}
+    hasmethod(isless, Tuple{Tg, Tg}) || throw(
+        ArgumentError(
+            "grid axis eltype $(Tg) does not support ordering (`isless`) — " *
+                "interpolation grids must be sortable (e.g. Complex is not a valid grid eltype)"
+        )
+    )
+    return nothing
+end
+
+# Solver-family axes must be Real or dimensionless-reparameterizable (unit-carrying).
+# Probed PER AXIS with the canonical `_reparam_op` witness — the exact transform the
+# twin build applies (a mixed-unit promoted Tg is an abstract tag no witness may run
+# on). Missing `oneunit`/`inv`/`*` infers `Union{}`/non-Real → friendly refusal;
+# `Real` folds away.
+@inline _check_nd_reparam_grid(::Tuple{}) = nothing
+@inline function _check_nd_reparam_grid(grids::Tuple)
+    _check_nd_reparam_eltype(eltype(first(grids)))
+    return _check_nd_reparam_grid(Base.tail(grids))
+end
+@inline _check_nd_reparam_eltype(::Type{<:Real}) = nothing
+@inline function _check_nd_reparam_eltype(::Type{Tg}) where {Tg}
+    Tt = Base.promote_op(_reparam_op, Tg)
+    return (Tt !== Union{} && Tt <: Real) ? nothing : _throw_nd_reparam_grid(Tg)
+end
+@noinline _throw_nd_reparam_grid(::Type{Tg}) where {Tg} = throw(
+    ArgumentError(
+        "Solver-family PreCompute ND builds (Cubic/Quadratic axes) accept Real or " *
+            "unit-carrying grid axes; the non-Real grid eltype $(Tg) supports no " *
+            "dimensionless reparameterization (needs `oneunit`, `inv`, `*`). Use " *
+            "LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid."
+    )
+)
+
+# Same contract for the per-axis (hetero) ND engine — which also backs
+# PCHIP/Akima/Cardinal ND — and for Hermite ND (user partials per-axis in
+# [Y/Xᵈ], no scaled store). Neither builder path handles non-Real grids yet;
+# without this gate the failure is a deep MethodError (or a "successful"
+# build whose eval throws).
+@inline _check_nd_hetero_grid(::Type{<:Real}) = nothing
+@noinline _check_nd_hetero_grid(::Type{Tg}) where {Tg} = throw(
+    ArgumentError(
+        "Per-axis (hetero) ND interpolants — including PCHIP/Akima/Cardinal ND — " *
+            "and Hermite ND do not support non-Real grid eltypes yet (grid eltype $(Tg)). " *
+            "Use LinearInterp/ConstantInterp ND, work per-fiber 1-D, or use a Real grid (units: `ustrip`)."
+    )
+)
 
 """
     _value_type(::Type{Ty}, ::Type{Tg}) -> Type
@@ -109,17 +171,24 @@ Determine the output value type from y element type and grid type.
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T <: Real, Tg <: AbstractFloat} = Complex{Tg}
 # Duck-typing fallback for Tv: custom value types preserved as-is
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg <: AbstractFloat} = T
+# Non-AbstractFloat grid tags, promotable values: duck REAL grids (Dual) keep the
+# value raw (no grid-parameter partials in y), but non-Real (unit) tags float it —
+# eval/solve run in the float value space there, so fills must too (Real-axis parity).
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T <: _PromotableValue, Tg} =
+    _value_type_nonfloat_grid(T, Tg)
+@inline _value_type_nonfloat_grid(::Type{T}, ::Type{<:Real}) where {T} = T
+@inline _value_type_nonfloat_grid(::Type{T}, ::Type) where {T} = float(T)
 # Duck-typing fallback for Tg: when grid is duck-typed (Dual, Measurement, etc.),
 # values are not promoted to grid type (no grid-parameter partials in y).
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
 
-# Inference probe for `_output_eltype` duck fallback. Standard kernels
+# Inference probe for `_promote_eltype` duck fallback. Standard kernels
 # (Linear/Cubic/Quadratic/Hermite) produce `Tv + α·Tv` shapes; Constant's
 # `Tv * one(Tq)` lives in the same promotion space.
 @inline _kernel_shape_op(yv, q) = yv * q + yv
 
 """
-    _output_eltype(::Type{Tv}, types...) -> Type
+    _promote_eltype(::Type{Tv}, types...) -> Type
 
 Generic output-eltype probe via the universal arithmetic kernel shape
 `y*q + y` (`_kernel_shape_op`). Currently used by:
@@ -137,7 +206,7 @@ For method-aware output-buffer sizing (Linear/Cubic/Quadratic/Constant/
 Hermite), prefer the kernel-op overload below — it predicts the method's
 exact kernel return type via `Base.promote_op`.
 """
-@inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
+@inline function _promote_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
     if isconcretetype(Tr)
         return (Tr <: _PromotableValue && !(Tr <: AbstractFloat)) ? float(Tr) : Tr
@@ -149,26 +218,138 @@ exact kernel return type via `Base.promote_op`.
 end
 
 """
-    _output_eltype(kernel_op, ::Type{Tv}, types...) -> Type
+    _promote_eltype(kernel_op, ::Type{Tv}, types...) -> Type
 
 Method-aware output element type via `Base.promote_op` on the method's own
 kernel shape. Lets Julia inference predict the kernel's exact return type
 — no hand-coded Float upgrade, no `_PromotableValue` enumeration. Use this
 overload from a method that declares its kernel shape (e.g., Constant's
-`_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`).
+`_select_op(xL, yv, xq) = yv * one(xq - xL)`).
 """
-@inline function _output_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
+@inline function _promote_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
     Top = Base.promote_op(kernel_op, Tv, types...)
     (Top === Union{} || Top === Any) && return Tv
     return Top
 end
 
-# Shared kernel shape for arithmetic methods (Linear/Cubic/Quadratic/Hermite):
-# `y + y * (dL/h)` captures the division-by-`h` that drives the Int→Float
-# widening — Julia inference predicts the exact kernel return type. Args are
-# ordered `(Tg, Tv, Tq)` so callers use `_output_eltype(shape, Tg, Tv, Tq)`,
-# matching the codebase's standard type-parameter order.
-@inline _arithmetic_kernel_shape(h, yv, dL) = yv + yv * (dL / h)
+# Type-witness OPS for `_promote_eltype` — small expressions whose return type (via
+# `Base.promote_op`) equals the real computation's element type. They are NOT the real
+# kernels; they exist only to drive inference, capturing the spacing reciprocal that
+# floats Int. Args named/ordered `(grid, value[, query])` → `_promote_eltype(op, Tg, Tv[, Tq])`.
+# (Constant's selection op `_select_op(xL, yv, xq) = yv * one(xq - xL)` lives in
+# constant_interpolant.jl — no division, so it keeps Int.)
+#
+# `_interp_op` (3-arg): interpolation eval — value weighted by the query offset `dL/h`
+# → the OUTPUT eltype (query-dependent). Models `yv + yv*(dL*inv_h)`; `dL/h ≡ dL*inv_h`
+# in type when `h` is the (floated) grid type, which it always is at eltype sites.
+@inline _interp_op(h::Tg, yv::Tv, dL::Tq) where {Tg, Tv, Tq} = yv + yv * (dL / h)
+
+# Value-space width witness: `_interp_op` with the GRID type in both the axis
+# and query slots, so `dL/h` cancels and the result stays in VALUE space. The
+# 3rd-arg convention is easy to get wrong at call sites (a stray `Tq` there
+# silently drags query blood into coefficient space) — fixed here once.
+@inline _value_space_eltype(::Type{Tgw}, ::Type{Tv}) where {Tgw, Tv} =
+    _promote_eltype(_interp_op, Tgw, Tv, Tgw)
+
+# `_coeff_op` (2-arg): FIRST-ORDER divided difference `Δy/h`, accumulated by the
+# solve → the order-1 COEFFICIENT eltype (slopes: hermite/pchip/akima/cardinal `dy`,
+# secants). Modeled as `yv*inv(h) + yv*inv(h)`: `* inv(h)` (NOT `/ h`) mirrors the
+# real solve multiplying a precomputed `inv_h` — duck-safe (`*(Tv, Tg)` not `/`) and
+# floats Int grids (`inv(Int)::Float64`); the `+` mirrors the solve summing scaled
+# values. Dimensionally HOMOGENEOUS (every term `Y/X`) so unit-carrying grids infer
+# a concrete type. QUERY-FREE: coefficients are solved before any query.
+@inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv * inv(h) + yv * inv(h)
+
+# `_coeff_op2` (2-arg): SECOND-ORDER coefficient witness (`Y/X²` — cubic spline `z`;
+# quadratic curvature `a` when its storage splits). Same duck/float/homogeneity
+# contract as `_coeff_op`, one more `inv(h)` power.
+@inline _coeff_op2(h::Tg, yv::Tv) where {Tg, Tv} =
+    yv * (inv(h) * inv(h)) + yv * (inv(h) * inv(h))
+
+# `_inv_op` (1-arg): reciprocal-spacing eltype — `inv(h)` for an axis already at the
+# value-matched width (compose: `_promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))`).
+# Floats Int (`inv(Int)::Float64` never survives a narrow value space upstream), keeps
+# Unitful inverse units and duck carriers.
+@inline _inv_op(h) = inv(h)
+
+# `_thomas_l_op` (2-arg, both grid-space): Thomas L-multiplier eltype —
+# `dl[i]*inv(d)` cancels the axis unit (dimensionless float for unit grids,
+# `Tg` for Real). Drives `thomas_factorize`'s `l` output allocation.
+@inline _thomas_l_op(h::Tg, d::Tg2) where {Tg, Tg2} = h * inv(d)
+
+# `_deriv1_op` (2-arg): ONE order of differentiation — output type `r` scaled by a single
+# `inv(h)`. dⁿf/dxⁿ ∈ `[value]/[grid]ⁿ` is this folded n times (`_deriv_eltype`); one
+# `inv(h)` per order — never `h^-n` (type-unstable for units) — keeps every step concrete.
+@inline _deriv1_op(h::Tg, r::Tr) where {Tg, Tr} = r * inv(h)
+
+# Grid-precision DIMENSIONLESS constant `1/n` (kernel coefficients like 1/24):
+# `Tg(n)` would demand a unit for unit-carrying grids — `one(Tg)` keeps the
+# float width while staying dimensionless. Real arm is codegen-identical.
+@inline _inv_const(::Type{Tg}, n::Int) where {Tg <: Real} = inv(Tg(n))
+@inline _inv_const(::Type{Tg}, n::Int) where {Tg} = inv(one(Tg) * n)
+
+# Grid-precision DIMENSIONLESS cast for a shape parameter (Cardinal `tension`): the
+# load-bearing `one(float(Tg)) * 1` strips units (unit Tg → plain `1.0`) while keeping
+# the float width. Sibling of `_inv_const`; `float(Tg)` also floats a raw Int axis eltype.
+# `_dimensionless_type` is the matching field type — one source so value/type can't drift.
+@inline _dimensionless_type(::Type{Tg}) where {Tg} = typeof(one(float(Tg)) * 1)
+@inline _as_dimensionless(x, ::Type{Tg}) where {Tg} = oftype(one(float(Tg)) * 1, x)
+
+# `_integrate_op` (3-arg): the definite-integral element type — value × spacing.
+# ∫ ≈ Σ yᵢ·hᵢ is dimensionally distinct from the eval witnesses (which weight the value
+# by the dimensionless offset `dL/h`). `span` is the integration length (`b2 - xL` for a
+# partial cell, the cell width `h` for a full cell). The `oneunit(h)*inv(h)` factor is
+# load-bearing: dimensionless by construction (units cancel → every term is `Y·X`,
+# so unit-carrying grids infer a concrete type), it floats Int grids
+# (`oneunit(Int)*inv(Int)::Float64`) and lifts Dual (`inv(Dual)::Dual`), so Tout is
+# correct for all-Int integrate (the kernels divide) and for AD-wrt-grid/bounds.
+# Duck-safe: `yv` sees only `*`/`+`, a subset of what the integral kernels require.
+@inline _integrate_op(h::Tg, yv::Tv, span::Ts) where {Tg, Tv, Ts} =
+    yv * span + yv * (span * (oneunit(h) * inv(h)))
+
+# ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
+# `Tc` is the method's coefficient/output field type (e.g. `eltype` of a coeff
+# array, or `_promote_eltype(_coeff_op, Tg, Tv)`) — never a forced `Float`.
+# Fast path (operand already `Tc`): plain `a ± b`, zero overhead, identical for
+# floats and duck/AD types. Promote path (narrow operand, e.g. UInt8/N0f8): widen
+# into the field BEFORE the `±` so modular/overflow wrap cannot occur.
+# Result is PINNED to `Tc` via `convert` — don't swap to `promote(a, b)` (cf. search.jl
+# `_lt`/`_le`, which `promote` for a Bool): a promoted pair can be narrower than `Tc`
+# and re-introduce the wrap.
+@inline _fielddiff(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a - b
+@inline _fielddiff(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) - convert(Tc, b)
+@inline _fieldsum(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a + b
+@inline _fieldsum(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) + convert(Tc, b)
+
+# ── Secant helpers (cached-inverse, axis-aware) ──────────────────────────────
+# Single-cell forward secant (y[i+1]-y[i]) / h_i. Routes through `_get_inv_h`, so a
+# `_CachedVector`/`_CachedRange` axis uses the cached reciprocal (no division) and a
+# `_UnitStep` range folds the multiply to identity. Raw `AbstractVector` computes
+# `inv(h)` on the fly (≤1 ULP vs `/h`, perf-neutral: the extra multiply runs free in
+# the divider's shadow).
+#
+# Width-first form: `Tw` is the value-matched coordinate width from the caller's
+# surface (`_promote_grid_float(Tg, Tv)`) — the reciprocal is born at `Tw`, so a raw
+# Int axis stops minting `inv(Int)::Float64` beside narrower data. The width-less
+# forms delegate with `Tw = eltype(x)`: bit-identical to the historic raw behavior.
+@inline function _forward_secant(::Type{Tw}, x, y, i) where {Tw}
+    # Value-space widen: the diff stays in value units; the 1/X dimension
+    # enters via the cached reciprocal (coeff-space Tc would convert y).
+    Tc = _value_space_eltype(Tw, eltype(y))
+    return @inbounds _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(Tw, x, i)
+end
+@inline _forward_secant(x, y, i) = _forward_secant(eltype(x), x, y, i)
+
+# Backward secant at i is the forward secant of the previous cell (denominator h_{i-1}).
+@inline _backward_secant(::Type{Tw}, x, y, i) where {Tw} = _forward_secant(Tw, x, y, i - 1)
+@inline _backward_secant(x, y, i) = _forward_secant(eltype(x), x, y, i - 1)
+
+# Centered (2-cell-span) secant (y[i+1]-y[i-1]) / (x[i+1]-x[i-1]) via `_get_inv_2cell`.
+@inline function _centered_secant(::Type{Tw}, x, y, i) where {Tw}
+    Tc = _value_space_eltype(Tw, eltype(y))   # value-space (see above)
+    return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(Tw, x, i)
+end
+@inline _centered_secant(x, y, i) = _centered_secant(eltype(x), x, y, i)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
@@ -350,7 +531,7 @@ Used in interpolant inner constructors to merge promotion + immutability copy.
 Widen query vector to `promote_type(Tg, Tq)` — never narrows query precision.
 Duck-typed queries (`Dual`, `Measurement`, …) pass through unchanged.
 """
-@inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
+@inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq, Tg}
     if Tq <: _PromotableValue
         return _to_float(xq, promote_type(Tg, Tq))
     else
@@ -365,16 +546,52 @@ Promote grid and query vectors for adjoint construction.
 
 Shared pattern across all 1D adjoint builders: cubic, linear, quadratic,
 constant, pchip, cardinal, akima.
+
+!!! note "Adjoint queries must be plain real numbers"
+    Adjoint constructors do not support `ForwardDiff.Dual` (or other non-grid-
+    eltype) *query* points: the anchor structs pin the query type to the grid
+    type `Tg` (e.g. `_LinearAnchoredQuery{Tg, Tg}`) and the Hermite-family weight
+    kernels are homogeneous in `Tg`, so a Dual query fails to construct. This is
+    a long-standing limitation, independent of the `_oob_state`/`_clamp_to_grid`
+    boundary helpers (which themselves preserve duck-type). For query-position
+    derivatives, differentiate the *forward* eval — it preserves `Dual` queries
+    end-to-end. (`constant_adjoint` happens to accept Dual queries because it
+    keeps a separate query-type param, but that is not a guaranteed contract.)
 """
 @inline function _promote_adjoint_inputs(
         x::AbstractVector,
         xq::AbstractVector
     )
+    _check_adjoint_grid_real(eltype(x), eltype(xq))
     Tg = _promote_grid_float(eltype(x), eltype(xq))
     x_p = _to_float(x, Tg)
     xq_p = _promote_query_typed(xq, Tg)
     return x_p, xq_p, Tg
 end
+
+# Adjoint builders bake grid geometry into anchor structs whose weight kernels
+# are homogeneous in `Tg`, so a unit-carrying grid breaks them from the inside
+# (a private `MethodError`, or a `DimensionError` once `h` and `inv(h)` meet).
+# Refuse at the public boundary instead. `<: Real` is the right test, not "is it
+# a plain float": `ForwardDiff.Dual <: Real` and Dual grids do work.
+# `constant_adjoint` keeps its grid raw and calls this directly.
+@noinline function _throw_adjoint_grid_not_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq}
+    throw(
+        ArgumentError(
+            "adjoint operators on non-Real grid or query eltypes are not supported " *
+                "(grid eltype `$Tg`, query eltype `$Tq`): the anchor weights are built " *
+                "homogeneously in the grid type. Use a Real grid — for units, strip them " *
+                "(`ustrip`) and reattach to the result, or differentiate the forward " *
+                "evaluation, which does preserve units."
+        )
+    )
+end
+
+# Dispatch, not a boolean test, so the accepted case is a signature (matching the
+# `_check_nd_hetero_grid` style above) and the check folds to nothing on `Real`.
+@inline _check_adjoint_grid_real(::Type{<:Real}, ::Type{<:Real}) = nothing
+@noinline _check_adjoint_grid_real(::Type{Tg}, ::Type{Tq}) where {Tg, Tq} =
+    _throw_adjoint_grid_not_real(Tg, Tq)
 
 
 # ========================================
@@ -405,81 +622,160 @@ ForwardDiff support is added via:
 # GridIdx <: Real: _extract_primal(g::GridIdx) returns g (identity fallback).
 
 """
+    _grid_bankable(::Type{Tg}) -> Bool
+
+Whether grid eltype `Tg` may participate in the autocache pool. Contract: the
+pool is keyed by linear `isequal` scans (never `hash`), so `isequal(a, b)` on
+two grids must imply interchangeable factorizations. ForwardDiff Duals compare
+primal AND partials (safe); Unitful compares across unit rescale, but banks
+are segregated by exact eltype so cross-unit hits cannot occur. A type whose
+`isequal` ignores factorization-relevant state must opt out with a `false`
+method (none known today — escape hatch).
+"""
+@inline _grid_bankable(::Type{Tg}) where {Tg} = true
+
+"""
     _effective_autocache(autocache, Tg) -> Bool
 
-Disable autocache for non-standard grid types (e.g. ForwardDiff.Dual).
-Enabled for `_PromotableValue` types (AbstractFloat, Integer, Rational) which
-have stable grid identity (cache hit rate > 0). Dual grids are ephemeral
-(created fresh each AD call), so autocache is disabled for them.
-Resolves at specialization time — zero runtime cost on the Float hot path.
+Resolve the user's `autocache` flag against `_grid_bankable(Tg)`.
+Folds at specialization time — zero runtime cost on the Float hot path.
 """
-@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: _PromotableValue)
+@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & _grid_bankable(Tg)
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """
-    _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq
+    _coord_eltype(::Type{Tq}, ::Type{Tg}) -> Type
 
-Promote query point for anchor construction.
+Canonical coordinate element type — the structural twin of [`_promote_eltype`](@ref):
+`Base.promote_op` of the coordinate operation, with a `promote_type` fallback when
+inference can't resolve the op.
+
+The coordinate operation is **subtraction** (`xq - xL`, comparisons) — *not* the
+kernel's `/h`. Subtraction does not widen `Int`, so `Int - Int === Int`: an `Int`
+grid + `Int` query keeps an `Int` coordinate (the kernel floats the *output* via
+`inv_h`, not the coordinate). `Int - Float === Float` and `Float - Dual === Dual`
+fall out for free, and any duck type defining `-` participates without a
+`promote_rule`. No `float()` patch — coordinates must not over-float.
+
+This is method-agnostic on purpose: the ND coordinate gateway (`_extrap_axis` /
+`_handle_all_extraps`) has no method information, and the only per-method widening
+(`/h`) belongs to the value path (`_promote_eltype`), not the coordinate.
+"""
+@inline function _coord_eltype(::Type{Tq}, ::Type{Tg}) where {Tq, Tg}
+    Tc = Base.promote_op(-, Tq, Tg)
+    return (Tc === Union{} || Tc === Any) ? promote_type(Tq, Tg) : Tc
+end
+
+"""
+    _promote_coord(xq, ::Type{Tg}) -> promoted_xq
+
+Promote a query into the grid's coordinate space via the canonical
+[`_coord_eltype`](@ref) rule (grid ⊕ query), once, at the eval surface — so the
+in-domain kernel and the OOB/fill paths share one concrete coordinate type. The
+`convert` is identity on the Float64 hot path, a no-op for a matched `Int` grid,
+and a zero-partial lift for a Float query on a `Dual` grid.
 
 # Behavior
-- ForwardDiff.Dual: preserved as-is (for AD support, see extension)
-- AbstractFloat: uses promote_type(Tq, Tg) to preserve precision
-  - Float64 on Float32 grid → Float64 (preserves query precision)
-  - Float32 on Float64 grid → Float64 (uses grid precision)
-- Other Real (Int, Rational): converted to grid type Tg
-
-This is needed for cubic anchors which store precomputed weight tuples.
-Unlike quadratic (which stores only dL), cubic weights involve complex
-floating-point arithmetic that can't be represented as Int/Rational.
+- AbstractFloat × AbstractFloat: preserves the wider precision.
+- Int/Rational × Float grid: converted to the grid float type.
+- Float query × Dual grid: lifts to a zero-partial Dual (AD-with-respect-to-grid).
+- Dual query × Float grid: stays Dual (`convert` is identity, or lifts the value type).
+- `GridIdx`: passed through unchanged (auto-promotes via its `promote_rule` downstream).
 
 # Example
 ```julia
-_promote_for_anchor(0, Float64)      # → 0.0 (Float64)
-_promote_for_anchor(1//2, Float64)   # → 0.5 (Float64)
-_promote_for_anchor(0.5, Float32)    # → 0.5 (Float64, preserves precision)
-_promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
-_promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
+_promote_coord(0, Float64)      # → 0.0 (Float64)
+_promote_coord(1//2, Float64)   # → 0.5 (Float64)
+_promote_coord(0.5, Float32)    # → 0.5 (Float64, preserves precision)
+_promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 ```
 """
-# For AbstractFloat queries on AbstractFloat grids: preserve precision using wider type
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: AbstractFloat, Tg <: AbstractFloat} = convert(promote_type(Tq, Tg), xq)
-# For other Real queries (Int, Rational) on AbstractFloat grids: convert to grid type
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: Real, Tg <: AbstractFloat} = Tg(xq)
-# For duck grids (e.g. Dual): keep xq as-is. Kernel arithmetic auto-promotes via Julia's
-# type system (Float * Dual → Dual). Converting xq to Dual would inject zero partials.
-@inline _promote_for_anchor(xq, ::Type{Tg}) where {Tg} = xq
+@inline _promote_coord(xq::GridIdx, ::Type{Tg}) where {Tg} = xq
+@inline _promote_coord(xq, ::Type{Tg}) where {Tg} = convert(_coord_eltype(typeof(xq), Tg), xq)
 
 
 # ========================================
 # Domain Validation Helpers
 # ========================================
 
-@noinline _throw_domain_error(xi, x_min, x_max) =
-    throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+# `dim == 0` → axis-agnostic message (1D, or when the axis is unknown); `dim > 0`
+# names the offending axis (ND scalar / GriddedQuery, which carry the index).
+@noinline function _throw_domain_error(xi, x_min, x_max, dim::Int = 0)
+    at = dim == 0 ? "query point" : "query point on axis $dim"
+    throw(DomainError(xi, "$at outside interpolation domain [$x_min, $x_max]"))
+end
 
-"Scalar domain check for NoExtrap: throws DomainError if out of domain."
-@inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
+# _CachedRange overload: pull the physical endpoints (`lo`/`hi`, the exact span for the
+# error message — distinct from the possibly-widened bracket the hot check clamps
+# against) inside this @noinline cold path, so the in-domain hot path never
+# materializes them — guaranteed, not LLVM-sink-dependent.
+@noinline _throw_domain_error(xi, x::_CachedRange, dim::Int = 0) =
+    _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi), dim)
+
+# Generic vector overload (Vector / `_CachedVector`): physical endpoints via first/last.
+@noinline _throw_domain_error(xi, x::AbstractVector, dim::Int = 0) =
+    _throw_domain_error(xi, _extract_primal(first(x)), _extract_primal(last(x)), dim)
+
+# NoExtrap domain check. OOB iff the branchless `_clamp` (min/max) alters the query:
+# `_clamp(xip,lo,hi) != xip` is 1 compare + 1 branch vs `(xip<lo || xip>hi)`'s two
+# branches — a saving that compounds across axes in ND's `_validate_nd_domain`.
+# `min`/`max` promote, so the clamp result `c` carries the bound type; comparing
+# against `oftype(c, xip)` aligns the RHS to that type so the idiom stays a true
+# value test. Without it, a query whose `==` vs its float-promotion is non-reflexive
+# (`Irrational`: `Float64(π) != π`; inexact `Rational`) is spuriously flagged OOB.
+# On the Float64 hot path `oftype(c, xip)` is identity, so this is free.
+# Compares the extracted primal, so a Dual query at the boundary classifies by value,
+# not partial sign (cf. `_is_all_inbounds`/`_oob_state`).
+# Scalar domain check. Throws `DomainError` for a NoExtrap OOB query, and RETURNS the extrap to
+# hand the interval search: once the check establishes in-domain, NoExtrap is equivalent to
+# `InBounds()` FOR THE SEARCH, so it promotes to the lean search
+# (`search_interval(..., ::InBounds)`) instead of re-paying the boundary guards. Every other mode
+# passes through unchanged (ExtendExtrap keeps the two-sided-clamp guarded search — it legitimately
+# arrives OOB). The promotion is thus the OUTPUT of the check: an eval core reaches the lean search
+# only by threading this return, never from a bare `search_interval(..., ::NoExtrap)` (which stays
+# guarded), so an unchecked NoExtrap search can never hit the one-sided lean clamp.
+#
+# The throw is UNCONDITIONAL (not wrapped in `@boundscheck`): `_validate_domain` calls this inside
+# an `@inbounds for` and relies on it always throwing, and the scalar eval surface never wraps a
+# core in `@inbounds` — so the cores' former `@boundscheck _check_domain` never actually elided.
+# Mirrors the vector/batch `_check_domain` (which likewise returns `InBounds()` / the extrap).
+"Scalar domain check for NoExtrap: throws DomainError if OOB, else promotes to InBounds."
+@inline function _check_domain(x::AbstractVector, xi, ::NoExtrap, dim::Int = 0)
+    xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-    (xi < x_min || xi > x_max) && _throw_domain_error(xi, x_min, x_max)
-    return nothing
+    c = _clamp(xip, x_min, x_max)
+    (c != oftype(c, xip)) && _throw_domain_error(xi, x_min, x_max, dim)
+    return InBounds()
 end
 
-# _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
-@inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
-    lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    (xi < lo || xi > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
-    return nothing
+# _CachedRange: bounds via `_domain_bounds` — `lo`/`hi` for exact tags (shared
+# with the search's `lo` load), the widened bracket only for `_WidenedDomain`.
+@inline function _check_domain(x::_CachedRange, xi, ::NoExtrap, dim::Int = 0)
+    xip = _extract_primal(xi)
+    lo, hi = _domain_bounds(x)
+    c = _clamp(xip, _extract_primal(lo), _extract_primal(hi))
+    (c != oftype(c, xip)) && _throw_domain_error(xi, x, dim)
+    return InBounds()
 end
 
-"No-op scalar domain check for non-NoExtrap modes (including InBounds)."
-@inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
+# Axis-tagged scalar/batch check: only NoExtrap throws, so only it needs the axis
+# index for the message; every other mode ignores `dim` and takes the plain check.
+# Lets `_validate_nd_domain` thread the axis without touching the no-op overloads.
+@inline _check_domain_axis(x, xi, extrap::AbstractExtrap, dim::Int) = _check_domain(x, xi, extrap)
+@inline _check_domain_axis(x, xi, extrap::NoExtrap, dim::Int) = _check_domain(x, xi, extrap, dim)
+
+"No-op scalar domain check for non-NoExtrap modes: returns the extrap unchanged (InBounds stays lean)."
+@inline _check_domain(::AbstractVector, ::Any, extrap::AbstractExtrap) = extrap
 
 "GridIdx is in-domain by construction (bounds-checked at resolution time)."
-@inline _check_domain(::AbstractVector, ::GridIdx, ::AbstractExtrap) = nothing
-# Disambiguation: GridIdx <: Real creates ambiguity with _CachedRange × NoExtrap methods.
-# GridIdx always wins (in-domain by construction).
-@inline _check_domain(::_CachedRange, ::GridIdx, ::NoExtrap) = nothing
-@inline _check_domain(::AbstractVector, ::GridIdx, ::NoExtrap) = nothing
+# GridIdx must NOT promote to InBounds: it has its own `search_interval(s, x, ::GridIdx)` fast path
+# (index short-circuit, O(1), no coordinate search). Promoting NoExtrap→InBounds would route it into
+# the coordinate lean `search_interval(..., ::InBounds)` (GridIdx <: Real), losing the short-circuit
+# (O(log n) reads). Return the extrap unchanged so it keeps the GridIdx fast path.
+@inline _check_domain(::AbstractVector, ::GridIdx, extrap::AbstractExtrap) = extrap
+# Disambiguation: GridIdx <: Real creates ambiguity with the _CachedRange × NoExtrap methods.
+@inline _check_domain(::_CachedRange, ::GridIdx, extrap::NoExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::GridIdx, extrap::NoExtrap) = extrap
 
 # ----------------------------------------
 # Vector domain checks: validate batch, return InBounds() for per-element elision.
@@ -492,34 +788,133 @@ end
 Vector domain check for NoExtrap: validate batch, return `InBounds()`.
 
 Delegates the batch in-domain test to `_is_all_inbounds`, which dispatches
-on axis type (using `domain_lo/hi` for `_CachedRange`'s wider TwicePrecision
-bracket on x86_64) and is partial-sign-safe under ForwardDiff. Throw
-message uses `first(x)/last(x)` — exact endpoints, not the widened bracket.
+on axis type (a `_WidenedDomain` `_CachedRange` uses its widened `domain_lo/hi`;
+exact `_CachedRange`s and Vectors use `lo/hi` / `first/last`) and is
+partial-sign-safe under ForwardDiff. Throw message uses `first(x)/last(x)` —
+exact endpoints, not the widened bracket.
 """
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi)
+@inline function _check_domain(x::AbstractVector, xi::AbstractArray, ::NoExtrap, dim::Int = 0)
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi, dim)
     return InBounds()
 end
 
-@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real})
+# Disambiguation diagonal: `_CachedRange` (scalar arm's axis is unbounded in `xi`)
+# × Real-batch query — same batch body as the generic-axis method above.
+@inline function _check_domain(x::_CachedRange, xi::AbstractArray, ::NoExtrap, dim::Int = 0)
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi, dim)
+    return InBounds()
+end
+
+# Unit-step axis: fused 3-outcome check — throw (OOB), `InBounds(last = :exclusive)`
+# (`maximum < last` proven → the batch loop rides the no-cap search), else closed.
+# Generic axes keep the closed-only method above (no Union; nothing to win there).
+# Extrema classify on primals: a Dual max whose VALUE == `last` must not tie-break
+# on its partial into a false exclusive promotion (→ no-cap OOB read).
+# Only the throws are `@boundscheck`-elidable; the promotion is build-mode independent.
+@inline function _check_domain(
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractArray{<:Real}, ::NoExtrap, dim::Int = 0
+    ) where {T, Tinv, Tag <: _AbstractUnitStep}
+    isempty(xi) && return InBounds()
+    lo, hi = _domain_bounds(x)
+    @boundscheck _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || _throw_batch_oob(x, xi, dim)
+    mx = _extract_primal(maximum(xi))
+    hip = _extract_primal(hi)
+    @boundscheck _le(mx, hip) || _throw_batch_oob(x, xi, dim)
+    return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
+end
+
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractArray, dim::Int = 0)
     qmin, qmax = minimum(xi), maximum(xi)
     x_min = _extract_primal(first(x))
     x_max = _extract_primal(last(x))
-    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max)
+    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max, dim)
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
-@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::AbstractArray, extrap::AbstractExtrap) = extrap
 
 # Closed-domain batch fast path: every OOB policy (`ClampExtrap`, `FillExtrap`,
 # `WrapExtrap`) treats `[first(x), last(x)]` as the in-domain interval, so they
 # share one batch promotion to `InBounds()`.
 @inline function _check_domain(
-        x::AbstractVector, xi::AbstractVector{<:Real},
+        x::AbstractVector, xi::AbstractArray,
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     )
     return _is_all_inbounds(x, xi) ? InBounds() : e
 end
+
+# Unit-step twin: original extrap (any OOB) / exclusive-last (strictly below `last`)
+# / closed (touches `last`). Primal extrema — see the NoExtrap twin.
+@inline function _check_domain(
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractArray{<:Real},
+        e::Union{ClampExtrap, FillExtrap, WrapExtrap}
+    ) where {T, Tinv, Tag <: _AbstractUnitStep}
+    isempty(xi) && return InBounds()
+    lo, hi = _domain_bounds(x)
+    _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || return e
+    mx = _extract_primal(maximum(xi))
+    hip = _extract_primal(hi)
+    _le(mx, hip) || return e
+    return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
+end
+
+# ── GridIdx batches: every entry names a node ──
+# An index has no extrapolation meaning: validate `1 ≤ idx ≤ length(x)` (the scalar
+# resolve's ArgumentError) under every mode and return `InBounds()`. Unconditional, since
+# the per-point resolve check is `@boundscheck` inside `@inbounds` loops. The extrema-based
+# arms above cannot see a GridIdx batch (no `<` between two GridIdx), so each reachable
+# arm gets a twin; Aqua pins the table ambiguity-free.
+@inline function _validate_grididx_batch(x::AbstractVector, q::AbstractArray{<:GridIdx})
+    n = length(x)
+    @inbounds for i in eachindex(q)
+        k = q[i].idx
+        1 <= k <= n || _throw_grididx_oob_resolve(k, n)
+    end
+    return InBounds()
+end
+@inline _check_domain(x::AbstractVector, q::AbstractArray{<:GridIdx}, ::NoExtrap, dim::Int = 0) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(x::_CachedRange, q::AbstractArray{<:GridIdx}, ::NoExtrap, dim::Int = 0) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(
+    x::_CachedRange{T, Tinv, Tag}, q::AbstractArray{<:GridIdx}, ::NoExtrap, dim::Int = 0
+) where {T, Tinv, Tag <: _AbstractUnitStep} = _validate_grididx_batch(x, q)
+@inline _check_domain(x::AbstractVector, q::AbstractArray{<:GridIdx}, ::AbstractExtrap) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(x::AbstractVector, q::AbstractArray{<:GridIdx}, ::Union{ClampExtrap, FillExtrap, WrapExtrap}) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(
+    x::_CachedRange{T, Tinv, Tag}, q::AbstractArray{<:GridIdx}, ::Union{ClampExtrap, FillExtrap, WrapExtrap}
+) where {T, Tinv, Tag <: _AbstractUnitStep} = _validate_grididx_batch(x, q)
+
+# Safe domain bounds — single axis-dispatched source of truth for every in-domain
+# test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
+# at a boundary query. Exact-domain axes → `first/last` (field reads on
+# `_CachedRange`; `_OneTo` folds its lower bound to the literal `one(T)`); only a
+# `_WidenedDomain` range → its `domain_lo/hi`, ≈1 ULP wider than the stored
+# `lo/hi` on the x86_64 fast path, keeping a query at the true endpoint in-domain
+# instead of falsely OOB.
+@inline _domain_bounds(x::AbstractVector) = (first(x), last(x))
+@inline _domain_bounds(x::_CachedRange) = (first(x), last(x))
+@inline _domain_bounds(x::_CachedRange{T, Tinv, _WidenedDomain}) where {T, Tinv} =
+    (x.domain_lo, x.domain_hi)                                        # widened bracket
+
+# Scalar in-domain test. `_extract_primal` on bounds and query keeps it partial-
+# sign independent for Dual grids (no-op on plain-Float `_CachedRange` fields).
+@inline function _is_inbounds(x::AbstractVector, xq)
+    lo, hi = _domain_bounds(x)
+    xqp = _extract_primal(xq)
+    # `_le` promote-compare: dodge Base's exact mixed `<=(Int, Float)` on an
+    # Int/Rational grid (no-op on a Float grid). See ordering helpers in search.jl.
+    return _le(_extract_primal(lo), xqp) && _le(xqp, _extract_primal(hi))
+end
+
+# Clamp a query to the grid's physical span `[first(x), last(x)]`, never the
+# widened `_domain_bounds` bracket — adjoint anchor builders use it for valid OOB
+# boundary geometry while classification reads the widened bounds (keeps the
+# acceptance cushion out of geometry).
+@inline _clamp_to_grid(xq, x::AbstractVector) =
+    _clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
 
 """
 True iff every element of `queries` lies in the closed domain
@@ -537,25 +932,20 @@ Uses two `&&`-chained reductions rather than `extrema`:
 1.13 fixes the SIMD issue, but the short-circuit advantage remains for
 the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 """
-# `_extract_primal` is required on `first(x)` / `last(x)` here because
-# ForwardDiff's `Real <= Dual` comparison includes partial-sign tie-breaking
-# at equal primals — so a Float query exactly at the boundary against a
-# Dual grid endpoint can flip in/out of bounds based on the partial sign
-# alone (see `test/ext/test_linear_dual_grid.jl` "Domain boundary:
-# primal-based NoExtrap check (partial-independent)"). Inline calls keep
-# the `&&` short-circuit intact.
-@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
+# `_extract_primal` on the bounds: ForwardDiff's `Real <= Dual` tie-breaks on the
+# partial sign at equal primals, so a Float query at the boundary against a Dual
+# grid endpoint must classify on primal alone (see test/ext/test_linear_dual_grid.jl).
+# Routes through `_domain_bounds` (widened bracket in one place); `&&` short-circuits.
+@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractArray)
     isempty(queries) && return true
-    return minimum(queries) >= _extract_primal(first(x)) &&
-        maximum(queries) <= _extract_primal(last(x))
-end
-
-# `_CachedRange`: `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi` on
-# x86_64 TwicePrecision normalization) for safe bounds. Fields are typed
-# `T <: AbstractFloat` per the struct, so no `_extract_primal` is needed.
-@inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
-    isempty(queries) && return true
-    return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
+    lo, hi = _domain_bounds(x)
+    # `_ge`/`_le` promote-compare (see search.jl): dodge Base's exact mixed
+    # `>=(Float, Int)` on an Int/Rational grid. Amortized over the min/max scan
+    # (one compare per batch), but free on a Float grid. Extrema classify on
+    # primals: a Dual query whose VALUE == a bound must not tie-break on its
+    # partial sign into a false OOB verdict (identity on the Float64 hot path).
+    return _ge(_extract_primal(minimum(queries)), _extract_primal(lo)) &&
+        _le(_extract_primal(maximum(queries)), _extract_primal(hi))
 end
 
 # ========================================
@@ -570,17 +960,50 @@ end
 #                       The leading `0 * val` preserves NaN/Inf at the boundary
 #                       sample (IEEE: `0 * NaN = NaN`); `zero(xq) * zero(val)`
 #                       carries the query carrier (Dual, etc.) into the result.
+# These arithmetic forms are LOAD-BEARING — do NOT fold them to `oftype`/`convert` to drop the
+# `+ 0.0`: the trailing add also normalizes signed zero (`-0.0 → +0.0`) and keeps Unitful
+# dimension-correctness (`oftype(zero(val)+zero(xq), val)` throws on `Quantity` + plain query).
+# Guarded by test/test_extrap_carrier_guards.jl.
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
-@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
+# Real queries (incl. Dual): the historic carrier `zero(xq) * zero(val)` —
+# value ≡ carrier space, keeps Int results Int (no `inv(oneunit)` Float mint).
+@inline _promote_extrap_val(val::Number, xq::Real) = val + zero(xq) * zero(val)
+@inline _promote_extrap_val(val::AbstractArray, xq::Real) = val .+ zero(xq) .* zero(eltype(val))
+@inline _promote_extrap_zero(val::Number, xq::Real) = 0 * val + zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::AbstractArray, xq::Real) = 0 .* val .+ zero(xq) .* zero(eltype(val))
+# Duck queries: `zero(xq) * inv(oneunit(xq))` = the DIMENSIONLESS query-carrier
+# zero: same carrier type as `zero(xq)`, but unit-free so `* zero(val)` stays
+# in value dimensions (a raw `zero(xq)` factor would make the term query×value).
+@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * inv(oneunit(xq)) * zero(val)
 # AbstractArray Tv (e.g. `SVector` y) — broadcast the carrier-propagating
 # pattern so scalar OOB matches in-domain kernel's `y * one(dL)` shape and
 # agrees with batch path's trait-sized buffer.
-@inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* zero(eltype(val))
+@inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_val(val, xq) = val
-@inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * zero(val)
-@inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
+@inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * inv(oneunit(xq)) * zero(val)
+@inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* inv(oneunit(xq)) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
+
+# `oneunit` of one axis's derivative space: an order-N derivative carries
+# `value/coordᴺ`, so this is `oneunit(coord⁻ᴺ)` — magnitude exactly `one`, units
+# `grid⁻ᴺ`. Multiplying by it TRANSPORTS a value-space quantity into derivative
+# space (`Y → Y·X⁻ᴺ`); it is NOT a multiplicative identity there (`du * du` has
+# units `X⁻²ᴺ`), and NOT `unit(...)` (which would be a bare `Units` object).
+#
+# `h` supplies the axis's coordinate unit — the GRID's, never the query's: with a
+# `u"hr"` grid and a `u"s"` query the two disagree. `true` is the dimensionless
+# identity, so order-0 and Real grids fold away at compile time (verified: the
+# factor leaves no instruction in the emitted IR).
+#
+# Every family's OOB/zero path needs it: those kernels FABRICATE a result instead
+# of doing the arithmetic that would have produced the units on its own. The
+# `Tv` duck-type contract (docs/src/guides/custom_value_types.md) forbids
+# `zero(::Type{Tv})`, so the units must be carried from the GRID side (`<:Number`,
+# where `oneunit`/`inv` are guaranteed) and applied with a plain `*`.
+# `Real` grids kept this invisible until the grid axis was relaxed to `<:Number`.
+@inline _deriv_oneunit(h, ::DerivOp{0}) = true
+@inline _deriv_oneunit(h, ::DerivOp{N}) where {N} = Base.literal_pow(^, inv(oneunit(h)), Val(N))
 
 # _extrap_oob_data: per-extrap "what data sits in the OOB cell".
 #   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
@@ -600,5 +1023,7 @@ end
 # the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
 @inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
-    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, _) =
+    _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq, deriv_oneunit) =
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq) * deriv_oneunit

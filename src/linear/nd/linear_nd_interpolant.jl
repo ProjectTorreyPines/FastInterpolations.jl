@@ -63,7 +63,8 @@ function linear_interp(
         data::AbstractArray{Tv_raw, N};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
@@ -78,12 +79,35 @@ function linear_interp(
 
     # Extend `:exclusive` axes/data to closed-cycle (n+1) layout; periodic
     # bcs are promoted to `:extended` by `_prepare_periodic_nd`, then per-axis
-    # `_cache_axis` wraps (raw → wrapped, pre-wrapped → passthrough).
+    # `_policy_axes` wraps store-aware (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
-    grids_typed = map(_cache_axis, grids_typed, bcs_post)
+    grids_typed = _policy_axes(grids_typed, bcs_post, store)
 
     # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
-    return LinearInterpolantND(grids_typed, data_typed, extrap_vals, searches; bcs = bcs_post)
+    return LinearInterpolantND(grids_typed, data_typed, extrap_vals, searches; bcs = bcs_post, store = store)
 end
+
+# N=1 collapse: a 1-axis grid tuple IS the 1D path. `axes(y)` (a 1-tuple of OneTo)
+# lands here — forwarding to the 1D constructor keeps the lean 1D batch loop (the
+# generic-N ND loop carries a small per-query tensor overhead). Per-axis 1-tuple
+# kwargs unwrap to scalar. Strictly more specific than the `NTuple{N}` method above,
+# so it only claims N=1.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+    linear_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: a bare scalar on a 1-tuple grid is sugar for the scalar
+# query `(q,)` → ND scalar one-shot (scalar output), not the `[val]` length-1 batch
+# that a bare `queries` would otherwise trigger.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Number; kwargs...) =
+    linear_interp(grids, data, (q,); kwargs...)
+
+# N=1 batch one-shot: every batch container on a 1-tuple grid forwards to the lean 1D
+# batch one-shot through `_scalar_query` (numeric array / SoA as-is, point container as
+# a lazy scalar view) — the bare-vector route, bit-identical. The `Union` keeps the arm
+# disjoint from the ND scalar one-shot `query::NTuple{N, Number}`.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    linear_interp(only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline linear_interp!(output::AbstractArray, grids::Tuple{AbstractVector}, data::AbstractVector, q::Union{AbstractArray, Tuple{AbstractArray}}; kwargs...) =
+    linear_interp!(output, only(grids), data, _scalar_query(q); _unwrap_nd_kwargs(values(kwargs))...)

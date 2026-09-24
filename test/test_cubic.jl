@@ -453,9 +453,16 @@ end
         @test last(r32) === Float32(last(r64))
         @test step(r32) === Float32(step(r64))
         @test length(r32) == length(r64)
-        # x86_64 domain widening intentionally dropped on type conversion
-        @test r32.domain_lo == first(r32)
-        @test r32.domain_hi == last(r32)
+        # Tag is preserved through conversion and the domain bracket follows it: a
+        # _WidenedDomain source (x86_64 fast path) re-widens on the new Float32
+        # endpoints; exact tags (aarch64) keep domain == first/last.
+        if r32 isa FI._CachedRange{<:Any, <:Any, FI._WidenedDomain}
+            @test r32.domain_lo == prevfloat(first(r32))
+            @test r32.domain_hi == nextfloat(last(r32))
+        else
+            @test r32.domain_lo == first(r32)
+            @test r32.domain_hi == last(r32)
+        end
 
         # Same-type pass-through: returns identical object
         r64_same = FI._to_float(r64, Float64)

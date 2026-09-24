@@ -27,48 +27,61 @@
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    idx, _, xL, _ = search_interval(searcher, x, xq)
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
+    idx, _, xL, _ = search_interval(searcher, x, xq, e)
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# → delegate. `_check_domain(::NoExtrap)` throws on OOB; others are no-op.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query; the boundary cell extrapolates.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         extrap::AbstractExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
-    return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, _, xL, _ = search_interval(searcher, x, xq, extrap_eff)
+    dt = xq - xL
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
-    xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
-    xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
+    st = _oob_state(x, xq_primal)
+    deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq, deriv_oneunit)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq, deriv_oneunit)
     return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
 end
 
@@ -76,14 +89,14 @@ end
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tc},
-        d::AbstractVector{Tc},
+        a::AbstractVector{Tca},
+        d::AbstractVector{Tcd},
         xq::Tq,
         ::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, x)
+    ) where {Tg, Tv, Tca, Tcd, Tq, S <: Searcher}
+    xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
     return _quadratic_eval_at_point(x, y, a, d, xq_wrapped, InBounds(), op, searcher)
 end
 
@@ -153,17 +166,19 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg <: Number, Tv, Tq <: Number}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    x = _cache_axis_pooled(pool, x)
+    # Value-matched pooled wrap: Int/OneTo grid + Float32 data → Float32 axis
+    # (vector conversion lands in a pool buffer — warm one-shots stay zero-alloc).
+    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, eltype(x), eltype(y)), nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
@@ -201,30 +216,32 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
 ```
 """
 @with_pool pool function quadratic_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
+        x_targets::AbstractArray{Tq};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, Tq <: Real}
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: Number, Tv, Tq <: Number}
     @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
+    _check_query_output_size(output, x_targets)
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    x = _cache_axis_pooled(pool, x)
+    # Value-matched pooled wrap — keeps the batch interior consistent with scalar.
+    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
-    a = acquire!(pool, Tcoeff, nx - 1)
+    a = acquire!(pool, _promote_eltype(_coeff_op2, eltype(x), eltype(y)), nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
-    searcher = _resolve_search(x, x_targets, search, nothing)
+    searcher = _resolve_search(x, x_targets, search, hint)
     extrap_eff = _resolve_extrap(extrap, x)
     _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap_eff, deriv, searcher)
     return output
@@ -254,14 +271,17 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
 function quadratic_interp(
         x::AbstractVector{Tg},
         y::AbstractVector,
-        x_targets::AbstractVector{Tq};
+        x_targets::AbstractArray{Tq};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tq <: Real}
-    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
-    output = Vector{Tr}(undef, length(x_targets))
-    quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: Number, Tq <: Number}
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tgq = _promote_grid_float(Tg, eltype(y))
+    Tr = _deriv_eltype(_promote_eltype(_interp_op, Tgq, eltype(y), Tq), Tgq, deriv)
+    output = _alloc_query_output(Tr, x_targets)
+    quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output
 end

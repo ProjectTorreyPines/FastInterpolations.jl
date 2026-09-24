@@ -210,7 +210,12 @@
         # Scalar reference
         out_scalar = [itp((xqs[i], yqs[i])) for i in 1:nq]
 
-        @test out_batch == out_scalar  # bitwise identical
+        # Batch and scalar are different inline contexts, so `muladd` may contract
+        # to FMA in one but not the other (1-ULP drift seen on Windows x86_64
+        # without coverage instrumentation) — ULP-scale rtol, not bitwise equality.
+        # Elementwise (NOT whole-vector isapprox, whose norm-based bound is far
+        # looser on small elements): each element within ~4 ULP of its own value.
+        @test all(isapprox.(out_batch, out_scalar; rtol = 1.0e-15))
     end
 
     # ── Zero-alloc with search override + hint ───────────────────

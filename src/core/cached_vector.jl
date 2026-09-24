@@ -20,6 +20,12 @@ Base.length(c::_CachedVector) = length(c.inner)
 @inline Base.@propagate_inbounds Base.getindex(c::_CachedVector, i::Int) = c.inner[i]
 @inline Base.firstindex(::_CachedVector) = 1
 @inline Base.lastindex(c::_CachedVector) = length(c.inner)
+# Endpoint accessors: index `inner` directly under `@inbounds` — shared via CSE
+# with the domain check and `_search_binary`'s guard, bounds check dropped (n≥2
+# by ctor). `last` doesn't propagate `@inbounds`, so index explicitly
+# (`@inbounds last(c.inner)` would keep the check).
+@inline Base.first(c::_CachedVector) = @inbounds c.inner[1]
+@inline Base.last(c::_CachedVector) = @inbounds c.inner[end]
 Base.eltype(::Type{<:_CachedVector{T}}) where {T} = T
 Base.IndexStyle(::Type{<:_CachedVector}) = IndexLinear()
 
@@ -107,10 +113,10 @@ end
 #   x type         + Tg            → result   (notes)
 #   ─────────────────────────────────────────────────────────────────────────
 #   Vector{Tg}      + Tg            → pool-backed `_CachedVector{Tg}`
-#                                       (`_to_float` identity → 2-arg pool wrap)
-#   Vector{S}       + Tg, S ≠ Tg    → pool-backed `_CachedVector{Tg}` ⚠️ warns once
-#                                       (`_to_float` heap-allocates `Tg.(x)` then
-#                                        2-arg builds the wrapper)
+#                                       (same-eltype overload → 2-arg pool wrap)
+#   Vector{S}       + Tg, S ≠ Tg    → pool-backed `_CachedVector{Tg}`, zero heap
+#                                       (converting `copyto!` into a POOLED buffer,
+#                                        then 2-arg builds the wrapper)
 #   AbstractRange   + Tg            → `_CachedRange{Tg}`  (zero pool, immutable
 #                                       struct; eltype always Tg)
 #   _CachedRange{Tg}  + Tg            → identity passthrough
@@ -126,38 +132,42 @@ end
 #
 # Bottom line: `_cache_axis_pooled(pool, x, Tg)` *always* returns a wrapper
 # with eltype `Tg`. The fast paths (same-eltype Vector/Range/wrapped) are
-# zero-alloc; eltype mismatches incur a one-time conversion alloc (and warn
-# on raw `Vector{S}` per `_to_float`'s `_warn_type_conversion`).
+# zero-alloc; wrapped-type eltype mismatches incur a one-time conversion alloc.
 @inline _cache_axis_pooled(pool, x, ::Type{Tg}) where {Tg} =
     _cache_axis_pooled(pool, _to_float(x, Tg))
 
+# Vector overloads (beat the catch-all): same-eltype → plain 2-arg pool wrap;
+# mismatched eltype (e.g. Int grid under a value-matched Tg) → converting
+# `copyto!` into a POOLED buffer, then 2-arg wrap — warm one-shots stay zero-alloc.
+@inline _cache_axis_pooled(pool, x::AbstractVector{Tg}, ::Type{Tg}) where {Tg} =
+    _cache_axis_pooled(pool, x)
+@inline function _cache_axis_pooled(pool, x::AbstractVector, ::Type{Tg}) where {Tg}
+    buf = acquire!(pool, Tg, length(x))
+    copyto!(buf, x)
+    return _cache_axis_pooled(pool, buf)
+end
+
 # ========================================
-# Unified 2-arg accessors: _get_h, _get_inv_h
+# _get_h / _get_inv_h accessors (Vector hierarchy)
 # ========================================
-#
-# After this file loads, the dispatch surface for `_get_h(grid, i)` is:
-#   _CachedVector → cached vector lookup (this file)
-#   _CachedRange  → cached scalar       (this file, also covers AbstractRange via inheritance)
-#   AbstractRange → step()              (this file, fallback for non-_CachedRange ranges)
-#   AbstractVector → on-the-fly diff    (this file, fallback for raw Vectors / one-shot path)
+# Vector forms only; the Range forms (`_CachedRange`, `AbstractRange`) live in cached_range.jl.
 
 # _CachedVector — cached vector lookup (most specific for AbstractVector hierarchy)
 @inline Base.@propagate_inbounds _get_h(x::_CachedVector, i::Int) = @inbounds x.h[i]
 @inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, i::Int) = @inbounds x.inv_h[i]
 
-# _CachedRange — cached scalar (most specific for AbstractRange hierarchy)
-@inline _get_h(x::_CachedRange, ::Int) = x.h
-@inline _get_inv_h(x::_CachedRange, ::Int) = x.inv_h
+# Inverse of the 2-cell span x[i+1]-x[i-1] (central-difference / cardinal interior).
+# `_CachedVector` has no cached inverse for h[i-1]+h[i], so one (necessary) division —
+# but the widths come from the cache (no re-subtraction).
+@inline Base.@propagate_inbounds _get_inv_2cell(x::_CachedVector, i::Int) =
+    @inbounds inv(x.h[i - 1] + x.h[i])
 
-# AbstractRange (non-_CachedRange) — uniform spacing via step()
-@inline _get_h(x::AbstractRange, ::Int) = step(x)
-@inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
+# Raw AbstractVector fallback: direct span (one necessary division).
+@inline Base.@propagate_inbounds _get_inv_2cell(x::AbstractVector, i::Int) =
+    @inbounds inv(x[i + 1] - x[i - 1])
 
-# AbstractVector — compute on-the-fly (one-shot path, no cache available).
-# Raw eltype preserved (`Int → Int`, `Rational → Rational`). Arithmetic kernels
-# that follow this with `inv_h * y * dL` auto-promote naturally — no need to
-# eager-Float here. `_get_inv_h` returns `typeof(inv(h))` (Float64 for Int h,
-# Rational for Rational h, T for Float T).
+# AbstractVector — on-the-fly diff (one-shot, no cache). Raw eltype preserved
+# (`Int→Int`, `Rational→Rational`); downstream kernels auto-promote, so no eager-Float.
 @inline Base.@propagate_inbounds _get_h(x::AbstractVector, i::Int) =
     @inbounds x[i + 1] - x[i]
 @inline Base.@propagate_inbounds _get_inv_h(x::AbstractVector, i::Int) =
@@ -168,15 +178,46 @@ end
 #
 # `_CachedVector`: idx-indexed cache wins (1 load, no fp ops). The xL/xR
 # fields are ignored — they're already encoded in `c.inv_h[idx]`.
-@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::TL, ::TR) where {TL, TR} =
     @inbounds x.h[idx]
-@inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+@inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, idx::Int, ::TL, ::TR) where {TL, TR} =
     @inbounds x.inv_h[idx]
 
 # Raw `AbstractVector` fallback: no cache → `xR - xL` straight from search.
 # `idx` is ignored here (kept in signature for uniform call shape).
-@inline _get_h(::AbstractVector, ::Int, xL::Real, xR::Real) = xR - xL
-@inline _get_inv_h(::AbstractVector, ::Int, xL::Real, xR::Real) = inv(xR - xL)
+@inline _get_h(::AbstractVector, ::Int, xL::TL, xR::TR) where {TL, TR} = xR - xL
+@inline _get_inv_h(::AbstractVector, ::Int, xL::TL, xR::TR) where {TL, TR} = inv(xR - xL)
+
+# ── Width-first forms: `_get_*(Tw, x, i)` ────────────────────────────────────
+# `Tw` = value-matched coordinate width, computed ONCE at the caller's surface
+# (`_promote_grid_float(Tg, Tv)`). Raw axes difference in their OWN eltype first
+# (Int spans are exact; coordinates may exceed `Tw`'s ulp, so convert the SPAN,
+# never the endpoints), then divide — the reciprocal is BORN at `Tw`: no
+# `inv(Int)::Float64` minting beside narrower data. Wrapped axes (rows below and
+# in cached_range.jl) reuse their cached reciprocal; the convert is a no-op once
+# the axis is value-matched. `_get_h` needs no raw/wrapped split — converting
+# the span is exact either way, and the inner call dispatches to the cache.
+@inline Base.@propagate_inbounds _get_h(::Type{Tw}, x::AbstractVector, i::Int) where {Tw} =
+    convert(Tw, _get_h(x, i))
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::AbstractVector, i::Int) where {Tw} =
+    inv(_get_h(Tw, x, i))
+@inline Base.@propagate_inbounds _get_inv_2cell(::Type{Tw}, x::AbstractVector, i::Int) where {Tw} =
+    @inbounds inv(convert(Tw, x[i + 1] - x[i - 1]))
+
+# Dispatch shields — `_CachedVector <: AbstractVector` must keep its cached
+# reciprocal (width-convert the cached value instead of re-dividing).
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::_CachedVector, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_h(x, i))
+@inline Base.@propagate_inbounds _get_inv_2cell(::Type{Tw}, x::_CachedVector, i::Int) where {Tw} =
+    @inbounds inv(convert(Tw, x.h[i - 1] + x.h[i]))
+
+# Width-first SEARCH-RESULT form `(Tw, x, idx, xL, xR)` — same contract as above,
+# but the span comes from the search endpoints (raw axes never re-index). The
+# `_CachedVector` shield ignores the endpoints and reuses its cached reciprocal.
+@inline _get_inv_h(::Type{Tw}, ::AbstractVector, ::Int, xL::TL, xR::TR) where {Tw, TL, TR} =
+    inv(convert(Tw, xR - xL))
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::_CachedVector, idx::Int, ::TL, ::TR) where {Tw, TL, TR} =
+    _get_inv_h(Tw, x, idx)
 
 # Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):
 #   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy
@@ -196,12 +237,27 @@ end
 @inline _resolve_axis(x::AbstractVector) = x
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
 @inline _resolve_axis(c::_CachedVector) = c
+# Tg-typed 2-arg (no BC): vectors stay raw — Tg only steers Range axes (the search
+# promote-compares raw vectors; eager conversion would allocate).
+@inline _resolve_axis(x::AbstractVector, ::Type{Tg}) where {Tg} = x
+@inline _resolve_axis(c::_CachedVector, ::Type{Tg}) where {Tg} = c
 
-# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
-@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(x, bc_resolved.period)
-end
+# `:exclusive` raw-input one-shot path — raw inner (2-arg has no Tg; the ctor widens against the
+# period). `_wrap_exclusive` is the shared convert-first wrapper defined in cached_range.jl.
+@inline _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(x, bc)
+
+# 3-arg Tg-aware one-shot resolution — a raw Vector stays raw for NON-periodic axes (the search
+# promote-compares it, no eager conversion), so `Tg` only steers Range axes there.
+@inline _resolve_axis(x::AbstractVector, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline _resolve_axis(c::_CachedVector, ::AbstractBC, ::Type{Tg}) where {Tg} = c
+# `:exclusive` is the exception: the wrapped axis eltype is `promote(inner, period)`, so a raw Int
+# inner + `float(Int)`=Float64 period forces a Float64 axis past a value-matched Float32 witness
+# (crash). Convert-first to Tg — mirrors the Range arm + persistent `_cache_axis` — so the period
+# follows Tg. Diagonals are load-bearing against ambiguity between these two and the arms above.
+@inline _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_to_float(x, Tg), bc)
+@inline _resolve_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_convert_copy(c, Tg), bc)
 
 # ========================================
 # `_cache_axis` — persistent-path Vector wrapping
@@ -214,14 +270,9 @@ end
 @inline _cache_axis(c::_CachedVector, ::AbstractBC) = c
 
 # `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis(_CachedVector, ·)`.
-@inline function _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_CachedVector(x), bc_resolved.period)
-end
-@inline function _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
+@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_CachedVector(x), bc)
+@inline _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(c, bc)
 
 # 3-arg Tg-aware. Raw Vector respects Tg via `_to_float` then wraps.
 # Pre-wrapped `_CachedVector` passes through — downstream `_convert_copy(_, Tg)`

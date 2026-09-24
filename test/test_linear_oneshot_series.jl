@@ -80,11 +80,14 @@
         # NoExtrap: should throw
         @test_throws DomainError linear_interp(x, Series(y_sin, y_cos), xq_oob)
 
-        # ClampExtrap
+        # ClampExtrap. The scalar reference clamps the coordinate then runs the
+        # kernel (muladd at α=1), so it matches the series result only to ≤1 ULP;
+        # for the near-zero sin(2π) endpoint that is large relative to the value,
+        # so use an absolute tolerance instead of the default relative ≈.
         vals_clamp = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ClampExtrap())
         ref_clamp_sin = linear_interp(x, y_sin, xq_oob; extrap = ClampExtrap())
         ref_clamp_cos = linear_interp(x, y_cos, xq_oob; extrap = ClampExtrap())
-        @test vals_clamp[1] ≈ ref_clamp_sin
+        @test vals_clamp[1] ≈ ref_clamp_sin atol = 1.0e-14
         @test vals_clamp[2] ≈ ref_clamp_cos
 
         # ExtendExtrap
@@ -192,6 +195,23 @@
             xqs = [0.1, 0.37, 0.5, 0.9]
             outputs = [zeros(length(xqs)) for _ in 1:2]
             linear_interp!(outputs, x, s, xqs)  # warmup
+            return @allocated linear_interp!(outputs, x, s, xqs)
+        end
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation (in-place vector, sorted len≥8 → LinearBinarySearch arm)" begin
+        # A sorted query of length ≥ 8 flips `_is_likely_monotone` to true, so the
+        # default AutoSearch resolves to the LinearBinarySearch/RefHint arm — the
+        # adaptive branch the 4-query test above never reaches (len < 8 ⇒ BinarySearch).
+        # The policy is chosen inside `_fill_series_anchors_resolved!`, so the Union
+        # never reaches the build loop and the batch stays zero-alloc on this arm too.
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = collect(range(0.05, 0.95, 16))   # sorted, length 16 ≥ 8
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            linear_interp!(outputs, x, s, xqs)  # warmup
+            linear_interp!(outputs, x, s, xqs)  # second warmup (JIT settle under @testitem)
             return @allocated linear_interp!(outputs, x, s, xqs)
         end
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD

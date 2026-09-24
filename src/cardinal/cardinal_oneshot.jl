@@ -24,25 +24,28 @@
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     # `_periodic_extend_1d` already returns a normalized grid (Range or
     # `_CachedRange`/Vector) — the public `cardinal_interp` API pre-resolved
     # via `_resolve_axis(x)` before dispatching here, so no extra prep needed.
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    # Value-matched width: dy buffer + slope arithmetic (incl. the `1 - tension`
+    # scale) run at `Tw` — see pchip_oneshot.jl.
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
+    _cardinal_slopes!(dy, x_eff, y_ext, tension, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
 
 # Vector in-place — periodic BC follows the same extend-then-eval pattern.
 @inline @with_pool pool function _cardinal_interp_precompute!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector,
+        x_query::AbstractArray,
         bc::AbstractBC,
         tension::Real,
         extrap::AbstractExtrap,
@@ -51,12 +54,15 @@ end
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
-    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    # Value-matched width: dy buffer + slope arithmetic (incl. the `1 - tension`
+    # scale) run at `Tw` — see pchip_oneshot.jl.
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
+    _cardinal_slopes!(dy, x_eff, y_ext, tension, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
@@ -81,7 +87,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     # Wrap axis + data (axis-as-truth: `last(x_eff) == first(x) + period`,
@@ -98,10 +104,10 @@ end
 
 # Vector in-place — same axis-as-truth pattern.
 @inline function _cardinal_interp_onthefly!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector,
+        x_query::AbstractArray,
         bc::AbstractBC,
         tension::Real,
         extrap::AbstractExtrap,
@@ -111,7 +117,7 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    _check_query_output_size(output, x_query)
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     searcher = _resolve_search(x_eff, x_query, search, hint)
@@ -143,9 +149,11 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
-    tension_f = float(eltype(x))(tension)
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
+    # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis (tension follows).
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
+    tension_f = _as_dimensionless(tension, eltype(x))   # dimensionless (unit Tg: one() strips)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -160,10 +168,10 @@ end
 In-place cardinal spline interpolation.
 """
 @inline function cardinal_interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         tension::Real = 0.0,
@@ -171,9 +179,10 @@ In-place cardinal spline interpolation.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
-    tension_f = float(eltype(x))(tension)
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    _check_grid_orderable(Tg)
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
+    tension_f = _as_dimensionless(tension, eltype(x))   # dimensionless (unit Tg: one() strips)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
@@ -185,12 +194,13 @@ end
 """
     cardinal_interp(x, y, x_query; coeffs=AutoCoeffs(), tension=0.0, ...)
 
-Cardinal spline interpolation at multiple query points. Returns `Vector`.
+Cardinal spline interpolation at multiple query points. Returns an `Array`
+matching the query's shape (a `Vector` for a vector query).
 """
 function cardinal_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
+        x_query::AbstractArray{Tq};
         bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         tension::Real = 0.0,
@@ -198,9 +208,11 @@ function cardinal_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, Tv), Tv, Tq)
-    output = Vector{Tr}(undef, length(x_query))
+    ) where {Tg <: Number, Tv, Tq <: Number}
+    # Deriv-aware: an nth derivative lives in value/gridᴺ space (identity for `EvalValue`).
+    Tw = _promote_grid_float(Tg, Tv)
+    Tr = _deriv_eltype(_promote_eltype(_interp_op, Tw, Tv, Tq), Tw, deriv)
+    output = _alloc_query_output(Tr, x_query)
     cardinal_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

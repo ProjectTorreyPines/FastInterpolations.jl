@@ -188,6 +188,7 @@ makedocs(
         "Factory Functions" => "guides/factory_functions.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
+            "Performance Tips" => "guides/performance_tips.md",
             "Complex Numbers" => "guides/complex_number_support.md",
             "Autodiff (AD)" => [
                 "1D Interpolants" => "guides/autodiff_support.md",
@@ -216,6 +217,7 @@ makedocs(
             "Quadratic" => "api/quadratic.md",
             "Cubic" => "api/cubic.md",
             "Hermite Family" => "api/hermite.md",
+            "Polyharmonic Splines (PHS)" => "api/phs.md",
             "Adjoint" => "api/adjoint.md",
             "Types" => "api/types.md",
         ],
@@ -229,9 +231,8 @@ makedocs(
             "v0.2 → v0.3" => "migration/to_v0.3.md",
         ],
     ],
-    doctest = false,
-    checkdocs = :none,
-    warnonly = [:example_block],
+    doctest = true,
+    checkdocs = :exports,
 )
 
 inject_google_site_verification!(joinpath(@__DIR__, "build"))

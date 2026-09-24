@@ -22,7 +22,8 @@ no separate `period` field.
 # Type Parameters
 - `Tg`: Grid element type (Float32, Float64, or duck e.g. `ForwardDiff.Dual`).
 - `X`: Wrapped axis type (`_CachedRange`/`_CachedVector`/`_ExclusivePeriodicAxis`).
-- `F`: Thomas factorization type (`ThomasFactorization{Tg, Vector{Tg}}`).
+- `F`: Thomas factorization type (`ThomasFactorization{Vl, Vu, Vd}` — per-field
+  storage; all three are `Vector{Tg}` for Real grids).
 - `BC`: User's boundary condition (`BCPair{L,R}`, `PeriodicBC{E,P,C}`, etc.).
   Carries the resolved period for `:exclusive` periodic so display / cache pool
   comparison works without a separate field.
@@ -46,17 +47,17 @@ no separate `period` field.
 - `bc=ZeroCurvBC()`: Zero-curvature spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
-struct CubicSplineCache{Tg, X <: AbstractVector{Tg}, F, BC <: AbstractBC}
+struct CubicSplineCache{Tg, X <: AbstractVector{Tg}, F, BC <: AbstractBC, Q}
     x::X
     bc::BC
     thomas::F
-    q::Vector{Tg}   # Sherman-Morrison q (length n_cells for periodic; empty otherwise)
+    q::Q   # Sherman-Morrison q (periodic: Vector, length n_cells; `nothing` otherwise)
 end
 
 # AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)
 
 """
-    CubicInterpolant{Tg, Tv, C, E, P, BC, Tz}
+    CubicInterpolant{Tg, Tv, C, E, P, BC, Tz, Y}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
@@ -68,11 +69,11 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type (AutoSearch, BinarySearch, LinearBinarySearch, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
-- `Tz`: Element type of z coefficients (`= _output_eltype(Tv, Tg)` — Dual when grid is Dual)
+- `Tz`: Element type of z coefficients (`= _promote_eltype(_coeff_op2, Tg, Tv)` — Dual when grid is Dual)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
-- `y::Vector{Tv}`: y-values (function values at grid points)
+- `y::Y`: y-values (`Y<:AbstractVector{Tv}` — `Vector` when owned; may be a view under `StorePolicy(copy=false)`)
 - `z::Vector{Tz}`: Pre-computed second derivative coefficients (solves system once!)
 - `bc::BC`: Boundary condition used for this interpolant
 - `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
@@ -103,10 +104,10 @@ val = itp(0.5)  # returns ComplexF64
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses type-parametrized dispatch for zero overhead
 """
-struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC, Tz} <: AbstractInterpolant1D{Tg, Tv}
+struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC, Tz, Y <: AbstractVector{Tv}} <: AbstractInterpolant1D{Tg, Tv}
     cache::C
-    y::Vector{Tv}
-    z::Vector{Tz}  # Second derivative coefficients: Tz = _output_eltype(Tv, Tg)
+    y::Y
+    z::Vector{Tz}  # Second derivative coefficients: Tz = _promote_eltype(_coeff_op2, Tg, Tv)
     bc::BC  # Boundary condition used for this interpolant
     extrap::E  # Extrapolation mode (compile-time specialized via type parameter)
     search_policy::P  # Default search policy (immutable, thread-safe)
@@ -116,13 +117,15 @@ struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, 
             z::AbstractVector,
             bc::BC,
             extrap::E,
-            search::P = AutoSearch()
+            search::P = AutoSearch();
+            store::StorePolicy = StorePolicy()
         ) where {Tg, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
         length(cache.x) == length(y) || _throw_length_mismatch(length(cache.x), length(y))
         length(cache.x) == length(z) || _throw_length_mismatch(length(cache.x), length(z), "grid", "z")
         Tv = _value_type(eltype(y), Tg)
         Tz = eltype(z)
-        return new{Tg, Tv, C, E, P, BC, Tz}(cache, _convert_copy(y, Tv), Vector{Tz}(z), bc, extrap, search)
+        yc = _own_or_ref_values(y, Tv, store)
+        return new{Tg, Tv, C, E, P, BC, Tz, typeof(yc)}(cache, yc, Vector{Tz}(z), bc, extrap, search)
     end
 end
 

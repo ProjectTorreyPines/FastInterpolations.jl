@@ -27,7 +27,7 @@ Non-derivative axes (Linear/Constant) produce fewer intermediates (no derivative
         indices::NTuple{N, Int},
         hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},
-        dLs::Tuple{Vararg{Real, N}},
+        dLs::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp},
         ::M,
     ) where {Tv, Tg, N, NP1, M <: Tuple{Vararg{AbstractInterpMethod, N}}}
@@ -137,7 +137,7 @@ end
         grids::NTuple{N, AbstractVector{Tg}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps,
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{Number, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -146,8 +146,9 @@ end
     # Handle extrapolation
     q_eval = _handle_all_extraps(query, grids, extraps)
 
-    # Cell location
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono)
+    # Cell location — `extraps` is domain-checked + per-axis InBounds-promoted, so an in-domain
+    # NoExtrap range axis takes the lean search (6-arg extrap-aware form).
+    indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids, indices, Ls)
 
     # Evaluate kernel with compact partials

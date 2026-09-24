@@ -131,3 +131,31 @@
         @test output ≈ expected_aos
     end
 end
+
+# Regression: a Vector{Tuple} is an AoS BATCH, not a single N-vector point. Relaxing the
+# vector-point method to unbounded `AbstractVector` silently captured AoS batches (a
+# 5-point batch mis-read as one 5-element point). Fix = `{<:Number}` scalar-vs-container
+# gate; affects plain Real grids too, not unit-specific.
+@testitem "ND batch dispatch: AoS Vector{Tuple} routes to batch, not vector-point" begin
+    using InteractiveUtils: @which
+
+    x = collect(range(0.0, 2.0, 11))
+    y = collect(range(0.0, 1.0, 6))
+    data = [sin(xi) * cos(yj) for xi in x, yj in y]
+    itp = linear_interp((x, y), data)
+
+    qxs = [0.3, 0.7, 1.1, 1.5, 1.9]
+    qys = [0.1, 0.3, 0.5, 0.7, 0.9]
+    aos = [(qxs[i], qys[i]) for i in eachindex(qxs)]   # Vector{Tuple{Float64,Float64}}
+    soa = (qxs, qys)
+
+    # Functional: AoS batch yields n results (no DimensionMismatch) and matches SoA.
+    @test length(itp(aos)) == length(qxs)
+    @test itp(aos) ≈ itp(soa)
+    @test itp(aos)[1] ≈ itp((qxs[1], qys[1]))
+
+    # Dispatch: AoS and SoA share the batch method; a genuine 2-element numeric
+    # vector is a single point on a DIFFERENT method.
+    @test @which(itp(aos)) === @which(itp(soa))
+    @test @which(itp(aos)) !== @which(itp([0.5, 0.5]))
+end

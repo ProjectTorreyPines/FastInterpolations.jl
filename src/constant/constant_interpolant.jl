@@ -33,6 +33,13 @@ end
 # `Int` instead of `Float64`.
 @inline _axis_grid_eltype(::typeof(_select_op), ::Type{Tg}, ::Type{Tv}) where {Tg, Tv} = Tg
 
+# A `GridIdx` query resolves to `GridIdx{Tg}(k, x[k])` before the kernel reads it, so its
+# output witness is the axis type — the unresolved wrapper's `Float64` payload would
+# select Int data into a Float64 buffer. One arm serves the 1D, persistent, unified and
+# ND traits (all fold through this call).
+@inline _promote_eltype(::typeof(_select_op), ::Type{Tg}, ::Type{Tv}, ::Type{<:GridIdx}) where {Tg, Tv} =
+    _promote_eltype(_select_op, Tg, Tv, Tg)
+
 @inline _promote_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
     _promote_eltype(_select_op, Tg, Tv, Tq)
 

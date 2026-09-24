@@ -29,14 +29,15 @@
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq, S <: Searcher}
+    xi = _resolve_grididx(xi, x)   # GridIdx(k) → node coordinate (identity otherwise)
     if _extract_primal(xi) == _extract_primal(last(x))
-        # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic
-        # `inner[1]`). `one(Tq) * one(Tg)` threads both query and grid carriers
-        # — must match the kernel branch (which threads Tg via `dL`), else
-        # inference becomes `Union{Tv, Dual}` when grid is Dual and query is Float.
+        # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic `inner[1]`).
+        # `one(coord) * one(Tg)` threads both carriers — must match the kernel branch
+        # (Tg via `dL`), else inference is `Union{Tv, Dual}` for a Dual grid + Float query.
+        # The carrier comes from the resolved value, not `Tq` (a `GridIdx` has no `one`).
         return op isa EvalValue ?
-            last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(Tq)
+            last(y) * one(_coord_value(xi)) * one(Tg) :
+            0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(_coord_value(xi))
     end
     # Reached only in-domain (genuine InBounds; NoExtrap post-throw; Clamp/Fill/Extend after
     # their IN_DOMAIN check — ExtendExtrap is routed to Clamp above), so the lean InBounds
@@ -59,11 +60,12 @@ end
     # Thread `extrap_eff` into the search (not a hardcoded InBounds()) so this core matches the other
     # 1D wrappers and stays correct for any extrap that reaches it — today only NoExtrap does
     # (ExtendExtrap → ClampExtrap; Clamp/Fill/Wrap have own methods). Seam branch mirrors the InBounds core.
+    xi = _resolve_grididx(xi, x)
     extrap_eff = _check_domain(x, xi, extrap)
     if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ?
-            last(y) * one(Tq) * one(Tg) :
-            0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(Tq)
+            last(y) * one(_coord_value(xi)) * one(Tg) :
+            0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(_coord_value(xi))
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi, extrap_eff)
     dL = xi - xL
@@ -97,7 +99,7 @@ end
     ) where {Tg, Tv, Tq, S <: Searcher}
     # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
     # Dual), matching the in-domain selection. Identity on Float64; Int grids stay Int.
-    xi = _promote_coord(xi, eltype(x))
+    xi = _promote_coord(_resolve_grididx(xi, x), eltype(x))
     xi_primal = _extract_primal(xi)
     st = _oob_state(x, xi_primal)
     deriv_oneunit = _deriv_oneunit(oneunit(eltype(x)), op)
@@ -119,7 +121,7 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq, S <: Searcher}
-    xi_wrapped = _wrap_to_domain(xi, x)
+    xi_wrapped = _wrap_to_domain(_resolve_grididx(xi, x), x)
     # Right-edge short-circuit (closed-domain): `xi == last(x)` collapses
     # uniformly to `last(y)`, bypassing side semantics. Mirrors the InBounds
     # core's identical guard and the persistent anchor path's `aq.xq == x_last`
@@ -128,8 +130,8 @@ end
     # cyclic wrap is preserved; raw Vector yields `y[n]`.
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
         return op isa EvalValue ?
-        last(y) * one(Tq) * one(Tg) :
-        0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(Tq)
+        last(y) * one(_coord_value(xi_wrapped)) * one(Tg) :
+        0 * last(y) * _deriv_oneunit(oneunit(Tg), op) * one(_coord_value(xi_wrapped))
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1

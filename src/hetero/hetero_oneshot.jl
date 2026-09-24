@@ -448,6 +448,9 @@ end
 
 # Shared body for the public batch `interp!` methods. Query-specific contracts
 # such as GriddedQuery's shaped output requirement are checked before entry.
+# Normalizes `method`, then routes on (grid arity, method tuple): the N=1 local-Hermite
+# route (interp_1d.jl) must see the caller's `coeffs` before the ND resolver turns
+# `AutoCoeffs` into the per-query `OnTheFly` loop.
 function _interp_nd_oneshot_batch_public!(
         output::AbstractArray,
         grids::NTuple{N, AbstractVector},
@@ -461,6 +464,18 @@ function _interp_nd_oneshot_batch_public!(
         hint,
     ) where {N}
     method_tuple = _method_tuple(method, Val(N))
+    return _interp_nd_oneshot_batch_route!(output, grids, data, queries, method_tuple, coeffs, deriv, extrap, search, hint)
+end
+
+function _interp_nd_oneshot_batch_route!(
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries,
+        method_tuple::Tuple{Vararg{AbstractInterpMethod, N}},
+        coeffs::AbstractCoeffStrategy,
+        deriv, extrap, search, hint,
+    ) where {N}
     # A GridIdx query mixes free arrays with pinned scalar indices, so `_query_size`
     # does not describe it; the GridIdx branch pre-slices the pinned axes and its
     # reduced sub-problem validates its own length. Every other query gets the exact-
@@ -480,7 +495,7 @@ function _interp_nd_oneshot_batch_public!(
         flat = output isa AbstractVector ? output : vec(output)
         _interp_batch_with_grididx!(
             flat, grids, data, queries;
-            method = method, deriv = deriv, extrap = extrap,
+            method = method_tuple, deriv = deriv, extrap = extrap,
             search = search, hint = hint, coeffs = coeffs,
         )
         return output

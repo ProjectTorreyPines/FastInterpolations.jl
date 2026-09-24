@@ -858,6 +858,35 @@ end
     return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
 end
 
+# ── GridIdx batches: every entry names a node ──
+# An index has no extrapolation meaning: validate `1 ≤ idx ≤ length(x)` (the scalar
+# resolve's ArgumentError) under every mode and return `InBounds()`. Unconditional, since
+# the per-point resolve check is `@boundscheck` inside `@inbounds` loops. The extrema-based
+# arms above cannot see a GridIdx batch (no `<` between two GridIdx), so each reachable
+# arm gets a twin; Aqua pins the table ambiguity-free.
+@inline function _validate_grididx_batch(x::AbstractVector, q::AbstractArray{<:GridIdx})
+    n = length(x)
+    @inbounds for i in eachindex(q)
+        k = q[i].idx
+        1 <= k <= n || _throw_grididx_oob_resolve(k, n)
+    end
+    return InBounds()
+end
+@inline _check_domain(x::AbstractVector, q::AbstractArray{<:GridIdx}, ::NoExtrap, dim::Int = 0) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(x::_CachedRange, q::AbstractArray{<:GridIdx}, ::NoExtrap, dim::Int = 0) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(
+    x::_CachedRange{T, Tinv, Tag}, q::AbstractArray{<:GridIdx}, ::NoExtrap, dim::Int = 0
+) where {T, Tinv, Tag <: _AbstractUnitStep} = _validate_grididx_batch(x, q)
+@inline _check_domain(x::AbstractVector, q::AbstractArray{<:GridIdx}, ::AbstractExtrap) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(x::AbstractVector, q::AbstractArray{<:GridIdx}, ::Union{ClampExtrap, FillExtrap, WrapExtrap}) =
+    _validate_grididx_batch(x, q)
+@inline _check_domain(
+    x::_CachedRange{T, Tinv, Tag}, q::AbstractArray{<:GridIdx}, ::Union{ClampExtrap, FillExtrap, WrapExtrap}
+) where {T, Tinv, Tag <: _AbstractUnitStep} = _validate_grididx_batch(x, q)
+
 # Safe domain bounds — single axis-dispatched source of truth for every in-domain
 # test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
 # at a boundary query. Exact-domain axes → `first/last` (field reads on

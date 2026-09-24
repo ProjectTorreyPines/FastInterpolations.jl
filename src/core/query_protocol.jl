@@ -91,6 +91,9 @@ end
 
 # Scalar type extraction helpers — dispatch on element type
 @inline _scalar_eltype(::Type{T}) where {T <: Real} = T
+# 1-tuple: read off the type parameter — the `fieldtypes` splat below does not
+# constant-fold under `--check-bounds=no` (the N=1 scalar view's `T` would go runtime).
+@inline _scalar_eltype(::Type{Tuple{T}}) where {T} = T
 @inline _scalar_eltype(::Type{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
 @inline _scalar_eltype(::Type{Any}) = _throw_query_eltype_any()
 @inline _scalar_eltype(::Type{T}) where {T} = eltype(T)

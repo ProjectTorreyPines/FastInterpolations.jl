@@ -23,6 +23,7 @@ include("axis_anchor_types.jl") # 8d. _AxisAnchor backbone types + _StatefulPayl
 include("series_lean_anchors.jl") # 8e. Family-agnostic lean Series build loop (dispatches on interp method; family payloads/kernels live per-method)
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)
+include("nd1_query_adapter.jl")        # 9b-1. N=1 scalar-query adapter (_scalar_query: point containers → 1D batch)
 include("interpolant_protocol.jl")     # 9c. Interpolant callable interface (1D + ND)
 include("adjoint_protocol.jl")         # 9d. Adjoint callable interface (1D + ND)
 include("nd_adjoint_scatter.jl")       # 9e. Shared ND adjoint scatter (_NDAdjointAnchor, _scatter_nd!)

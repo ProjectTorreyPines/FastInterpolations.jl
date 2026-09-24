@@ -155,3 +155,25 @@ Equivalent to the dedicated 1D in-place call (e.g. `cubic_interp!(output, x, y, 
     _, fn!, opts = _interp1d_route(method)
     return fn!(output, x, y, queries; opts..., deriv = deriv, extrap = extrap, search = search)
 end
+
+# ----------------------------------------------------------------------------
+# N=1 ND batch → native 1D batch (local-Hermite family)
+# ----------------------------------------------------------------------------
+# The homogeneous families reach the 1D engine through their own `*_interp!` collapse
+# arm; local Hermite has no ND type and would fall to the per-query OnTheFly loop with
+# `coeffs` already resolved. Claim the 1-axis case first and hand the caller's `coeffs`
+# to the bare-grid 1D entry unchanged (never an ND public method → no cycle).
+function _interp_nd_oneshot_batch_route!(
+        output::AbstractArray,
+        grids::Tuple{AbstractVector},
+        data::AbstractVector,
+        queries::Union{AbstractArray, Tuple{AbstractArray}},
+        method_tuple::Tuple{Union{PchipInterp, CardinalInterp, AkimaInterp}},
+        coeffs::AbstractCoeffStrategy,
+        deriv, extrap, search, hint,
+    )
+    _check_query_output_size(output, queries)
+    _, fn!, opts = _interp1d_route(only(method_tuple))
+    kw = _unwrap_nd_kwargs((; deriv, extrap, search, hint))
+    return fn!(output, only(grids), data, _scalar_query(queries); opts..., coeffs, kw...)
+end

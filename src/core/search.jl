@@ -297,6 +297,9 @@ end
 @inline function _resolve_search_policy(::AutoSearch, xq::AbstractArray, ::Nothing)
     return _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
 end
+# GridIdx batch: every point short-circuits on its index (no ordering probe — two
+# GridIdx of one type have no `-`); BinarySearch as placeholder, as for the scalar.
+@inline _resolve_search_policy(::AutoSearch, ::AbstractArray{<:GridIdx}, ::Nothing) = BinarySearch()
 
 # ----------------------------------------
 # 4-arg form: grid-aware resolution (Range short-circuit)

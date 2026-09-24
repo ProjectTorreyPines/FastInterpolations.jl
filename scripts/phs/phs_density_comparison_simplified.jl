@@ -60,7 +60,7 @@ end
 # ============================================================
 # wfc/ auto-downloads from critic2 (ensure_wfc_files); .pkl grid and .csv line cut
 # are committed under dat/ (no public download source).
-const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl")
+const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_O7H21crop.pkl")
 const CSV_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv")
 const XYZ_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz")
 const WFC_DIR = joinpath(@__DIR__, "dat", "wfc")
@@ -101,7 +101,10 @@ function ensure_wfc_files()
     end
 
     println("Downloading PBE wavefunction files from critic2 (GitHub)...")
-    base_url = "https://raw.githubusercontent.com/aoterodelaroza/critic2/master/dat/wfc"
+    # Pinned to the last critic2 commit that ships the PBE .wfc files: on 2026-09-23
+    # critic2 replaced dat/wfc/*.wfc with fitted densities (dat/atomdens/fit_*.dat),
+    # so the master URL 404s. This SHA is the version the reference data was made with.
+    base_url = "https://raw.githubusercontent.com/aoterodelaroza/critic2/7be898b222f2edec1ccf1c8c70c32bfbd6d9297c/dat/wfc"
 
     download_count = 0
     for sym in all_symbols

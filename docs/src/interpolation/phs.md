@@ -131,7 +131,7 @@ itp = phs_interp((x, y, z), rho_data;
 
 The script [`scripts/phs/phs_density_comparison.jl`](https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/master/scripts/phs/phs_density_comparison.jl) demonstrates PHS for **electron density interpolation** in a phenol dimer, recreating Figure 2 in [the paper](https://doi.org/10.1063/5.0090232). It uses:
 
-- **Data**: DFT-computed electron density on a 75×113×70 grid
+- **Data**: DFT-computed electron density (B3LYP/TZ2P, 0.236 Bohr spacing). The committed grid is a 30×42×30 sub-box of the full 75×113×70 grid around the O7…H21 path at the original spacing, with a 12-node margin on every side; the comparison only evaluates along that path, so the error statistics and the figure are identical to the full-grid run
 - **Reference**: Analytical promolecular density (sum of PBE atomic densities from [critic2](https://github.com/aoterodelaroza/critic2))
 - **Validation**: Comparison of density, gradient, and Laplacian along a hydrogen-bond path
 
@@ -196,15 +196,15 @@ This generates `phs_density_comparison.png` and demonstrates:
 
 ### Timing Summary (with PHS-to-method ratios) for phenol dimer example
 
-**With optimized `blend_factor=1.0` (default).** The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path. Script was run twice to get accurate timings after JIT compilation and stencil caching.
+**With optimized `blend_factor=1.0` (default).** The build time was for the committed 30×42×30 grid (build cost scales with grid size, and PHS has a fixed stencil-precompute cost, so the build ratios shrink on larger grids), and evaluation times were for 1000 query points along the hydrogen-bond path. Script was run twice to get accurate timings after JIT compilation and stencil caching.
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
 |--------|-----------|------------|----------------|-----------------|
-| Nearest            | 0.14042 (10.6×) |   0.02739 (0.1×) |                  — |                    — |
-| Linear             | 0.01025 (145.7×) |  0.00009 (19.0×) |    0.00013 (47.2×) |                    — |
-| Cubic              |  0.58880 (2.5×) |  0.00009 (17.7×) |    0.00014 (46.7×) |      0.00013 (62.6×) |
-| Cardinal           | 0.05424 (27.5×) |   0.00022 (7.2×) |    0.00043 (14.8×) |      0.00042 (18.8×) |
-| PHS                |           1.494 |           0.0016 |             0.0064 |               0.0080 |
+| Nearest            | 0.00006 (2694.1×) |  0.00015 (15.3×) |                  — |                    — |
+| Linear             | 0.00006 (2916.3×) |  0.00004 (53.2×) |   0.00007 (126.1×) |                    — |
+| Cubic              | 0.00143 (121.9×) |  0.00006 (39.2×) |    0.00011 (83.6×) |     0.00010 (121.4×) |
+| Cardinal           | 0.00005 (3247.6×) |  0.00021 (11.0×) |    0.00053 (17.3×) |      0.00051 (23.4×) |
+| PHS                |           0.174 |           0.0023 |             0.0091 |               0.0119 |
 
 ### Detailed timings (with allocation information)
 
@@ -213,20 +213,20 @@ With optimized `blend_factor=1.0`:
 ```text
 Evaluating along path (1000 points)...
   Density (ρ):
-    Nearest ...   0.000027 seconds (0 allocations)
-    Linear ...    0.000004 seconds (0 allocations)
-    Cubic ...     0.000009 seconds (0 allocations)
-    Cardinal ...  0.000002 seconds (0 allocations)
-    PHS ...       0.001600 seconds (0 allocations)
+    Nearest ...   0.000087 seconds
+    Linear ...    0.000013 seconds
+    Cubic ...     0.000029 seconds
+    Cardinal ...  0.000182 seconds
+    PHS ...       0.002299 seconds
   Gradient Magnitude (|∇ρ|):
-    Linear ...    0.000224 seconds (13 allocations: 432 bytes)
-    Cubic ...     0.000019 seconds (7 allocations: 128 bytes)
-    Cardinal ...  0.000413 seconds (7 allocations: 128 bytes)
-    PHS ...       0.005900 seconds (7 allocations: 128 bytes)
+    Linear ...    0.000033 seconds (7 allocations: 128 bytes)
+    Cubic ...     0.000071 seconds (7 allocations: 128 bytes)
+    Cardinal ...  0.000502 seconds (7 allocations: 128 bytes)
+    PHS ...       0.009114 seconds (7 allocations: 128 bytes)
   Laplacian Magnitude (|∇²ρ|):
-    Cubic ...     0.000012 seconds (7 allocations: 336 bytes)
-    Cardinal ...  0.000477 seconds (1 allocation: 32 bytes)
-    PHS ...       0.009600 seconds (1 allocation: 32 bytes)
+    Cubic ...     0.000077 seconds (1 allocation: 32 bytes)
+    Cardinal ...  0.000488 seconds (1 allocation: 32 bytes)
+    PHS ...       0.011872 seconds (1 allocation: 32 bytes)
 ```
 
 *PHS achieves much higher accuracy than standard methods, especially for derivatives, with moderate build and evaluation overhead. Optimizations like `blend_factor=1.0` significantly improve performance without sacrificing accuracy for most applications.*

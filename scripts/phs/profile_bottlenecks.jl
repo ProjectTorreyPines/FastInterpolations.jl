@@ -19,7 +19,7 @@ Pickle.np_methods!(mt) = begin
 end
 
 # Configuration
-const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl")
+const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_O7H21crop.pkl")
 const CSV_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv")
 const BENCHMARK_REPS = 10
 const PROFILE_REPS = 50

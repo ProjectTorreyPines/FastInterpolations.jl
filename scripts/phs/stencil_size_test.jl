@@ -36,9 +36,11 @@ stencil_sizes = [3, 4, 5, 6, 7, 8, 10]
 results = Dict{Int, Any}()
 
 # Warm up
-itp = phs_interp((x, y, z), data; stencil_size = 8, degree = 3, blend_factor = 1.0)
-out = Vector{Float64}(undef, length(test_queries))
-itp(out, test_queries)
+# Warm-up (JIT + stencil cache); distinct names so the loop-local `itp`/`out`
+# below do not collide with these globals under file (non-interactive) soft scope.
+itp_warm = phs_interp((x, y, z), data; stencil_size = 8, degree = 3, blend_factor = 1.0)
+out_warm = Vector{Float64}(undef, length(test_queries))
+itp_warm(out_warm, test_queries)
 
 for ss in stencil_sizes
     @printf "Testing stencil_size = %d ... " ss
@@ -140,7 +142,7 @@ end
 for ss in stencil_sizes
     r = results[ss]
     if r.max_rel_error < baseline_err * 1.1  # Within 10% of ss=8
-        min_ss_for_accuracy = ss
+        global min_ss_for_accuracy = ss  # file soft scope: assign the global, not a loop-local
         break
     end
 end

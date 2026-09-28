@@ -161,19 +161,23 @@ end
     y = range(0.0, π, 15)
     data = [sin(xi + yj) for xi in x, yj in y]
 
-    itp = phs_interp((x, y), data; stencil_size = 5, degree = 3)
+    # Same settings on both entry points. The one-shot and persistent constructors
+    # currently resolve different default blend_factors, so it is passed explicitly
+    # here; the default-vs-default mismatch is pinned as §R7 in test_phs_broken_pins.jl.
+    kw = (; stencil_size = 5, degree = 3, blend_factor = 1.0)
+    itp = phs_interp((x, y), data; kw...)
 
     # Single-point one-shot
     q = (1.0, 1.5)
     val_itp = itp(q)
-    val_os = phs_interp((x, y), data, q; stencil_size = 5, degree = 3)
+    val_os = phs_interp((x, y), data, q; kw...)
     @test val_itp ≈ val_os atol = 1.0e-12
 
     # Batch one-shot
     xs = [0.3, 0.9, 1.5, 2.1, 2.7]
     ys = [0.2, 0.7, 1.3, 1.9, 2.5]
     vals_itp = itp((xs, ys))
-    vals_os = phs_interp((x, y), data, (xs, ys); stencil_size = 5, degree = 3)
+    vals_os = phs_interp((x, y), data, (xs, ys); kw...)
     @test vals_itp ≈ vals_os atol = 1.0e-12
 end
 
@@ -780,7 +784,10 @@ end
     # First derivative at grid node → lines 586-588
     d1 = itp((qx, qy); deriv = (DerivOp{1}(), DerivOp{0}()))
     @test isfinite(d1)
-    @test d1 ≈ cos(qx) atol = 0.3
+    # §R2: the first derivative exactly at a grid node is wrong (0.0 with the default
+    # blend_factor = 1.0; ≈ -0.84 with 2.0, which this loose tolerance used to accept).
+    # Tight-tolerance pins live in test_phs_broken_pins.jl.
+    @test_broken d1 ≈ cos(qx) atol = 0.3
 
     # Diagonal second derivative at grid node → lines 652-655
     # also triggers _phs_eval_from_coeffs total_order==2, lines 458-464, 174-190

@@ -270,3 +270,129 @@ end
     # lands it returns an equivalent interpolant agreeing with the tuple form.
     @test_broken phs_interp(x, y)((1.0,)) ≈ want atol = 1.0e-12
 end
+
+# ============================================================================
+# Regressions from the blend-default and weighted-node-selection changes, and
+# gaps against the ND query surfaces. Sections cite the same review document.
+# ============================================================================
+
+# ── R7: one-shot and persistent constructors disagree on the default blend ────
+# §R7. The persistent constructor defaults to blend_factor = 1.0, while the three
+# one-shot `phs_interp(grids, data, queries)` methods still default to 2.0, so the
+# same inputs give different results depending on the entry point. Fixed when both
+# paths resolve the default from one place.
+@testitem "PHS BROKEN PIN §R7 — one-shot and persistent share the default blend_factor" begin
+    x = range(0.0, π, 15)
+    y = range(0.0, π, 15)
+    data = [sin(xi + yj) for xi in x, yj in y]
+    q = (1.0, 1.5)
+    # today: ≈ 0.59862 (persistent) vs ≈ 0.59853 (one-shot) — off by ~1e-4.
+    @test_broken phs_interp((x, y), data; stencil_size = 5)(q) ≈
+        phs_interp((x, y), data, q; stencil_size = 5) atol = 1.0e-12
+end
+
+# ── R8: default blend radius leaves 4-D cell centres uncovered → exact 0.0 ─────
+# §R8. The blend weight vanishes at distance a = blend_factor · h. A cell centre is
+# (h/2)·√N from its nearest nodes, so with the default blend_factor = 1.0 all
+# weights are ~0 near 4-D (and higher) cell centres, Σw < eps, and the evaluator
+# returns zero. blend_factor = 2.0 (the paper's a = 2 × longest grid step) gives
+# 3.797 here. Fixed by a dimension-aware default.
+@testitem "PHS BROKEN PIN §R8 — 4-D default blend_factor covers cell centres" begin
+    x = range(0.0, 3.0, 7)
+    h = step(x)
+    f(p) = sum(sin, p)
+    data = [f(Tuple(I) .* h .- h) for I in CartesianIndices(ntuple(_ -> 7, 4))]
+    c = ntuple(_ -> (x[3] + x[4]) / 2, 4)
+    # today: exactly 0.0   want: ≈ 3.796
+    @test_broken phs_interp(ntuple(_ -> x, 4), data; stencil_size = 3)(c) ≈ f(c) rtol = 1.0e-2
+end
+
+# ── R9: fixed 27-slot blend buffer overflows for wider blends ─────────────────
+# §R9. `_phs_eval_blended_G_with_hess` (log transform + 2nd derivatives) collects
+# blend nodes into a buffer of fixed length 27, the candidate count for 3-D with
+# blend_factor ≤ 1. Wider blends (≳ 1.8 in 3-D, including the paper's 2.0 and the
+# one-shot default) overflow it with a BoundsError. With bounds checks disabled the
+# same write goes out of bounds silently, so the evaluation is skipped there (CI
+# always runs with bounds checks on).
+@testitem "PHS BROKEN PIN §R9 — log-transform 2nd derivative with blend_factor = 2.0" begin
+    x = range(0.0, 3.0, 13)
+    data = [exp(-((a - 1.5)^2 + (b - 1.5)^2 + (c - 1.5)^2)) + 0.5 for a in x, b in x, c in x]
+    q = (1.3, 1.37, 1.21)
+    want = (4 * (q[1] - 1.5)^2 - 2) * exp(-sum(abs2, q .- 1.5))   # ∂²/∂x² ≈ -1.598
+    ops = (DerivOp(2), DerivOp(0), DerivOp(0))
+    ref = ConstantRef(1.0)
+    if Base.JLOptions().check_bounds == 2
+        @test_broken false
+        @test_broken false
+    else
+        # today: BoundsError (swallowed as Broken)   want: ≈ -1.598 (-1.615 before the regression)
+        itp = phs_interp((x, x, x), data; stencil_size = 4, blend_factor = 2.0, reference_interp = ref)
+        @test_broken itp(q; deriv = ops) ≈ want rtol = 5.0e-2
+        # the one-shot default is 2.0, so the default call overflows as well
+        @test_broken phs_interp((x, x, x), data, q; stencil_size = 4, reference_interp = ref, deriv = ops) ≈
+            want rtol = 5.0e-2
+    end
+end
+
+# ── R10: truncated blend makes log-transform 2nd derivatives discontinuous ─────
+# §R10. The same `_phs_eval_blended_G_with_hess` keeps only the 7 heaviest blend
+# nodes and stops once 90% of the total weight is accumulated. The kept set flips
+# where two nodes tie in weight (cell mid-planes), so the second derivative jumps
+# there even with the default blend_factor. The other blend paths sum every
+# candidate and stay continuous. The probe crosses the mid-plane x = 1.125.
+@testitem "PHS BROKEN PIN §R10 — log-transform 2nd derivative is continuous" begin
+    x = range(0.0, 3.0, 13)
+    data = [exp(-((a - 1.5)^2 + (b - 1.5)^2 + (c - 1.5)^2)) + 0.5 for a in x, b in x, c in x]
+    ops = (DerivOp(2), DerivOp(0), DerivOp(0))
+    ts = range(1.123, 1.127; step = 1.0e-6)
+    maxjump(itp) = maximum(abs, diff([itp((t, 1.37, 1.21); deriv = ops) for t in ts]))
+    itp = phs_interp((x, x, x), data; stencil_size = 4, reference_interp = ConstantRef(1.0))
+    # today: 0.154, a step that does not shrink with finer sampling   want: ~6e-5
+    @test_broken maxjump(itp) < 1.0e-3
+    # control: the same quantity without the log transform is continuous today
+    @test maxjump(phs_interp((x, x, x), data; stencil_size = 4)) < 1.0e-3
+end
+
+# ── O2 (coverage): blend_factor below the cell-coverage threshold → silent 0.0 ─
+# §O2. Coverage needs a > (h/2)·√N, since a cell centre is the point farthest from
+# every node. Below that, queries near cell centres get Σw < eps and evaluate to
+# 0.0: 1-D with blend_factor = 0.3 at a cell midpoint, or 4-D with an explicit 1.0.
+# Pinned to the conservative fix (reject); replace with value pins if a follow-up
+# makes such blends work instead.
+@testitem "PHS BROKEN PIN §O2 — blend_factor below the coverage threshold rejected" setup = [PHSBrokenHelpers] begin
+    x1 = collect(range(0.0, 2pi, 41))
+    @test_broken is_throwing(() -> phs_interp((x1,), sin.(x1); blend_factor = 0.3), ArgumentError)
+    x4 = range(0.0, 3.0, 7)
+    data4 = [sum(sin, Tuple(I) .* step(x4) .- step(x4)) for I in CartesianIndices(ntuple(_ -> 7, 4))]
+    @test_broken is_throwing(
+        () -> phs_interp(ntuple(_ -> x4, 4), data4; stencil_size = 3, blend_factor = 1.0),
+        ArgumentError,
+    )
+end
+
+# ── O9: PHS does not take part in the ND query surfaces ───────────────────────
+# §O9. An N ≥ 2 GriddedQuery needs the gridded protocol (`_sample_data`), and
+# GridIdx needs query resolution (`_phs_check_domain` / `_phs_eval` reject it);
+# both are MethodErrors today. The N = 1 GriddedQuery forwards already work.
+@testitem "PHS BROKEN PIN §O9 — GriddedQuery (N ≥ 2) and GridIdx queries" begin
+    x = range(0.0, 1.0, 11)
+    y = range(0.0, 1.0, 11)
+    data = [sin(a) * cos(b) for a in x, b in y]
+    itp = phs_interp((x, y), data; stencil_size = 4)
+    ax1 = range(0.1, 0.9, 5)
+    ax2 = range(0.1, 0.9, 4)
+    @test_broken itp(GriddedQuery((ax1, ax2))) ≈ [itp((a, b)) for a in ax1, b in ax2]
+    yq = 0.37
+    @test_broken itp((GridIdx(4), yq)) ≈ itp((x[4], yq))
+    @test_broken itp(([GridIdx(4), GridIdx(5)], [yq, yq])) ≈ [itp((x[4], yq)), itp((x[5], yq))]
+end
+
+# ── F5: reference_data is silently ignored without reference_interp ───────────
+# §F5. The log transform is entered only when `reference_interp !== nothing`, so a
+# lone `reference_data` array is dropped without notice and the data are
+# interpolated untransformed. Pinned to rejecting the combination.
+@testitem "PHS BROKEN PIN §F5 — reference_data without reference_interp rejected" setup = [PHSBrokenHelpers] begin
+    x = collect(range(0.0, 2pi, 41))
+    data = 2.0 .+ sin.(x)
+    @test_broken is_throwing(() -> phs_interp((x,), data; reference_data = ones(length(x))), ArgumentError)
+end

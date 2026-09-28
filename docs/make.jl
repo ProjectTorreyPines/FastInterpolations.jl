@@ -160,7 +160,10 @@ makedocs(
             "Quadratic" => "interpolation/quadratic.md",
             "Cubic" => "interpolation/cubic.md",
             "Local Cubic Hermite" => "interpolation/local_hermite.md",
-            "Polyharmonic Splines (PHS)" => "interpolation/phs.md",
+            "Polyharmonic Splines (PHS)" => [
+                "Guide" => "interpolation/phs.md",
+                "Performance and Tuning" => "interpolation/phs_performance.md",
+            ],
             "Derivatives" => "interpolation/derivatives.md",
             "Integration" => "interpolation/integration.md",
             "Visual Comparison" => "interpolation/comparison.md",

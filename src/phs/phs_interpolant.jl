@@ -37,7 +37,9 @@ end
 Create an N-dimensional polyharmonic spline interpolant.
 
 # Arguments
-- `grids`: `NTuple{N, AbstractVector}` — one grid vector per dimension
+- `grids`: `NTuple{N, AbstractVector}` — one grid vector per dimension. Each axis must be
+    uniformly spaced: the stencil geometry uses a single spacing per axis, so non-uniform
+    axes are accepted but give inaccurate results.
 - `data`:  `AbstractArray{Tv, N}` — data values at grid nodes
 
 # Keyword Arguments

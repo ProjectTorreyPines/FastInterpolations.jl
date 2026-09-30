@@ -109,7 +109,7 @@ function phs_interp(
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
-    grids_c = map(g -> _convert_copy(_cache_axis(g, NoBC(), Tg), Tg), grids_typed)
+    grids_c = _convert_cache_axes(grids_typed, ntuple(_ -> NoBC(), Val(N)), Tg)
     searches = _resolve_search_nd(search, Val(N))
     extrap_vals = _resolve_extrap(extrap, ntuple(_ -> NoBC(), N), Val(N), Tv)
 

@@ -36,6 +36,9 @@ include("linear/linear_series_payloads.jl")  # lean Series layer reusing gridded
 include("constant/constant_series_payloads.jl")  # lean Series layer reusing gridded constant gather payload
 include("quadratic/quadratic_series_payloads.jl")  # lean Series layer baking dL, threading op through _quadratic_kernel
 
+# Polyharmonic splines (PHS) — scattered-stencil RBF ND method, independent of the gridded path.
+include("phs/phs.jl")
+
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
 
@@ -82,6 +85,7 @@ export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
 export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs  # ND cubic types + strategies
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
+export phs_interp, phs_interp!, PHSInterpolantND, PHSLogTransform, ConstantRef  # Polyharmonic spline ND
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
 export PchipInterp, CardinalInterp, AkimaInterp, CubicHermiteInterp  # Hermite family ND methods
 export GridIdx

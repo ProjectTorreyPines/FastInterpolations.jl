@@ -15,6 +15,21 @@ using TestItemRunner
     const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
 end
 
+# Helper for @test_broken throw-pins (test_phs_broken_pins.jl). Returns `true`
+# iff calling `f()` raises an exception of type `T` (or a subtype). Pairs with
+# @test_broken to pin "this SHOULD throw once the bug is fixed": while the code
+# still silently misbehaves, `is_throwing` returns `false` → recorded as Broken;
+# the moment a follow-up PR adds the validation, it returns `true` → @test_broken
+# reports an Unexpected Pass, signalling "promote me to @test".
+@testsnippet PHSBrokenHelpers begin
+    is_throwing(f, T::Type) = try
+        f()
+        false
+    catch e
+        e isa T
+    end
+end
+
 # Basic setup: the fixtures nearly every testitem needs — the `FI` alias and the
 # ULP-scaled `isclose`. Compose with AllocConstants (`setup=[Basic, AllocConstants]`)
 # when a testitem also needs allocation thresholds. The threshold consts are kept

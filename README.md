@@ -23,7 +23,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports **five interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**) plus the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), each with a native adjoint operator ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
 
 ### Classical splines
 
@@ -45,8 +45,17 @@ One cubic Hermite basis, four choices of slope rule. All C¹-continuous, O(1) pe
 | `cardinal_interp` | `cardinal_adjoint` | Catmull-Rom with `tension`   | Animation, spline curves through control points |
 | `akima_interp`    | `akima_adjoint`    | Akima (5-point stencil)      | Noisy data, outlier-robust |
 
+### Polyharmonic Splines (PHS)
+
+Local radial-basis-function interpolant on uniform rectilinear grids, blended across neighbouring stencils for C² continuity. An optional log-density transform (interpolate ln(ρ/ρ₀) against a user-supplied reference ρ₀) keeps derivatives accurate near steep features such as nuclear cusps.
+
+| Interpolation | Adjoint | Continuity | Best For |
+|:-------------|:--------|:-----------|:---------|
+| `phs_interp` | — | C² | Smooth-on-log-scale ND data; physics-informed reference functions |
+
 📖 [Interpolation Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/overview/) 
 📖 [Local Cubic Hermite](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/local_hermite/) 
+📖 [Polyharmonic Splines (PHS)](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/phs/)
 📖 [Adjoint Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/adjoint/overview/)
 
 ## Quick Start
@@ -146,7 +155,8 @@ Homogeneous methods (all same type) auto-dispatch to the optimized type — no p
 
 ### 2D Visualization Example
 Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-uniform grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
-![2D Interpolation Example](docs/images/readme_2d_comparison.png)
+
+![2D Interpolation Example non-uniform](docs/images/readme_2d_comparison.png)
 
 
 

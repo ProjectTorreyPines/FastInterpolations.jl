@@ -885,6 +885,48 @@ Same @generated strategy as `_walk_left`.
     end
 end
 
+# Window-overflow search for `_search_linear_binary!`: exponential search outward from
+# where the walk stopped, then bisect the bracket. O(log gap) probes near the hint instead
+# of a cache-cold O(log n) full-range search, for sorted queries stepping more than MAX cells.
+# Inlined at the walk sites: routing it through one shared or `@noinline` call measured
+# 5-25% slower on the in-window path.
+
+# Precondition: x[lo] <= xq < x[n]. Returns idx with x[idx] <= xq < x[idx + 1].
+@inline function _gallop_right(x::AbstractVector, xq, lo::Int, n::Int)
+    step = 1
+    hi = min(lo + 1, n)
+    @inbounds while _le(x[hi], xq)
+        lo = hi
+        step <<= 1
+        hi = min(lo + step, n)
+    end
+    return _bisect(x, xq, lo, hi)
+end
+
+# Precondition: x[1] <= xq < x[hi]. Returns idx with x[idx] <= xq < x[idx + 1].
+@inline function _gallop_left(x::AbstractVector, xq, hi::Int)
+    step = 1
+    lo = max(hi - 1, 1)
+    @inbounds while !_le(x[lo], xq)
+        hi = lo
+        step <<= 1
+        lo = max(hi - step, 1)
+    end
+    return _bisect(x, xq, lo, hi)
+end
+
+# Branchless bisection of a bracket x[lo] <= xq < x[hi] (same scheme as `_search_binary`).
+@inline function _bisect(x::AbstractVector, xq, lo::Int, hi::Int)
+    iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
+    @inbounds for _ in 1:iters
+        mid = (lo + hi) >> 1
+        cond = _le(x[mid], xq)
+        lo = ifelse(cond, mid, lo)
+        hi = ifelse(cond, hi, mid)
+    end
+    return lo
+end
+
 # Window-overflow binary fallback selector for `_search_linear_binary!`: leans to
 # `_search_binary_inbounds` when the search came through the `InBounds` path (query in-domain →
 # the binary `first`/`last` guards are dead), guarded otherwise. Compile-time singleton dispatch.
@@ -929,15 +971,27 @@ window-overflow binary variant (`InBounds()` → lean); the hint `clamp` is alwa
             # Only need: x[ix] <= xq  (single comparison per step)
             ix, found = _walk_left(x, xq, ix, Val(MAX))
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
+            # Window overflow with x[ix] > xq: gallop left if still in-domain.
+            if _le(first(x), xq)
+                ix = _gallop_left(x, xq, ix)
+                hint_ref[] = ix
+                return ix, x[ix], x[ix + 1]
+            end
         else  # xq >= xR
             # Walk right: xq >= x[ix+1] guaranteed ⟹ after ix+=1,
             # x[ix] = old x[ix+1] <= xq — left bound already satisfied.
             # Only need: xq < x[ix+1]  (single comparison per step)
             ix, found = _walk_right(x, xq, ix, n, Val(MAX))
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
+            # Window overflow with x[ix + 1] <= xq: gallop right if still in-domain.
+            if _lt(xq, last(x))
+                ix = _gallop_right(x, xq, ix + 1, n)
+                hint_ref[] = ix
+                return ix, x[ix], x[ix + 1]
+            end
         end
     end
-    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches).
+    # Out-of-domain query: full-range binary keeps the endpoint/extrap handling.
     # `_lb_binary_fallback` leans to `_search_binary_inbounds` on the `InBounds` path (query in-domain
     # → `first`/`last` guards dead); guarded otherwise. Singleton dispatch — the default guarded path's
     # codegen is unchanged.

@@ -257,6 +257,27 @@
             @test hint[] == 56
         end
 
+        @testset "Window overflow matches binary search" begin
+            # Jumps of any size and direction (gallop path), grid points, endpoints and
+            # out-of-domain queries must land in the same cell as a stateless binary search.
+            using Random
+            Random.seed!(7)
+            xg = cumsum(rand(1000) .+ 0.01)
+            qs = [
+                xg[1] .+ (xg[end] - xg[1]) .* rand(300); rand(xg, 50); xg[1]; xg[end];
+                xg[1] - 1; xg[end] + 1; sort(xg[1] .+ (xg[end] - xg[1]) .* rand(300))
+            ]
+            for MAX in (0, 2, 8)
+                hint = Ref(1)
+                policy = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint(hint))
+                for q in qs
+                    idx, _, _, _ = search_interval(policy, xg, q)
+                    @test idx == first(_search_binary(xg, q))
+                    @test hint[] == idx
+                end
+            end
+        end
+
         @testset "Range Ignores Hint" begin
             x_range = range(0.0, 1.0, 101)
             hint = Ref(50)

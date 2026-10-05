@@ -151,7 +151,11 @@ end
     d2 = (DerivOp(1), DerivOp(1))
     alloc_value(itp, q) = @allocated itp(q)
     alloc_deriv(itp, q, ops) = @allocated itp(q; deriv = ops)
-    alloc_value(itp, q); alloc_deriv(itp, q, d1); alloc_deriv(itp, q, d2)   # warm code and caches
+    # Warm twice: the first call fills the stencil coefficient cache, the second runs the
+    # cache-hit path, which LTS would otherwise compile inside the first measurement.
+    for _ in 1:2
+        alloc_value(itp, q); alloc_deriv(itp, q, d1); alloc_deriv(itp, q, d2)
+    end
     @test alloc_value(itp, q) <= ND_ALLOC_THRESHOLD
     @test alloc_deriv(itp, q, d1) <= ND_ALLOC_THRESHOLD
     @test alloc_deriv(itp, q, d2) <= ND_ALLOC_THRESHOLD
@@ -180,7 +184,7 @@ end
     itp2 = phs_interp((x, x), [g2((a, b)) * (1.5 + 0.1a) for a in x, b in x]; log_reference = g2)
     q2 = (0.43, -0.21)
     for ops in ((DerivOp(1), EV), (DerivOp(2), EV), (DerivOp(1), DerivOp(1)))
-        alloc_deriv(itp2, q2, ops)   # warm
+        alloc_deriv(itp2, q2, ops); alloc_deriv(itp2, q2, ops)   # warm twice: cache miss, then hit
         @test alloc_deriv(itp2, q2, ops) <= ND_ALLOC_THRESHOLD
     end
     # 3-D (the density use case)
@@ -189,7 +193,7 @@ end
     itp3 = phs_interp((x3, x3, x3), [g3((a, b, c)) * (1.5 + 0.1a) for a in x3, b in x3, c in x3]; stencil_size = 4, log_reference = g3)
     q3 = (0.21, -0.33, 0.14)
     for ops in ((DerivOp(1), EV, EV), (EV, DerivOp(1), EV), (DerivOp(2), EV, EV), (DerivOp(1), EV, DerivOp(1)), (EV, DerivOp(1), DerivOp(1)))
-        alloc_deriv(itp3, q3, ops)   # warm
+        alloc_deriv(itp3, q3, ops); alloc_deriv(itp3, q3, ops)   # warm twice: cache miss, then hit
         @test alloc_deriv(itp3, q3, ops) <= ND_ALLOC_THRESHOLD
     end
 end

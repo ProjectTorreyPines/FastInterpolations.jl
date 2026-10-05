@@ -40,7 +40,10 @@
     @testset "Same cell as binary search for any jump" begin
         # Random jumps both ways, grid points, endpoints, out-of-domain, long ascending and
         # descending runs (gallop right / left repeatedly).
-        qs = [span(300); rand(rng, xg, 50); lo; hi; lo - 1; hi + 1; sort(span(300)); sort(span(100); rev = true)]
+        qs = [
+            span(300); rand(rng, xg, 50); lo; hi; lo - 1; hi + 1; NaN; Inf; -Inf;
+            sort(span(300)); sort(span(100); rev = true)
+        ]
         for MAX in (0, 2, 8, 32)
             s = Searcher{LinearGallopSearch{MAX}, RefHint}(RefHint(Ref(1)))
             @test isempty(mismatches(s, xg, qs))
@@ -51,6 +54,9 @@
         xi = cumsum(rand(rng, 1:5, 300))
         qi = sort(xi[1] .+ (xi[end] - xi[1]) .* rand(rng, 40))
         @test isempty(mismatches(Searcher{LinearGallopSearch{8}, RefHint}(RefHint(Ref(1))), xi, qi))
+        # Two-point grid: every query is a direct hit or out of domain
+        x2 = [0.0, 1.0]
+        @test isempty(mismatches(Searcher{LinearGallopSearch{8}, RefHint}(RefHint(Ref(1))), x2, [-1.0, 0.0, 0.5, 1.0, 2.0, NaN]))
     end
 
     # API level: every family must agree with BinarySearch. Same maths on two code paths,
@@ -92,6 +98,19 @@
         ref = linear_interp((gx, gy), Z; search = B)
         @test isclose(linear_interp((gx, gy), Z; search = (G, B))((qx, qy)), ref((qx, qy)); nulps = PATH_ULPS)
         @test isclose(linear_interp((gx, gy), Z; search = G)((qx[7], qy[7])), ref((qx[7], qy[7])); nulps = PATH_ULPS)
+    end
+
+    @testset "Periodic axes" begin
+        xp = cumsum(rand(rng, 400) .+ 0.05)
+        Lp = xp[end] - xp[1]
+        yp = sin.(2π .* (xp .- xp[1]) ./ Lp)
+        q_wrap = sort(xp[1] - 2Lp .+ 5Lp .* rand(rng, 300))   # sorted across several periods
+        q_rnd = xp[1] - 2Lp .+ 5Lp .* rand(rng, 300)
+        inclusive = linear_interp(xp, yp; bc = PeriodicBC(endpoint = :inclusive))
+        exclusive = linear_interp(xp[1:(end - 1)], yp[1:(end - 1)]; bc = PeriodicBC(endpoint = :exclusive, period = Lp))
+        for itp in (inclusive, exclusive), q in (q_wrap, q_rnd)
+            @test isclose(itp(q; search = G), itp(q; search = B); nulps = PATH_ULPS)
+        end
     end
 
     @testset "Hint write-back (scalar)" begin

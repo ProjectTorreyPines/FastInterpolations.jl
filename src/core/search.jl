@@ -183,6 +183,44 @@ end
 LinearBinarySearch(; linear_window::Integer = 8) = LinearBinarySearch(linear_window)
 
 """
+    LinearGallopSearch{MAX} <: AbstractSearchPolicy
+
+Same direct hit and `MAX`-cell linear walk as [`LinearBinarySearch`](@ref), but when the
+target lies beyond the window it **gallops** outward from where the walk stopped (1, 2, 4, …
+cells) and bisects that bracket, instead of a full-range binary search. Also known as
+exponential search, or `hunt` in Numerical Recipes.
+
+Opt-in only: `AutoSearch` never selects it.
+
+# Performance Characteristics
+- **Window overflow**: ≈ 2·log2(gap) probes near the hint, vs log2(n) for `LinearBinarySearch`
+- **Wins** for sorted or local queries whose jumps exceed the window but stay well below √n
+  cells (e.g. about 10,000–100,000 sorted queries over a 1M-point grid)
+- **Loses** for random access and very sparse queries (jumps ≳ √n cells): typically 1.3–2.2×
+  slower than `LinearBinarySearch`, whose full-range search keeps reusing cache-hot nodes
+
+# Construction
+```julia
+LinearGallopSearch()                   # default MAX=8
+LinearGallopSearch(linear_window=4)    # same curated windows as LinearBinarySearch
+```
+
+See also: [`LinearBinarySearch`](@ref), [`BinarySearch`](@ref)
+"""
+struct LinearGallopSearch{MAX} <: AbstractSearchPolicy end
+
+"""
+    LinearGallopSearch(linear_window::Integer)
+    LinearGallopSearch(; linear_window::Integer=8)
+
+Factory constructor for `LinearGallopSearch{MAX}`. Accepts the same curated `linear_window`
+values as [`LinearBinarySearch`](@ref): `0, 1, 2, 4, 8, 16, 32, 64, 128`.
+"""
+LinearGallopSearch(linear_window::Integer) = _gallop_policy(LinearBinarySearch(linear_window))
+LinearGallopSearch(; linear_window::Integer = 8) = LinearGallopSearch(linear_window)
+@inline _gallop_policy(::LinearBinarySearch{MAX}) where {MAX} = LinearGallopSearch{MAX}()
+
+"""
     AutoSearch <: AbstractSearchPolicy
 
 Adaptive search policy that resolves at call time based on query type:
@@ -420,6 +458,11 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
     Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint())
 @inline _to_searcher(::LinearBinarySearch{MAX}, hint::Base.RefValue{Int}) where {MAX} =
     Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint(hint))
+
+@inline _to_searcher(::LinearGallopSearch{MAX}, ::Nothing = nothing) where {MAX} =
+    Searcher{LinearGallopSearch{MAX}, RefHint}(RefHint())
+@inline _to_searcher(::LinearGallopSearch{MAX}, hint::Base.RefValue{Int}) where {MAX} =
+    Searcher{LinearGallopSearch{MAX}, RefHint}(RefHint(hint))
 
 # AutoSearch fallbacks: _resolve_search_policy should be called first, but if any
 # code path misses resolution, fall back to BinarySearch (safe stateless default).
@@ -885,48 +928,6 @@ Same @generated strategy as `_walk_left`.
     end
 end
 
-# Window-overflow search for `_search_linear_binary!`: exponential search outward from
-# where the walk stopped, then bisect the bracket. O(log gap) probes near the hint instead
-# of a cache-cold O(log n) full-range search, for sorted queries stepping more than MAX cells.
-# Inlined at the walk sites: routing it through one shared or `@noinline` call measured
-# 5-25% slower on the in-window path.
-
-# Precondition: x[lo] <= xq < x[n]. Returns idx with x[idx] <= xq < x[idx + 1].
-@inline function _gallop_right(x::AbstractVector, xq, lo::Int, n::Int)
-    step = 1
-    hi = min(lo + 1, n)
-    @inbounds while _le(x[hi], xq)
-        lo = hi
-        step <<= 1
-        hi = min(lo + step, n)
-    end
-    return _bisect(x, xq, lo, hi)
-end
-
-# Precondition: x[1] <= xq < x[hi]. Returns idx with x[idx] <= xq < x[idx + 1].
-@inline function _gallop_left(x::AbstractVector, xq, hi::Int)
-    step = 1
-    lo = max(hi - 1, 1)
-    @inbounds while !_le(x[lo], xq)
-        hi = lo
-        step <<= 1
-        lo = max(hi - step, 1)
-    end
-    return _bisect(x, xq, lo, hi)
-end
-
-# Branchless bisection of a bracket x[lo] <= xq < x[hi] (same scheme as `_search_binary`).
-@inline function _bisect(x::AbstractVector, xq, lo::Int, hi::Int)
-    iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
-    @inbounds for _ in 1:iters
-        mid = (lo + hi) >> 1
-        cond = _le(x[mid], xq)
-        lo = ifelse(cond, mid, lo)
-        hi = ifelse(cond, hi, mid)
-    end
-    return lo
-end
-
 # Window-overflow binary fallback selector for `_search_linear_binary!`: leans to
 # `_search_binary_inbounds` when the search came through the `InBounds` path (query in-domain →
 # the binary `first`/`last` guards are dead), guarded otherwise. Compile-time singleton dispatch.
@@ -971,19 +972,100 @@ window-overflow binary variant (`InBounds()` → lean); the hint `clamp` is alwa
             # Only need: x[ix] <= xq  (single comparison per step)
             ix, found = _walk_left(x, xq, ix, Val(MAX))
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
-            # Window overflow with x[ix] > xq: gallop left if still in-domain.
-            if _le(first(x), xq)
-                ix = _gallop_left(x, xq, ix)
-                hint_ref[] = ix
-                return ix, x[ix], x[ix + 1]
-            end
         else  # xq >= xR
             # Walk right: xq >= x[ix+1] guaranteed ⟹ after ix+=1,
             # x[ix] = old x[ix+1] <= xq — left bound already satisfied.
             # Only need: xq < x[ix+1]  (single comparison per step)
             ix, found = _walk_right(x, xq, ix, n, Val(MAX))
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
-            # Window overflow with x[ix + 1] <= xq: gallop right if still in-domain.
+        end
+    end
+    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches).
+    # `_lb_binary_fallback` leans to `_search_binary_inbounds` on the `InBounds` path (query in-domain
+    # → `first`/`last` guards dead); guarded otherwise. Singleton dispatch — the default guarded path's
+    # codegen is unchanged.
+    idx, xL, xR = _lb_binary_fallback(x, xq, fallback)
+    hint_ref[] = idx
+    return idx, xL, xR
+end
+
+# --- LinearGallopSearch: on window overflow, exponential search outward from where the walk
+# stopped, then bisect the bracket — O(log gap) probes near the hint instead of a full-range
+# O(log n) search. Kept inline at the walk sites: a shared or `@noinline` helper measured
+# slower on the in-window path. ---
+
+# Precondition: x[lo] <= xq < x[n]. Returns idx with x[idx] <= xq < x[idx + 1].
+@inline function _gallop_right(x::AbstractVector, xq, lo::Int, n::Int)
+    step = 1
+    hi = min(lo + 1, n)
+    @inbounds while _le(x[hi], xq)
+        lo = hi
+        step <<= 1
+        hi = min(lo + step, n)
+    end
+    return _bisect(x, xq, lo, hi)
+end
+
+# Precondition: x[1] <= xq < x[hi]. Returns idx with x[idx] <= xq < x[idx + 1].
+@inline function _gallop_left(x::AbstractVector, xq, hi::Int)
+    step = 1
+    lo = max(hi - 1, 1)
+    @inbounds while !_le(x[lo], xq)
+        hi = lo
+        step <<= 1
+        lo = max(hi - step, 1)
+    end
+    return _bisect(x, xq, lo, hi)
+end
+
+# Branchless bisection of a bracket x[lo] <= xq < x[hi] (same scheme as `_search_binary`).
+@inline function _bisect(x::AbstractVector, xq, lo::Int, hi::Int)
+    iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
+    @inbounds for _ in 1:iters
+        mid = (lo + hi) >> 1
+        cond = _le(x[mid], xq)
+        lo = ifelse(cond, mid, lo)
+        hi = ifelse(cond, hi, mid)
+    end
+    return lo
+end
+
+"""
+    _search_linear_gallop!(x, xq, hint_ref, ::Val{MAX}[, fallback]) -> (idx, xL, xR)
+
+`LinearGallopSearch` kernel: the same direct hit and `MAX`-cell walk as
+`_search_linear_binary!`; on window overflow an in-domain query gallops from the walk's end and
+bisects the bracket. Out-of-domain queries take the full-range binary fallback, so the
+endpoint/extrap handling (and the `InBounds` lean selection) is unchanged.
+"""
+@inline function _search_linear_gallop!(
+        x::AbstractVector{T},
+        xq,
+        hint_ref::Base.RefValue{Int},
+        ::Val{MAX},
+        fallback::AbstractExtrap = NoExtrap(),
+    ) where {T, MAX}
+    ix = hint_ref[]
+    n = length(x)
+    ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)
+    @inbounds begin
+        xL = x[ix]
+        xR = x[ix + 1]
+        _le(xL, xq) && _lt(xq, xR) && return ix, xL, xR  # no hint write (ix unchanged)
+
+        if _lt(xq, xL)
+            ix, found = _walk_left(x, xq, ix, Val(MAX))
+            found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
+            # Overflow with x[ix] > xq: gallop left if still in-domain.
+            if _le(first(x), xq)
+                ix = _gallop_left(x, xq, ix)
+                hint_ref[] = ix
+                return ix, x[ix], x[ix + 1]
+            end
+        else  # xq >= xR
+            ix, found = _walk_right(x, xq, ix, n, Val(MAX))
+            found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
+            # Overflow with x[ix + 1] <= xq: gallop right if still in-domain.
             if _lt(xq, last(x))
                 ix = _gallop_right(x, xq, ix + 1, n)
                 hint_ref[] = ix
@@ -992,9 +1074,6 @@ window-overflow binary variant (`InBounds()` → lean); the hint `clamp` is alwa
         end
     end
     # Out-of-domain query: full-range binary keeps the endpoint/extrap handling.
-    # `_lb_binary_fallback` leans to `_search_binary_inbounds` on the `InBounds` path (query in-domain
-    # → `first`/`last` guards dead); guarded otherwise. Singleton dispatch — the default guarded path's
-    # codegen is unchanged.
     idx, xL, xR = _lb_binary_fallback(x, xq, fallback)
     hint_ref[] = idx
     return idx, xL, xR
@@ -1148,6 +1227,10 @@ end
 @inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
+# LinearGallopSearch{MAX} + RefHint
+@inline _search_interval_real(p::Searcher{LinearGallopSearch{MAX}, RefHint}, x::AbstractVector, xq) where {MAX} =
+    _search_linear_gallop!(x, xq, p.hint.idx, Val(MAX))
+
 # DirectSearch + NoHint (Range grids, zero-overhead)
 @inline _search_interval_real(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq) =
     _search_direct(x, xq)
@@ -1159,7 +1242,8 @@ end
 # --- Layer 2 (InBounds): drop the guards that only a bad *query* would need (the query is
 # in-domain here). `BinarySearch` drops its `first`/`last` boundary guards. `LinearBinarySearch`
 # KEEPS its hint `clamp` (a *hint* guard — a promoted `NoExtrap` may still carry a bad user hint)
-# but passes `InBounds()` so its window-overflow binary fallback leans. `LinearSearch` has no binary
+# but passes `InBounds()` so its window-overflow binary fallback leans (`LinearGallopSearch` likewise,
+# for its out-of-domain fallback). `LinearSearch` has no binary
 # fallback, and `DirectSearch` is the `_CachedRange` path (handled one level up), so both fall through
 # unchanged. Hint write-back is preserved (RefHint). ---
 @inline _search_interval_real_inbounds(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq) =
@@ -1171,6 +1255,8 @@ end
 end
 @inline _search_interval_real_inbounds(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX), InBounds())
+@inline _search_interval_real_inbounds(p::Searcher{LinearGallopSearch{MAX}, RefHint}, x::AbstractVector, xq) where {MAX} =
+    _search_linear_gallop!(x, xq, p.hint.idx, Val(MAX), InBounds())
 @inline _search_interval_real_inbounds(s::Searcher, x::AbstractVector, xq) =
     _search_interval_real(s, x, xq)
 

@@ -258,8 +258,8 @@
         end
 
         @testset "Window overflow matches binary search" begin
-            # Jumps of any size and direction (gallop path), grid points, endpoints and
-            # out-of-domain queries must land in the same cell as a stateless binary search.
+            # Jumps of any size and direction, grid points, endpoints and out-of-domain
+            # queries must land in the same cell as a stateless binary search.
             using Random
             Random.seed!(7)
             xg = cumsum(rand(1000) .+ 0.01)

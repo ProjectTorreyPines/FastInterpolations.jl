@@ -63,15 +63,18 @@ nothing # hide
 | [`AutoSearch()`](@ref search_policies) | **All use cases (default)** — adapts per query type | Delegates to BinarySearch/LinearBinarySearch | ✓ Stateless | ✅ **Use this** |
 | [`BinarySearch()`](@ref search_policies) | Random access (explicit) | O(log n) | ✓ Stateless | Optional explicit override |
 | [`LinearBinarySearch()`](@ref search_policies) | Monotonic queries (explicit) | O(1) local, O(log n) fallback | ✓ With hint | Optional explicit override |
+| [`LinearGallopSearch()`](@ref search_policies) | Sorted/local queries a moderate distance apart | O(1) local, O(log gap) beyond the window | ✓ With hint | Opt-in for a known access pattern |
 | [`LinearSearch()`](@ref search_policies) | Expert only — see warning | O(1) best, **O(n) worst** | ✓ With hint | ⚠️ Not recommended |
 
 !!! warning "Avoid LinearSearch() Unless You Know What You're Doing"
     `LinearSearch()` has **no binary fallback**. If queries are far apart or not strictly monotonic, it walks the entire grid — degrading to **O(n) per query**. In almost all cases, `LinearBinarySearch()` (or just the default `AutoSearch()`) is safer and equally fast for truly monotonic data.
 
-!!! note "Why No Hunt Algorithm?"
-    The Hunt (correlated) algorithm offers *theoretical* O(log k) for nearby queries and O(log n) worst-case.
-    However, our benchmarks showed no practical advantage over existing policies—each access pattern
-    already has a better-suited option.
+!!! note "Hunt (galloping) search is opt-in"
+    The Hunt (correlated) algorithm — also called galloping or exponential search — is available as
+    [`LinearGallopSearch()`](@ref search_policies). It is not used by default: it beats the full-range
+    binary fallback only when consecutive queries are a moderate distance apart (roughly between the
+    linear window and √n cells), and it is slower outside that band — up to about 2× for random access
+    or a handful of queries on a large grid.
 
 ## Quick Selection Guide
 

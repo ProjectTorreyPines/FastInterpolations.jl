@@ -12,6 +12,21 @@ import SymbolicUtils
 # ever appear in the gated body below.
 SYMBOLICS_7_API = isdefined(SymbolicUtils, :TypeT)
 
+# Every 1D family, shared by both branches below (`dy` are the slopes of y = sin(2πx)).
+function _itps_1d(x, y)
+    dy = 2π .* cos.(2π .* x)
+    return [
+        ("linear", linear_interp(x, y; extrap = ExtendExtrap())),
+        ("cubic", cubic_interp(x, y; extrap = ExtendExtrap())),
+        ("constant", constant_interp(x, y; extrap = ExtendExtrap())),
+        ("quadratic", quadratic_interp(x, y; extrap = ExtendExtrap())),
+        ("pchip", pchip_interp(x, y; extrap = ExtendExtrap())),
+        ("akima", akima_interp(x, y; extrap = ExtendExtrap())),
+        ("cardinal", cardinal_interp(x, y; extrap = ExtendExtrap())),
+        ("hermite", hermite_interp(x, y, dy; extrap = ExtendExtrap())),
+    ]
+end
+
 if SYMBOLICS_7_API
     # Function barrier: measure a compiled symbolic function on concrete types
     # (the testset loops bind abstractly typed locals).
@@ -23,8 +38,7 @@ if SYMBOLICS_7_API
     @testset "Symbolics extension active" begin
         ext = Base.get_extension(FastInterpolations, :FastInterpolationsSymbolicsExt)
         @test ext isa Module
-        @test isdefined(ext, :DifferentiatedInterpolant)
-        @test isdefined(ext, :DifferentiatedInterpolantND)
+        @test isdefined(ext, :_symbolic_call)
     end
 
     @testset "Symbolics Registration" begin
@@ -37,12 +51,7 @@ if SYMBOLICS_7_API
 
             @variables t
 
-            for (name, itp) in [
-                    ("linear", linear_interp(x, y; extrap = ExtendExtrap())),
-                    ("cubic", cubic_interp(x, y; extrap = ExtendExtrap())),
-                    ("constant", constant_interp(x, y; extrap = ExtendExtrap())),
-                    ("quadratic", quadratic_interp(x, y; extrap = ExtendExtrap())),
-                ]
+            for (name, itp) in _itps_1d(x, y)
                 @testset "$name" begin
                     # Symbolic expression creation
                     expr = itp(t)
@@ -69,13 +78,8 @@ if SYMBOLICS_7_API
             D = Differential(t)
             t_val = 0.3
 
-            # First derivative: expand D(itp(t)) for every registered 1D family
-            for (name, itp) in [
-                    ("linear", linear_interp(x, y; extrap = ExtendExtrap())),
-                    ("cubic", cubic_interp(x, y; extrap = ExtendExtrap())),
-                    ("constant", constant_interp(x, y; extrap = ExtendExtrap())),
-                    ("quadratic", quadratic_interp(x, y; extrap = ExtendExtrap())),
-                ]
+            # First derivative: expand D(itp(t)) for every 1D family
+            for (name, itp) in _itps_1d(x, y)
                 @testset "$name" begin
                     dexpr = expand_derivatives(D(itp(t)))
                     @test dexpr isa Num
@@ -92,6 +96,7 @@ if SYMBOLICS_7_API
             # Cubic spline (supports up to 3rd derivative)
             itp = cubic_interp(x, y; extrap = ExtendExtrap())
             expr = itp(t)
+            dexpr = expand_derivatives(D(expr))
 
             # Second derivative
             d2expr = expand_derivatives(D(D(expr)))
@@ -113,6 +118,17 @@ if SYMBOLICS_7_API
 
             cf = build_function(cexpr, t; expression = Val{false})
             @test cf(t_val) ≈ 2 * itp(2t_val; deriv = DerivOp(1))
+
+            # A derivative requested on the call itself (`deriv` keyword or a
+            # DerivativeView) is the same term as differentiating the call
+            @test isequal(itp(t; deriv = DerivOp(0)), expr)
+            @test isequal(itp(t; deriv = DerivOp(1)), dexpr)
+            @test isequal(itp(t; deriv = DerivOp(2)), d2expr)
+            @test isequal(deriv1(itp)(t), dexpr)
+            @test isequal(deriv2(itp)(t), d2expr)
+
+            vf = build_function(deriv1(itp)(t), t; expression = Val{false})
+            @test vf(t_val) ≈ itp(t_val; deriv = DerivOp(1))
         end
 
         # ========================================
@@ -164,6 +180,9 @@ if SYMBOLICS_7_API
             compiled_du = du_f([u_val, v_val])
             @test compiled_du ≈ numeric_du
 
+            # The derivative orders are static, so the compiled call does not allocate
+            @test _compiled_call_allocs(du_f, [u_val, v_val]) <= ALLOC_THRESHOLD
+
             # Partial derivative w.r.t. v
             dv_expr = expand_derivatives(Dv(expr))
             @test dv_expr isa Num
@@ -172,6 +191,13 @@ if SYMBOLICS_7_API
             numeric_dv = itp((u_val, v_val); deriv = DerivOp(0, 1))
             compiled_dv = dv_f([u_val, v_val])
             @test compiled_dv ≈ numeric_dv
+
+            # A derivative requested on the call itself (`deriv` keyword or a
+            # DerivativeView, tuple or varargs form) is the same term as differentiating
+            @test isequal(itp((u, v); deriv = DerivOp(1, 0)), du_expr)
+            @test isequal(itp(u, v; deriv = DerivOp(0, 1)), dv_expr)
+            @test isequal(deriv_view(itp, (1, 0))((u, v)), du_expr)
+            @test isequal(deriv_view(itp, (0, 1))(u, v), dv_expr)
         end
 
         # ========================================
@@ -211,7 +237,7 @@ if SYMBOLICS_7_API
 
         # ========================================
         # Higher-order / mixed ND derivatives
-        # (exercises DifferentiatedInterpolantND accumulation + varargs path)
+        # (exercises DerivativeView order accumulation + varargs path)
         # ========================================
         @testset "ND Symbolic Derivatives (higher-order)" begin
             xg = range(0.0, 1.0, 21)
@@ -226,7 +252,7 @@ if SYMBOLICS_7_API
             expr = itp((u, v))
             u_val, v_val = 0.3, 0.7
 
-            # Mixed second partial d²/dudv: accumulates orders on DifferentiatedInterpolantND
+            # Mixed second partial d²/dudv: accumulates orders on the DerivativeView
             duv_expr = expand_derivatives(Du(Dv(expr)))
             @test duv_expr isa Num
             duv_f = build_function(duv_expr, [u, v]; expression = Val{false})
@@ -245,39 +271,31 @@ if SYMBOLICS_7_API
         # Symbolics term machinery only invokes on non-default tracing paths.
         # ========================================
         @testset "registration hook contracts" begin
-            ext = Base.get_extension(FastInterpolations, :FastInterpolationsSymbolicsExt)
             scalar = SymbolicUtils.ShapeVecT()
 
             x = collect(range(0.0, 1.0, 11))
             y = sin.(2π .* x)
             itp1 = cubic_interp(x, y; extrap = ExtendExtrap())
-            d1 = ext.DifferentiatedInterpolant(itp1, 1)
+            d1 = deriv1(itp1)
 
             xg = range(0.0, 1.0, 11)
             data = [sin(xi) * cos(yj) for xi in xg, yj in xg]
             itpN = cubic_interp((xg, xg), data; extrap = ExtendExtrap())
-            d = ext.DifferentiatedInterpolantND(itpN, (1, 0))
+            d = deriv_view(itpN, (1, 0))
 
-            # 1D hooks (plain + differentiated)
+            # 1D hooks (plain + derivative view)
             @test SymbolicUtils.promote_symtype(itp1, Float64) === Real
             @test SymbolicUtils.promote_shape(itp1, scalar) == scalar
             @test SymbolicUtils.promote_symtype(d1, Float64) === Real
             @test SymbolicUtils.promote_shape(d1, scalar) == scalar
-
-            # DifferentiatedInterpolant identity + numeric callable + compact display
             @test Base.nameof(d1) === :DifferentiatedFastInterpolation
-            @test d1(0.3) ≈ itp1(0.3; deriv = DerivOp(1))
-            @test sprint(show, d1) == "DifferentiatedInterpolant(" * sprint(show, itp1) * ", 1)"
 
-            # ND hooks (plain + differentiated)
+            # ND hooks (plain + derivative view)
             @test SymbolicUtils.promote_symtype(itpN, Float64, Float64) === Real
             @test SymbolicUtils.promote_shape(itpN, scalar, scalar) == scalar
             @test SymbolicUtils.promote_symtype(d, Float64, Float64) === Real
             @test SymbolicUtils.promote_shape(d, scalar, scalar) == scalar
-
-            # DifferentiatedInterpolantND identity + numeric callable
             @test Base.nameof(d) === :DifferentiatedFastInterpolationND
-            @test d(0.3, 0.7) ≈ itpN((0.3, 0.7); deriv = DerivOp(1, 0))
         end
     end
 else
@@ -294,24 +312,16 @@ else
         y = sin.(2π .* x)
         data = [sin(xi) * cos(yj) for xi in x, yj in x]
 
-        # Mirror of the constructor list in the "1D Symbolic Calling" testset
-        # of the Symbolics-7 branch above — update both together.
-        itps_1d = [
-            ("linear", linear_interp(x, y; extrap = ExtendExtrap())),
-            ("cubic", cubic_interp(x, y; extrap = ExtendExtrap())),
-            ("constant", constant_interp(x, y; extrap = ExtendExtrap())),
-            ("quadratic", quadratic_interp(x, y; extrap = ExtendExtrap())),
-        ]
+        itps_1d = _itps_1d(x, y)
         itp_c = itps_1d[2][2]
         itpN = cubic_interp((x, x), data; extrap = ExtendExtrap())
 
         @testset "extension loads as an empty no-op module" begin
             ext = Base.get_extension(FastInterpolations, :FastInterpolationsSymbolicsExt)
             @test ext isa Module
-            # Names defined only inside the extension's `@static if` block —
+            # Name defined only inside the extension's `@static if` block —
             # update in lockstep with ext/FastInterpolationsSymbolicsExt.jl:
-            @test !isdefined(ext, :DifferentiatedInterpolantND)
-            @test !isdefined(ext, :DifferentiatedInterpolant)
+            @test !isdefined(ext, :_symbolic_call)
         end
 
         @testset "numeric core unaffected with Symbolics loaded" begin

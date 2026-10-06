@@ -11,7 +11,8 @@ name: CI
 #
 # Julia 1.x (1.12) is the slow-compile leg, so its @testitem suite is additionally split
 # into 2 time-balanced shards per OS via RETESTITEMS_SHARD=i/N (weights in
-# test/shard_weights.toml, regen with scripts/gen_shard_weights.jl). lts stays one job/OS.
+# test/shard_weights.toml, regen with scripts/gen_shard_weights.jl). lts is split the same
+# way on macOS only (7 GB runner, see the matrix); lts-ubuntu/windows stay one full job.
 on:
   push:
     branches:
@@ -36,7 +37,7 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}${{ matrix.version == '1.x' && format(' [{0}]', matrix.shard) || '' }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}${{ (matrix.version == '1.x' || matrix.os == 'macos-latest') && format(' [{0}]', matrix.shard) || '' }}
     runs-on: ${{ matrix.os }}     # public repo: ubuntu/windows = 4 vCPUs, macos = 3
     timeout-minutes: 120
     strategy:
@@ -45,12 +46,18 @@ jobs:
         version: ["1.x", "lts"]
         os: [ubuntu-latest, macos-latest, windows-latest]
         # 1.x (Julia 1.12) is the slow-compile leg — split it into 2 time-balanced shards
-        # per OS (RETESTITEMS_SHARD, see test/runtests_parallel.jl). lts stays one job/OS,
-        # so exclude its 2/2 (leaving lts on shard "1/2", which the runtest step maps to the
-        # full suite via the version guard on RETESTITEMS_SHARD below).
+        # per OS (RETESTITEMS_SHARD, see test/runtests_parallel.jl). lts is sharded on macOS
+        # too: the 7 GB arm64 runner swaps once 3 workers hold the compiled code of the whole
+        # suite. lts-ubuntu (the single full coverage upload) and lts-windows stay one job:
+        # their excluded 2/2 leaves them on shard "1/2", which the runtest step maps to the
+        # full suite via the guard on RETESTITEMS_SHARD below.
         shard: ["1/2", "2/2"]
         exclude:
           - version: "lts"
+            os: ubuntu-latest
+            shard: "2/2"
+          - version: "lts"
+            os: windows-latest
             shard: "2/2"
         include:
           # coverage: the lts-ubuntu leg ONLY (see the version guard on the coverage steps
@@ -92,8 +99,8 @@ jobs:
         env:
           SKIP_EXTENSIONS: "true"
           RETESTITEMS_NWORKERS: ${{ github.event.inputs.nworkers || matrix.nworkers }}
-          # 1.x → "1/2"/"2/2" (shard the suite); lts → "" (runner runs the full suite).
-          RETESTITEMS_SHARD: ${{ matrix.version == '1.x' && matrix.shard || '' }}
+          # 1.x and lts-macOS → "1/2"/"2/2" (shard the suite); other lts → "" (full suite).
+          RETESTITEMS_SHARD: ${{ (matrix.version == '1.x' || matrix.os == 'macos-latest') && matrix.shard || '' }}
           # windows/1.x only: rerun an item whose worker dies on the non-deterministic
           # 1.12 LLVM MachineLICM codegen crash. Elsewhere 0 (fail-fast, don't mask flakes).
           RETESTITEMS_RETRIES: ${{ (matrix.os == 'windows-latest' && matrix.version == '1.x') && '1' || '0' }}

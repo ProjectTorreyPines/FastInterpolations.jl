@@ -126,6 +126,7 @@ _format_side(side::AbstractSide) = string(typeof(side))
 _format_search(::BinarySearch) = "BinarySearch"
 _format_search(::LinearSearch) = "LinearSearch"
 _format_search(::LinearBinarySearch{MAX}) where {MAX} = "LinearBinarySearch{$MAX}"
+_format_search(::LinearGallopSearch{MAX}) where {MAX} = "LinearGallopSearch{$MAX}"
 _format_search(::AutoSearch) = "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
 """Format coefficient strategy from `itp.dy` field. Returns empty string for precomputed (default, not shown)."""

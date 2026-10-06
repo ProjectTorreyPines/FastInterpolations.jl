@@ -113,6 +113,43 @@ LinearBinarySearch(linear_window=16)   # wider window for sparser-spaced sorted 
 
 ---
 
+## LinearGallopSearch (Opt-in)
+
+Same direct hit and linear walk as `LinearBinarySearch`, but when the target lies **beyond the window** it **gallops** outward from where the walk stopped (1, 2, 4, 8, … cells) and bisects that bracket, instead of restarting a binary search over the whole grid. This is also known as exponential search, or `hunt` in Numerical Recipes. `AutoSearch` never selects it.
+
+**Complexity**: O(1) within the linear window, O(log gap) beyond it, where *gap* is the number of cells between consecutive queries
+
+**When to use** — sorted or local queries that are a moderate distance apart:
+- Sampling a long, fine grid at a coarser set of sorted points, e.g. about 10,000–100,000 sorted queries on a 1M-point grid
+- Streaming queries with a hint whose steps are tens to hundreds of cells
+
+**When not to use** — keep the default:
+- Random access: galloping across a large part of the grid costs about twice the probes of a binary search
+- Very sparse sorted queries (gaps ≳ √n cells), e.g. 10–1,000 queries on a 1M-point grid
+- Dense sorted queries (gaps within the window): nothing to gain
+
+```julia
+itp = linear_interp(x, y)
+vals = itp(sorted_queries; search=LinearGallopSearch())   # call-site override
+itp = linear_interp(x, y; search=Search(:linear_gallop))  # baked in
+LinearGallopSearch(linear_window=16)                      # same curated windows as LinearBinarySearch
+```
+
+!!! note "Where it wins"
+    Time ratio `LinearGallopSearch` / `LinearBinarySearch` for `itp(out, xq)` with sorted queries spread over a non-uniform grid (below 1 = faster; Apple M1 Pro):
+
+    | grid points \ queries | 10 | 100 | 1,000 | 10,000 | 100,000 | 1,000,000 |
+    |:--|--:|--:|--:|--:|--:|--:|
+    | 100 | 0.80 | 1.04 | 1.01 | 1.00 | 1.00 | 1.00 |
+    | 1,000 | 1.34 | 0.60 | 1.01 | 1.10 | 1.00 | 1.00 |
+    | 10,000 | 1.52 | 0.97 | 0.46 | 0.99 | 1.01 | 1.00 |
+    | 100,000 | 1.66 | 1.59 | 0.77 | 0.31 | 1.01 | 1.00 |
+    | 1,000,000 | 2.23 | 1.95 | 1.20 | 0.70 | 0.44 | 1.00 |
+
+    The gain sits in a band where the average gap is roughly 10–100 cells. A full-range binary search costs log₂(n) probes wherever the target is, and its first probes hit the same cache-hot nodes for every query; galloping costs about 2·log₂(gap) probes from a different starting point each time, so it only pays off well below √n cells.
+
+---
+
 ## LinearSearch (Expert Only)
 
 !!! danger "Not Recommended for General Use"

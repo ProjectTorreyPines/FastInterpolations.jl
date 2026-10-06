@@ -132,6 +132,37 @@ if SYMBOLICS_7_API
         end
 
         # ========================================
+        # Orders 1–5 for every 1D family: matches the numeric derivative,
+        # and vanishes beyond the piecewise-polynomial degree
+        # ========================================
+        @testset "1D Symbolic Derivatives (orders 1-5)" begin
+            x = collect(range(0.0, 1.0, 101))
+            y = sin.(2π .* x)
+
+            @variables t
+            D = Differential(t)
+            t_val = 0.3137  # off-knot
+            degree = Dict(
+                "linear" => 1, "cubic" => 3, "constant" => 0, "quadratic" => 2,
+                "pchip" => 3, "akima" => 3, "cardinal" => 3, "hermite" => 3,
+            )
+
+            for (name, itp) in _itps_1d(x, y)
+                @testset "$name" begin
+                    expr = itp(t)
+                    for k in 1:5
+                        expr = expand_derivatives(D(expr))
+                        @test isequal(expr, itp(t; deriv = DerivOp(k)))
+
+                        val = build_function(expr, t; expression = Val{false})(t_val)
+                        @test val ≈ itp(t_val; deriv = DerivOp(k))
+                        k > degree[name] && @test iszero(val)
+                    end
+                end
+            end
+        end
+
+        # ========================================
         # ND Interpolant Registration
         # ========================================
         @testset "ND Symbolic Calling" begin
@@ -263,6 +294,45 @@ if SYMBOLICS_7_API
             @test duu_expr isa Num
             duu_f = build_function(duu_expr, [u, v]; expression = Val{false})
             @test duu_f([u_val, v_val]) ≈ itp((u_val, v_val); deriv = DerivOp(2, 0))
+        end
+
+        # ========================================
+        # Mixed / high-order partials for every registered ND family: matches
+        # the numeric derivative, and vanishes once any axis order exceeds the degree
+        # ========================================
+        @testset "ND Symbolic Derivatives (mixed, beyond degree)" begin
+            xg = range(0.0, 1.0, 21)
+            data = [sin(xi) * cos(yj) for xi in xg, yj in xg]
+
+            @variables u v
+            Du = Differential(u)
+            Dv = Differential(v)
+            q = (0.3137, 0.7123)  # off-knot
+
+            for (name, itp, deg) in [
+                    ("cubic", cubic_interp((xg, xg), data; extrap = ExtendExtrap()), 3),
+                    ("linear", linear_interp((xg, xg), data; extrap = ExtendExtrap()), 1),
+                    ("quadratic", quadratic_interp((xg, xg), data; extrap = ExtendExtrap()), 2),
+                    ("constant", constant_interp((xg, xg), data; extrap = ExtendExtrap()), 0),
+                ]
+                @testset "$name" begin
+                    for (a, b) in [(2, 0), (0, 2), (1, 1), (3, 0), (2, 1), (4, 0), (1, 3), (2, 2)]
+                        expr = itp((u, v))
+                        for _ in 1:a
+                            expr = Du(expr)
+                        end
+                        for _ in 1:b
+                            expr = Dv(expr)
+                        end
+                        expr = expand_derivatives(expr)
+                        @test isequal(expr, itp((u, v); deriv = DerivOp(a, b)))
+
+                        val = build_function(expr, [u, v]; expression = Val{false})(collect(q))
+                        @test val ≈ itp(q; deriv = DerivOp(a, b))
+                        max(a, b) > deg && @test iszero(val)
+                    end
+                end
+            end
         end
 
         # ========================================

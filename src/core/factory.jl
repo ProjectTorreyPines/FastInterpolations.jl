@@ -53,8 +53,9 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 - `:binary` → [`BinarySearch`](@ref): O(log n), stateless, thread-safe
 - `:linear` → [`LinearSearch`](@ref): O(1) amortized walk (requires monotonic queries)
 - `:linear_binary` → [`LinearBinarySearch`](@ref): bounded linear walk with binary fallback
+- `:linear_gallop` → [`LinearGallopSearch`](@ref): bounded linear walk with gallop fallback (opt-in)
 
-# Keywords (single-arg `:linear_binary` only)
+# Keywords (single-arg `:linear_binary` / `:linear_gallop` only)
 - `linear_window::Integer=8`: maximum linear walk steps before binary fallback.
   Must be 0 or a power of 2 from (1, 2, 4, 8, 16, 32, 64, 128).
 
@@ -76,6 +77,9 @@ function Search(sym::Symbol; kwargs...)
     if sym === :linear_binary
         return LinearBinarySearch(; kwargs...)
     end
+    if sym === :linear_gallop
+        return LinearGallopSearch(; kwargs...)
+    end
     isempty(kwargs) || _search_invalid_kwargs_error(sym, kwargs)
     sym === :auto   && return AutoSearch()
     sym === :binary && return BinarySearch()
@@ -91,7 +95,7 @@ Search(p::AbstractSearchPolicy) = p
 @noinline function _search_unknown_error(sym::Symbol)
     throw(
         ArgumentError(
-            "unknown search policy :$sym; valid options are :auto, :binary, :linear, :linear_binary"
+            "unknown search policy :$sym; valid options are :auto, :binary, :linear, :linear_binary, :linear_gallop"
         )
     )
 end
@@ -99,7 +103,7 @@ end
 @noinline function _search_invalid_kwargs_error(sym::Symbol, kwargs)
     throw(
         ArgumentError(
-            "keyword arguments are only supported for :linear_binary, " *
+            "keyword arguments are only supported for :linear_binary and :linear_gallop, " *
                 "got Search(:$sym; $(join(keys(kwargs), ", ")))"
         )
     )

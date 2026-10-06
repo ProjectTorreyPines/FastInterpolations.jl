@@ -159,6 +159,7 @@ AbstractSearchPolicy
 AutoSearch
 BinarySearch
 LinearBinarySearch
+LinearGallopSearch
 LinearSearch
 ```
 

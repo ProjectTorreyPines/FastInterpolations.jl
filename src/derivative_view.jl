@@ -280,6 +280,14 @@ end
     return d.parent(xq; deriv = _deriv_kw(Val(Order)), kwargs...)
 end
 
+# ND varargs: d(x, y) → d((x, y)), like an ND interpolant's `itp(x, y)`. Two or more
+# coordinates only, so single-argument calls keep their dispatch above.
+@inline function (d::DerivativeView{Order, ITP})(
+        q1::Number, q2::Number, qs::Vararg{Number}; kwargs...
+    ) where {Order, ITP <: AbstractInterpolantND}
+    return d((q1, q2, qs...); kwargs...)
+end
+
 # In-place vector query => vector output (single-series interpolants)
 # Note: No element type constraint - parent handles type checking/conversion
 @inline function (d::DerivativeView{Order, ITP})(

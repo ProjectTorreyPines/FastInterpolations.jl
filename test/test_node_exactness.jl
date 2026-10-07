@@ -1,6 +1,8 @@
 # Node exactness on Vector grids: a query that lands exactly on a grid node returns the
-# data value bit-for-bit. Interior nodes sit at the LEFT end of their cell (t = 0); the last
+# data value exactly (`==`). Interior nodes sit at the LEFT end of their cell (t = 0); the last
 # node sits at the right end of the last cell, exact only when t = h·inv(h) rounds to 1.
+# The contract is value equality, not identical bits: arithmetic kernels (linear, Hermite,
+# cubic) add exact-zero terms, which turns a -0.0 node value into +0.0.
 # Range grids are out of scope: their nodes are recomputed as `first + (i-1)·step`.
 
 @testitem "node exactness: cubic interior nodes on every evaluation path" begin

@@ -29,8 +29,10 @@ With `t = dL/h` and `u = 1 - t`:
     S(x) = u*yL + t*yR - (h²/6) * t*u * ((2 - t)*zL + (1 + t)*zR)
 
 i.e. the linear blend plus a moment correction that vanishes at both cell ends.
-Node-exact: at `dL == 0`, `t` and `t*u` are exact zeros, so `S == yL` bit-for-bit
-(and `S == yR` whenever `t` rounds to 1) under any FMA contraction. `dR` is unused.
+Node-exact: at `dL == 0`, `t` and `t*u` are exact zeros, so `S == yL` exactly (and
+`S == yR` whenever `t` rounds to 1) under any FMA contraction. Value equality, not
+bits: adding the zero terms turns a `-0.0` node value into `+0.0`, as in the linear and
+Hermite kernels. `dR` is unused.
 
 # Operation counts (ARM64 native)
     0 fdiv + 4 fmul + 6 fmadd/fmsub + 1 fsub = 11 FP ops

@@ -111,7 +111,7 @@ Weights satisfy: S(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 
 Same form as the value kernel (`t = dL/h`): `(1-t, t, -c(2-t), -c(1+t))` with
 `c = (h²/6)·t(1-t)`. At `dL == 0` the weights are exactly `(1, 0, ±0, ±0)`, so a node
-query returns `yL` bit-for-bit. `dR` is unused.
+query returns `yL` exactly (`==`; the sign of a zero `yL` is not kept). `dR` is unused.
 
 # AD Support
 When dL/dR are ForwardDiff.Dual (from xq - xL), the output tuple

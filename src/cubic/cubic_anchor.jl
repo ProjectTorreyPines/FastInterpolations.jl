@@ -109,19 +109,18 @@ Compute weights for cubic spline value evaluation.
 
 Weights satisfy: S(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 
+Same form as the value kernel (`t = dL/h`): `(1-t, t, -c(2-t), -c(1+t))` with
+`c = (h²/6)·t(1-t)`. At `dL == 0` the weights are exactly `(1, 0, ±0, ±0)`, so a node
+query returns `yL` exactly (`==`; the sign of a zero `yL` is not kept). `dR` is unused.
+
 # AD Support
 When dL/dR are ForwardDiff.Dual (from xq - xL), the output tuple
 preserves Dual type through arithmetic operations.
 """
-@inline function _compute_anchor_weights(::EvalValue, h::Th, inv_h::Ti, dL::Tq, dR::Tq) where {Th, Ti, Tq}
-    wyL = dR * inv_h
-    wyR = dL * inv_h
-    # wzL = (inv_h * dR^3 - h * dR) / 6
-    # wzR = (inv_h * dL^3 - h * dL) / 6
-    div6 = _inv_const(Th, 6)
-    wzL = (inv_h * dR^3 - h * dR) * div6
-    wzR = (inv_h * dL^3 - h * dL) * div6
-    return (wyL, wyR, wzL, wzR)
+@inline function _compute_anchor_weights(::EvalValue, h::Th, inv_h::Ti, dL::Tq, ::Tq) where {Th, Ti, Tq}
+    t = dL * inv_h
+    c = h * h * _inv_const(Th, 6) * muladd(-t, t, t)
+    return (one(t) - t, t, muladd(c, t, -2c), muladd(-c, t, -c))
 end
 
 """

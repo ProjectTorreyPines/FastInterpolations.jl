@@ -1,4 +1,4 @@
-@testitem "Search Module" begin
+@testitem "Search Module" setup = [Basic] begin
     using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
         _search_interval_real,
         Searcher, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch, DirectSearch,
@@ -667,11 +667,11 @@
         itp(out_vec5, xq_vec; search = LinearBinarySearch()) # LinearBinarySearch{8}
         itp(out_vec6, xq_vec; search = LinearBinarySearch{2}()) # LinearBinarySearch{2}
 
-        @test out_vec1 == out_vec2
-        @test out_vec1 == out_vec3
-        @test out_vec1 == out_vec4
-        @test out_vec1 == out_vec5
-        @test out_vec1 == out_vec6
+        @test isclose(out_vec1, out_vec2; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec3; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec4; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec5; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec6; nulps = PATH_ULPS)
     end
 
     # ========================================

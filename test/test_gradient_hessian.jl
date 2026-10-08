@@ -861,3 +861,47 @@ end
         @test iszero(laplacian(itp, q_oob))
     end
 end
+
+# The allocating `hessian` sizes its Matrix from the promoted output eltype. That
+# eltype must fold the QUERY in (a Dual query under ForwardDiff → Matrix{Dual}),
+# exactly as `gradient`/`laplacian`/batch `itp(queries; deriv)` already do.
+@testitem "Vector Calculus: hessian output eltype follows the query (ForwardDiff Dual)" begin
+    using ForwardDiff
+    using ForwardDiff: Dual, value
+
+    x = 1.0:5.0
+    y = 1.0:5.0
+    data = [sin(i) * cos(j) for i in x, j in y]
+    q = [2.5, 3.5]
+    D = Dual{Nothing, Float64, 1}
+    ctors = (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+
+    @testset "Dual query → Matrix{Dual}, primal == Float path ($(nameof(ctor)))" for ctor in ctors
+        itp = ctor((x, y), data)
+        qd = (Dual{Nothing}(2.5, 1.0), Dual{Nothing}(3.5, 0.0))
+        H = @inferred hessian(itp, qd)
+        @test H isa Matrix{D}
+        @test value.(H) ≈ hessian(itp, (2.5, 3.5))
+        @test (@inferred hessian(itp, collect(qd))) isa Matrix{D}       # Vector query
+        @test (@inferred hessian(itp, (qd[1], 3.5))) isa Matrix{D}      # Dual on one axis only
+    end
+
+    @testset "jacobian(vec ∘ hessian) == nested jacobian of gradient ($(nameof(ctor)))" for ctor in ctors
+        itp = ctor((x, y), data)
+        J = ForwardDiff.jacobian(p -> vec(hessian(itp, p)), q)
+        J_ref = ForwardDiff.jacobian(p -> vec(ForwardDiff.jacobian(r -> gradient(itp, r), p)), q)
+        @test size(J) == (4, 2)
+        @test J ≈ J_ref
+    end
+
+    @testset "3D cubic, Vector grid" begin
+        z = collect(range(0.0, 1.0, 7))
+        data3 = [sin(i) * cos(j) * exp(k) for i in x, j in y, k in z]
+        itp = cubic_interp((x, y, z), data3)
+        q3 = [2.5, 3.5, 0.4]
+        J = ForwardDiff.jacobian(p -> vec(hessian(itp, p)), q3)
+        J_ref = ForwardDiff.jacobian(p -> vec(ForwardDiff.jacobian(r -> gradient(itp, r), p)), q3)
+        @test size(J) == (9, 3)
+        @test J ≈ J_ref
+    end
+end

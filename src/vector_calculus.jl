@@ -730,6 +730,7 @@ Costs one [`gradient`](@ref) call and allocates nothing for `SVector` data.
 
 # Examples
 ```julia
+using StaticArrays               # `SA[...]` builds one SVector{2} per grid point
 itp = cubic_interp((xs, ys), [SA[x * y, sin(x) + y] for x in xs, y in ys])
 J = jacobian(itp, (0.5, 0.5))    # 2×2 SMatrix
 J = jacobian(itp, [0.5, 0.5])    # Vector query → Matrix

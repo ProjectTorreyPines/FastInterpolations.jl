@@ -61,8 +61,20 @@ struct _LinearBlendGeneric <: _LinearBlendStyle end
     style = _linear_blend_style(typeof(α), promote_type(typeof(yL), typeof(yR)))
     return _linear_value_blend(style, α, yL, yR)
 end
-@inline _linear_value_blend(::_LinearBlendFMA, α, yL, yR) =
-    muladd(α, yR, muladd(-α, yL, yL))
+@inline _linear_value_blend(::_LinearBlendFMA, α, yL, yR) = _fma2_blend(α, yL, yR)
+
+# `muladd` is contraction-optional: inlined next to search code, LLVM may pack the two
+# products into a 2-lane vector + horizontal add and drop one FMA (measured on every
+# Vector-grid path). With hardware FMA, `fma` pins the 2-FMA form at the same cost; without
+# it, `muladd` stays (no `fma_emulated`). `have_fma` folds per codegen target like Base.fma;
+# it is not public API, hence the guard, and it must never be cached in a `const`.
+@static if isdefined(Core.Intrinsics, :have_fma)
+    @inline function _fma2_blend(α::T, yL::T, yR::T) where {T <: Base.IEEEFloat}
+        return Core.Intrinsics.have_fma(T) ? fma(α, yR, fma(-α, yL, yL)) :
+            muladd(α, yR, muladd(-α, yL, yL))
+    end
+end
+@inline _fma2_blend(α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))  # Complex, mixed widths
 @inline _linear_value_blend(::_LinearBlendGeneric, α, yL, yR) =
     muladd(α, yR, (one(α) - α) * yL)
 

@@ -90,6 +90,7 @@ export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, Constan
 export PchipInterp, CardinalInterp, AkimaInterp, CubicHermiteInterp  # Hermite family ND methods
 export GridIdx
 export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND
+export jacobian, jacobian!, value_jacobian  # Jacobian of vector-valued ND data
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 

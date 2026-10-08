@@ -179,7 +179,7 @@ One-shot (construction + evaluation) time per call with fixed grid size $n=100$.
 ## More Features
 
 ### Analytic Derivatives
-Exact 1st–3rd order derivatives from spline coefficients — no finite differences. ND interpolants support `gradient`, `hessian`, and `laplacian`.
+Exact 1st–3rd order derivatives from spline coefficients — no finite differences. ND interpolants support `gradient`, `hessian`, and `laplacian`, plus `jacobian` for vector-valued data.
 ```julia
 # 1D example
 cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1D: f'(x)

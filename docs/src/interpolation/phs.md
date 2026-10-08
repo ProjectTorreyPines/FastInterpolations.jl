@@ -180,7 +180,7 @@ PHS is a local radial-basis method rather than a piecewise polynomial, so parts 
 - **Uniform grids only.** The stencil geometry is built from one spacing per axis, so results are only correct when every axis is equally spaced. Non-uniform axes are accepted without error but the interpolant then no longer reproduces its own data (tracked as a `@test_broken` pin).
 - **No boundary conditions.** Continuity comes from stencil blending, not from end conditions; there is no `bc` keyword.
 - **Search and hints.** Uniform grids locate the base node in O(1); non-uniform grids use a binary search. `search` is only used for out-of-domain checks and `hint` is ignored.
-- **Derivatives** use the standard `deriv` keyword. The `gradient`/`hessian`/`laplacian` helpers do not support PHS yet.
+- **Derivatives** use the standard `deriv` keyword. The `gradient`/`hessian`/`laplacian`/`jacobian` helpers do not support PHS yet.
 - **Not implemented:** adjoint operators, `integrate`, complex-valued data, the 1-D bare-vector constructor, `GriddedQuery`/`GridIdx` queries, and `ClampExtrap`/`WrapExtrap` (use `NoExtrap` or `FillExtrap`).
 - **Known issue:** first derivatives evaluated exactly on a grid node are inaccurate. This and the items above are tracked as `@test_broken` pins in `test/test_phs_broken_pins.jl`.
 

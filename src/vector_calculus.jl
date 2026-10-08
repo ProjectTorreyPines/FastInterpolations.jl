@@ -443,14 +443,20 @@ end
             for i in 1:N for j in 1:N
     ]
 
+    # Query eltype folded at generation time (no `fieldtypes` splat — it does not
+    # constant-fold under `--check-bounds=no`); `GridIdx` promotes to its value type.
+    tq_terms = [:(typeof(query_r[$d])) for d in 1:N]
+
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
         # Container eltype = the promotion of every component (`_nd_hessian_eltype`,
-        # the same witness the store guard consults): concrete for Real/same-unit
-        # grids, the tightest abstract `Quantity` supertype for mixed-unit axes —
-        # each entry still carries its own concrete units.
-        Tq = _nd_hessian_eltype($Tv, itp.grids)
-        H = Matrix{Tq}(undef, $N, $N)
+        # the same witness the store guard consults) over the QUERY-promoted value
+        # eltype (`_promote_eltype(itp, Tq)` — a Dual query yields `Matrix{Dual}`):
+        # concrete for Real/same-unit grids, the tightest abstract `Quantity`
+        # supertype for mixed-unit axes — each entry still carries its own units.
+        Tq = promote_type($(tq_terms...))
+        TH = _nd_hessian_eltype(_promote_eltype(itp, Tq), itp.grids)
+        H = Matrix{TH}(undef, $N, $N)
         policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))

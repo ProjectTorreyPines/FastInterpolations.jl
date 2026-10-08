@@ -726,7 +726,8 @@ Jacobian `J[i, j] = ∂Fᵢ/∂xⱼ` of a vector-valued interpolant at `query`: 
 
 A `Vector` query returns a plain `Matrix`. Entries follow the derivative's type (`Dual`
 queries; `value/gridⱼ` units in column `j`). Matrix-valued data throws an `ArgumentError`.
-Costs one [`gradient`](@ref) call and allocates nothing for `SVector` data.
+Costs one [`gradient`](@ref) call; with `SVector` data and a Tuple or splatted query it
+allocates nothing (a `Vector` query allocates its returned `Matrix`).
 
 # Examples
 ```julia

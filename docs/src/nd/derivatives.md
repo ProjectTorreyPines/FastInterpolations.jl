@@ -113,7 +113,7 @@ J = jacobian(itp, [0.5, 1.0])         # Vector input → Matrix
 # for Newton-type and least-squares solvers):
 J = zeros(2, 2)
 jacobian!(J, itp, (0.5, 1.0))
-F, J = value_jacobian(itp, (0.5, 1.0))
+val, J = value_jacobian(itp, (0.5, 1.0))
 ```
 
 `SVector{M}` data gives an `SMatrix{M,N}`, `Vector` data a `Matrix`, and scalar data the `1×N` row (the gradient transposed). Matrix-valued data is rejected.

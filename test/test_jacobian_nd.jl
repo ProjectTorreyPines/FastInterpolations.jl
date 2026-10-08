@@ -199,7 +199,9 @@ end
     qd = (Dual{Nothing}(JQ[1], 1.0), Dual{Nothing}(JQ[2], 0.0))
     J = @inferred jacobian(itp, qd)
     @test J isa SMatrix{3, 2, D}
-    @test value.(J) == jacobian(itp, JQ)
+    # Dual and Float queries compile to different specialisations; FMA contraction can
+    # differ by an ulp between them (seen on Julia 1.10), so the primal matches to rounding.
+    @test value.(J) ≈ jacobian(itp, JQ) rtol = 1.0e-14
 end
 
 @testitem "jacobian: extrap, GridIdx, Hetero, units" setup = [JacobianFixture] begin
@@ -258,5 +260,68 @@ end
         store = Matrix{eltype(Jd)}(undef, 3, 2)
         @test jacobian!(store, itpu, qd) === store
         @test all(store .== Jd)
+    end
+end
+
+# Every ND family / coefficient mode / grid / BC that `gradient` supports: J must match
+# ForwardDiff on F(q) = itp(q), its columns must be the gradient components, and the
+# assembly must add no allocation on top of `gradient`. PCHIP and Akima limit slopes
+# with `sign`/`abs`, so they take scalar data only.
+@testitem "jacobian: every ND family agrees with ForwardDiff" setup = [AllocConstants] begin
+    using StaticArrays
+    using ForwardDiff
+    x = range(0.0, 1.0, 21)
+    y = range(0.0, 1.0, 17)
+    q = (0.37, 0.61)
+    Fv(a, b) = SA[sin(2π * a) * cos(2π * b), cos(2π * a) + sin(2π * b), sin(2π * (a + b))]
+    Fs(a, b) = sin(2π * a) * cos(2π * b)
+    Fv_a(a, b) = SA[2π * cos(2π * a) * cos(2π * b), -2π * sin(2π * a), 2π * cos(2π * (a + b))]
+    Fv_b(a, b) = SA[-2π * sin(2π * a) * sin(2π * b), 2π * cos(2π * b), 2π * cos(2π * (a + b))]
+    Fv_ab(a, b) = SA[-4π^2 * cos(2π * a) * sin(2π * b), 0.0, -4π^2 * sin(2π * (a + b))]
+    Fs_a(a, b) = 2π * cos(2π * a) * cos(2π * b)
+    Fs_b(a, b) = -2π * sin(2π * a) * sin(2π * b)
+    Fs_ab(a, b) = -4π^2 * cos(2π * a) * sin(2π * b)
+    wrap(i, n) = i == n ? 1 : i          # exactly periodic samples for PeriodicBC
+    grid(f; periodic = false) = [periodic ? f(x[wrap(i, 21)], y[wrap(j, 17)]) : f(x[i], y[j]) for i in 1:21, j in 1:17]
+    partials(f_a, f_b, f_ab) = HermitePartials((1, 0) => grid(f_a), (0, 1) => grid(f_b), (1, 1) => grid(f_ab))
+
+    otf = OnTheFly()
+    # name => (constructor(data, isvec), vector data supported, periodic samples)
+    configs = (
+        "linear" => ((d, _) -> linear_interp((x, y), d), true, false),
+        "cubic" => ((d, _) -> cubic_interp((x, y), d), true, false),
+        "quadratic" => ((d, _) -> quadratic_interp((x, y), d), true, false),
+        "constant" => ((d, _) -> constant_interp((x, y), d), true, false),
+        "cubic OnTheFly" => ((d, _) -> cubic_interp((x, y), d; coeffs = otf), true, false),
+        "quadratic OnTheFly" => ((d, _) -> quadratic_interp((x, y), d; coeffs = otf), true, false),
+        "cubic Vector grid" => ((d, _) -> cubic_interp((collect(x), collect(y)), d), true, false),
+        "cubic PeriodicBC" => ((d, _) -> cubic_interp((x, y), d; bc = PeriodicBC()), true, true),
+        "Hermite ND (partials)" => ((d, v) -> hermite_interp((x, y), d, v ? partials(Fv_a, Fv_b, Fv_ab) : partials(Fs_a, Fs_b, Fs_ab)), true, false),
+        "Cardinal × Cardinal" => ((d, _) -> interp((x, y), d; method = (CardinalInterp(), CardinalInterp()), coeffs = otf), true, false),
+        "Cardinal × Cubic" => ((d, _) -> interp((x, y), d; method = (CardinalInterp(), CubicInterp()), coeffs = otf), true, false),
+        "Cubic × Quadratic" => ((d, _) -> interp((x, y), d; method = (CubicInterp(), QuadraticInterp())), true, false),
+        "Cubic × Linear OnTheFly" => ((d, _) -> interp((x, y), d; method = (CubicInterp(), LinearInterp()), coeffs = otf), true, false),
+        "PCHIP × PCHIP" => ((d, _) -> interp((x, y), d; method = (PchipInterp(), PchipInterp()), coeffs = otf), false, false),
+        "Akima × Akima" => ((d, _) -> interp((x, y), d; method = (AkimaInterp(), AkimaInterp()), coeffs = otf), false, false),
+        "Cubic × PCHIP" => ((d, _) -> interp((x, y), d; method = (CubicInterp(), PchipInterp()), coeffs = otf), false, false),
+    )
+
+    @testset "$name" for (name, (ctor, vector_ok, periodic)) in configs
+        for (F, isvec) in ((Fs, false), (Fv, true))
+            isvec && !vector_ok && continue
+            itp = ctor(grid(F; periodic), isvec)
+            J = jacobian(itp, q)
+            g = gradient(itp, q)
+            f = isvec ? (p -> Vector(itp((p[1], p[2])))) : (p -> [itp((p[1], p[2]))])
+            @test J ≈ ForwardDiff.jacobian(f, collect(q)) rtol = 1.0e-10 atol = 1.0e-12
+            @test all(vec(J[:, j]) == vec(collect(g[j])) for j in 1:2)
+
+            Js = zeros(size(J))
+            jacobian!(Js, itp, q)
+            @test Js == J
+            a_g = @allocated gradient(itp, q)
+            @test (@allocated jacobian!(Js, itp, q)) <= a_g + ALLOC_THRESHOLD
+            isvec && @test (@allocated jacobian(itp, q)) <= a_g + ALLOC_THRESHOLD
+        end
     end
 end

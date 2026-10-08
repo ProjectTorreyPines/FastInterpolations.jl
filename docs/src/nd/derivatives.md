@@ -97,6 +97,27 @@ H = zeros(3, 3)
 hessian!(H, itp, (0.5, 1.0, 0.3))
 ```
 
+### `jacobian`
+
+For vector-valued data (e.g. `SVector{M}` elements), the Jacobian `J[i, j] = ∂Fᵢ/∂xⱼ` is the `M×N` matrix whose column `j` holds the partial derivatives along axis `j` — the components of `gradient`. It is assembled from a single `gradient` call, so it costs the same.
+
+```julia
+using StaticArrays
+F(x, y) = SA[x * y, sin(x) + y]
+itp = cubic_interp((xs, ys), [F(x, y) for x in xs, y in ys])
+
+J = jacobian(itp, (0.5, 1.0))         # 2×2 SMatrix
+J = jacobian(itp, [0.5, 1.0])         # Vector input → Matrix
+
+# In-place, and value + Jacobian with one interval search (residual/Jacobian pairs
+# for Newton-type and least-squares solvers):
+J = zeros(2, 2)
+jacobian!(J, itp, (0.5, 1.0))
+F, J = value_jacobian(itp, (0.5, 1.0))
+```
+
+`SVector{M}` data gives an `SMatrix{M,N}`, `Vector` data a `Matrix`, and scalar data the `1×N` row (the gradient transposed). Matrix-valued data is rejected.
+
 ### `laplacian`
 
 ```julia

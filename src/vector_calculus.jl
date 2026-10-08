@@ -2,7 +2,8 @@
 # Vector Calculus Operations for ND Interpolants
 # ========================================
 #
-# Fast analytical gradient, hessian, and laplacian using the `deriv` keyword.
+# Fast analytical gradient, hessian, laplacian, and (vector-valued) jacobian using
+# the `deriv` keyword.
 # These functions are ~9x faster than ForwardDiff equivalents.
 #
 # Supports: Any AbstractInterpolantND subtype that implements _locate_cell/_eval_at_cell.
@@ -648,6 +649,265 @@ end
     )
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     return hessian!(H, itp, query_tuple; hint = hint)
+end
+
+# ========================================
+# JACOBIAN (vector-valued data)
+# ========================================
+# `J[i, j] = ∂Fᵢ/∂xⱼ`: column j is `gradient(itp, q)[j]`, so the Jacobian is assembled
+# from ONE public `gradient` call — locate-once, the Hetero NoInterp overrides, extrap
+# and Dual/unit handling are all inherited. `hcat` picks the container per component:
+# SVector → SMatrix, Vector → Matrix, scalar → 1×N row.
+
+# Matrix-valued data has no M×N Jacobian (`hcat` would silently build an M×(K·N)
+# block): rejected by dispatch on `Tv`, before any evaluation.
+@inline _check_jacobian_value_type(::Type) = nothing
+@inline _check_jacobian_value_type(::Type{<:AbstractVector}) = nothing
+@inline _check_jacobian_value_type(::Type{T}) where {T <: AbstractArray} = _throw_jacobian_array_value(T)
+
+@noinline function _throw_jacobian_array_value(T)
+    throw(
+        ArgumentError(
+            "jacobian needs scalar or vector-valued data, got data elements of type `$T`. " *
+                "Use `gradient` for the per-axis derivatives of array-valued data."
+        )
+    )
+end
+
+@inline _assemble_jacobian(g::Tuple) = hcat(g...)
+
+# Rows and column stores follow `hcat`: a vector component fills a column, anything
+# else is a single entry.
+@inline _jacobian_rows(c::AbstractVector) = length(c)
+@inline _jacobian_rows(c) = 1
+
+@inline function _store_jacobian_column!(J, j, c::AbstractVector)
+    @inbounds for r in 1:length(c)
+        J[r, j] = c[r]
+    end
+    return nothing
+end
+@inline _store_jacobian_column!(J, j, c) = (@inbounds J[1, j] = c; nothing)
+
+# Unrolled over the component tuple — heterogeneous on mixed-unit axes.
+@inline _store_jacobian_columns!(J, ::Tuple{}, j) = J
+@inline function _store_jacobian_columns!(J, g::Tuple, j)
+    _store_jacobian_column!(J, j, first(g))
+    return _store_jacobian_columns!(J, Base.tail(g), j + 1)
+end
+
+# Store guard: the entry type is promoted from the components' ACTUAL types (so a Dual
+# query counts), unrolled at generation time (no `fieldtypes` splat).
+@inline _jacobian_component_eltype(::Type{C}) where {C <: AbstractVector} = eltype(C)
+@inline _jacobian_component_eltype(::Type{C}) where {C} = C
+
+@generated function _jacobian_entry_eltype(::Type{G}) where {G <: Tuple}
+    terms = [:(_jacobian_component_eltype($C)) for C in G.parameters]
+    return :(promote_type($(terms...)))
+end
+
+@inline function _check_jacobian_store_eltype(g::Tuple, ::Type{TS}) where {TS}
+    T = _jacobian_entry_eltype(typeof(g))
+    (isconcretetype(T) || T <: TS) || _throw_nd_component_eltype(
+        "jacobian!",
+        "Use the allocating `jacobian` or pass a store that can hold them " *
+            "(e.g. `Matrix{Any}`).",
+        T,
+    )
+    return nothing
+end
+
+@noinline function _throw_jacobian_size(sz, expected)
+    throw(DimensionMismatch("Jacobian output matrix must be $(expected[1])×$(expected[2]), got $sz"))
+end
+
+"""
+    jacobian(itp::AbstractInterpolantND, query)
+
+Compute the Jacobian matrix `J[i, j] = ∂Fᵢ/∂xⱼ` of a vector-valued interpolant at `query`.
+
+Column `j` holds the partial derivative along axis `j` — the components of
+[`gradient`](@ref) — so `M`-vector data on an `N`-D grid gives an `M×N` matrix:
+
+| data element | result |
+|---|---|
+| `SVector{M}` | `SMatrix{M,N}` |
+| `Vector` (length `M`) | `Matrix` (`M×N`) |
+| scalar | `1×N` `Matrix` (the gradient as a row) |
+
+A `Vector` query returns a plain `Matrix`. Entries take the derivative's type: a `Dual`
+query gives `Dual` entries, and a unitful grid gives `value/gridⱼ` units in column `j`
+(an abstract element type on mixed-unit axes, as for [`hessian`](@ref)). Matrix-valued
+data is rejected with an `ArgumentError`.
+
+# Performance
+Assembled from a single [`gradient`](@ref) call (interval search once per query); for
+`SVector` data it costs the same and allocates nothing.
+
+# Examples
+```julia
+using StaticArrays
+F(x, y) = SA[x * y, sin(x) + y]
+itp = cubic_interp((xs, ys), [F(x, y) for x in xs, y in ys])
+J = jacobian(itp, (0.5, 0.5))    # 2×2 SMatrix, J[i, j] = ∂Fᵢ/∂xⱼ
+J = jacobian(itp, [0.5, 0.5])    # Vector query → Matrix
+J = jacobian(itp, 0.5, 0.5)      # splatted scalars also supported
+```
+
+See also: [`jacobian!`](@ref), [`value_jacobian`](@ref), [`gradient`](@ref)
+"""
+@inline function jacobian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Number, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    _check_jacobian_value_type(Tv)
+    return _assemble_jacobian(gradient(itp, query; hint = hint))
+end
+
+# Splat convenience: jacobian(itp, x, y) → jacobian(itp, (x, y)).
+@inline function jacobian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Number, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return jacobian(itp, q; kw...)
+end
+
+# Vector API: normalised to a tuple first, returned as a plain `Matrix`
+# (`convert` is the identity when the assembly already is one).
+@inline function jacobian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::AbstractVector{<:Number};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "expected $N-element vector, got $(length(query))-element vector"
+        )
+    )
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return convert(Matrix, jacobian(itp, query_tuple; hint = hint))
+end
+
+"""
+    jacobian!(J, itp::AbstractInterpolantND, query)
+
+Compute the Jacobian in-place, writing `∂Fᵢ/∂xⱼ` into `J[i, j]`.
+
+`J` must be exactly `M×N` (`1×N` for scalar data). Zero-allocation for `SVector` and
+scalar data. The store's element type must hold every entry: any store works when the
+entries share a concrete type (e.g. a `Float32` store for `Float64` data); on mixed-unit
+axes pass `Matrix{Any}` or a matrix of the allocating result's element type.
+
+# Examples
+```julia
+J = zeros(2, 2)
+jacobian!(J, itp, (0.5, 0.5))
+jacobian!(J, itp, [0.5, 0.5])
+jacobian!(J, itp, 0.5, 0.5)      # splatted scalars also supported
+
+# In-place Jacobian callback (NonlinearSolve / LsqFit style):
+jac!(J, x) = jacobian!(J, itp, x)
+```
+
+See also: [`jacobian`](@ref), [`value_jacobian`](@ref), [`gradient!`](@ref)
+"""
+@inline function jacobian!(
+        J::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Number, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    _check_jacobian_value_type(Tv)
+    g = gradient(itp, query; hint = hint)
+    rows = _jacobian_rows(first(g))
+    @boundscheck size(J) == (rows, N) || _throw_jacobian_size(size(J), (rows, N))
+    _check_jacobian_store_eltype(g, eltype(J))
+    return _store_jacobian_columns!(J, g, 1)
+end
+
+# Splat convenience: jacobian!(J, itp, x, y) → jacobian!(J, itp, (x, y)).
+@inline function jacobian!(
+        J::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Number, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return jacobian!(J, itp, q; kw...)
+end
+
+# Vector query API
+@inline function jacobian!(
+        J::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::AbstractVector{<:Number};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "expected $N-element query vector, got $(length(query))-element vector"
+        )
+    )
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return jacobian!(J, itp, query_tuple; hint = hint)
+end
+
+"""
+    value_jacobian(itp::AbstractInterpolantND, query)
+
+Compute the value `F` and the Jacobian `J` together, with one interval search.
+
+Returns `(F, J)`: `F` as [`value_gradient`](@ref) returns it, `J` as [`jacobian`](@ref)
+(a plain `Matrix` for a `Vector` query). This is the residual-plus-Jacobian pair that
+Newton-type and least-squares solvers need at each step.
+
+# Examples
+```julia
+F, J = value_jacobian(itp, (0.5, 0.5))
+F, J = value_jacobian(itp, [0.5, 0.5])    # Vector query → J::Matrix
+F, J = value_jacobian(itp, 0.5, 0.5)      # splatted scalars also supported
+
+# Newton step towards itp(x) == target:
+F, J = value_jacobian(itp, x)
+x = x - J \\ (F - target)
+```
+
+See also: [`jacobian`](@ref), [`value_gradient`](@ref)
+"""
+@inline function value_jacobian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Number, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    _check_jacobian_value_type(Tv)
+    val, g = value_gradient(itp, query; hint = hint)
+    return (val, _assemble_jacobian(g))
+end
+
+# Splat convenience: value_jacobian(itp, x, y) → value_jacobian(itp, (x, y)).
+@inline function value_jacobian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Number, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return value_jacobian(itp, q; kw...)
+end
+
+# Vector API
+@inline function value_jacobian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::AbstractVector{<:Number};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "expected $N-element vector, got $(length(query))-element vector"
+        )
+    )
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    val, J = value_jacobian(itp, query_tuple; hint = hint)
+    return (val, convert(Matrix, J))
 end
 
 # ========================================

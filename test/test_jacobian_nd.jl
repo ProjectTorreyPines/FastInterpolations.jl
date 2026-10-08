@@ -325,3 +325,97 @@ end
         end
     end
 end
+
+# Duck-typed data: anything with the package's minimal ops (`+`, `-`, `Real *`) works.
+# A `gradient` component that is an AbstractVector fills a column; anything else (a
+# scalar, Quantity, Complex, colorant, Dual, custom type) is one entry, as in `hcat`.
+@testitem "jacobian: duck-typed data" setup = [DuckTypeSetup] begin
+    using StaticArrays
+    using Unitful
+    using ColorTypes, ColorVectorSpace
+    using ForwardDiff: Dual
+    x = range(0.0, 1.0, 11)
+    y = range(0.0, 2.0, 21)
+    q = (0.37, 1.21)
+    f(a, b) = sin(a) * b + a * b^2
+    on_grid(F) = [F(a, b) for a in x, b in y]
+    # name => (data, expected container type, size)
+    datas = (
+        "MyDuck" => (on_grid((a, b) -> MyDuck(f(a, b))), Matrix{MyDuck}, (1, 2)),
+        "Quantity" => (on_grid((a, b) -> f(a, b) * u"K"), Matrix{<:Unitful.Quantity}, (1, 2)),
+        "ComplexF64" => (on_grid((a, b) -> complex(f(a, b), a - b)), Matrix{ComplexF64}, (1, 2)),
+        "RGB" => (on_grid((a, b) -> RGB(a, b / 2, f(a, b) / 5)), Matrix{RGB{Float64}}, (1, 2)),
+        "Dual" => (on_grid((a, b) -> Dual{Nothing}(f(a, b), a)), Matrix{Dual{Nothing, Float64, 1}}, (1, 2)),
+        "BigFloat" => (on_grid((a, b) -> big(f(a, b))), Matrix{BigFloat}, (1, 2)),
+        "SVector{MyDuck}" => (on_grid((a, b) -> SA[MyDuck(f(a, b)), MyDuck(a * b)]), SMatrix{2, 2, MyDuck}, (2, 2)),
+        "SVector{ComplexF64}" => (on_grid((a, b) -> SA[complex(f(a, b), a), complex(b, a * b)]), SMatrix{2, 2, ComplexF64}, (2, 2)),
+        "SVector{Quantity}" => (on_grid((a, b) -> SA[f(a, b) * u"K", a * b * u"K"]), SMatrix{2, 2, <:Unitful.Quantity}, (2, 2)),
+        "Vector{Quantity}" => (on_grid((a, b) -> [f(a, b) * u"K", a * b * u"K"]), Matrix{<:Unitful.Quantity}, (2, 2)),
+    )
+    ctors = (
+        linear_interp, cubic_interp, quadratic_interp, constant_interp,
+        (g, d) -> interp(g, d; method = (CubicInterp(), LinearInterp())),
+    )
+
+    @testset "$name" for (name, (data, T, sz)) in datas
+        for ctor in ctors
+            itp = ctor((x, y), data)
+            g = gradient(itp, q)
+            J = jacobian(itp, q)
+            @test J isa T
+            @test size(J) == sz
+            @test all(isequal(J[:, j], g[j] isa AbstractVector ? collect(g[j]) : [g[j]]) for j in 1:2)
+            Js = similar(Matrix(J))
+            @test isequal(jacobian!(Js, itp, q), Matrix(J))
+        end
+    end
+
+    @testset "MyDuck values follow the Float reference" begin
+        duck = on_grid((a, b) -> MyDuck(f(a, b)))
+        flat = on_grid(f)
+        for ctor in ctors
+            @test map(d -> d.v, jacobian(ctor((x, y), duck), q)) ≈ jacobian(ctor((x, y), flat), q) rtol = 1.0e-14
+        end
+    end
+end
+
+# Unit grids (same-unit and mixed-unit axes) × unit data (scalar, SVector, Vector): J is
+# the unitless twin's Jacobian with `value / gridⱼ` units in column j. The Hetero /
+# OnTheFly engines reject unit grids at construction, so the four PreCompute families run.
+@testitem "jacobian: Unitful grids and data vs the unitless twin" begin
+    using StaticArrays
+    using Unitful
+    x = range(0.0, 1.0, 11)
+    y = range(0.0, 2.0, 21)
+    q = (0.37, 1.21)
+    f(a, b) = sin(a) * b + a * b^2
+    kinds = (
+        "scalar" => ((a, b) -> f(a, b) * u"K", (a, b) -> f(a, b)),
+        "SVector" => ((a, b) -> SA[f(a, b), a * b] * u"K", (a, b) -> SA[f(a, b), a * b]),
+        "Vector" => ((a, b) -> [f(a, b), a * b] * u"K", (a, b) -> [f(a, b), a * b]),
+    )
+    @testset "$gname, $(nameof(fam)), $kname data" for (gname, (ux, uy)) in ("same-unit" => (u"m", u"m"), "mixed-unit" => (u"s", u"m")),
+            fam in (linear_interp, cubic_interp, quadratic_interp, constant_interp),
+            (kname, (Fu, Fp)) in kinds
+
+        itp = fam((x * ux, y * uy), [Fu(a, b) for a in x, b in y])
+        twin = fam((x, y), [Fp(a, b) for a in x, b in y])
+        qu = (q[1] * ux, q[2] * uy)
+        J = jacobian(itp, qu)
+        Jt = jacobian(twin, q)
+        @test ustrip.(J) ≈ Jt rtol = 1.0e-13
+        @test all(unit(J[i, j]) == u"K" / (ux, uy)[j] for i in axes(J, 1), j in 1:2)
+
+        F, Jv = value_jacobian(itp, qu)
+        @test all(unit.(F) .== u"K")
+        @test ustrip.(Jv) ≈ Jt rtol = 1.0e-13
+        @test ustrip.(jacobian(itp, [qu...])) ≈ Jt rtol = 1.0e-13
+
+        S = Matrix{Any}(undef, size(J)...)
+        @test all(isequal.(jacobian!(S, itp, qu), Matrix(J)))
+        if ux == uy                      # one concrete entry type: a typed store works
+            Sc = Matrix{eltype(J)}(undef, size(J)...)
+            @test jacobian!(Sc, itp, qu) == J
+        end
+    end
+end

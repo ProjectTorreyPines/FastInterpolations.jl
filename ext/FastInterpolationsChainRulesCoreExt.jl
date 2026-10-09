@@ -138,8 +138,8 @@ function ChainRulesCore.rrule(
     adj = adj_fn(itp.grids, (query_tuple,); _adjoint_kwargs_from_itp(itp)...)
 
     function itp_nd_vec_pb(Δy)
-        Δy isa AbstractZero && return ZeroTangent(), ZeroTangent()
         Δy_val = unthunk(Δy)
+        Δy_val isa AbstractZero && return ZeroTangent(), ZeroTangent()
         grad = FastInterpolations.gradient(itp, query_tuple)
         ∂query = [_cotangent_dot(Δy_val, grad[i]) for i in 1:N]
         data_bar = @thunk(_adj_seed(adj, Δy_val; deriv = EvalValue()))
@@ -258,8 +258,8 @@ function ChainRulesCore.rrule(
     # Adjoint constructor does not consume `deriv` (apply-time arg only).
     adj = _adjoint_func(func)(grids, queries; kwargs...)
     function _interp_nd_scalar_pb(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         Δu = unthunk(Δy)
+        Δu isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         f_bar = _adj_seed(adj, Δu; deriv = deriv, kwargs...)
         ∂queries = eval_value ? ntuple(i -> _cotangent_dot(Δu, ds[i]), Val(N)) : NoTangent()
         return NoTangent(), NoTangent(), f_bar, ∂queries
@@ -278,8 +278,9 @@ function ChainRulesCore.rrule(
     y = func(grids, data, queries; kwargs...)
     adj = _adjoint_func(func)(grids, queries; kwargs...)
     function _interp_nd_batch_pb(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
-        f_bar = adj(unthunk(Δy); kwargs...)
+        Δu = unthunk(Δy)
+        Δu isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
+        f_bar = adj(Δu; kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
     return y, _interp_nd_batch_pb
@@ -373,8 +374,8 @@ function ChainRulesCore.rrule(
     end
     adj = FastInterpolations.hetero_adjoint(grids, queries; methods = method_tuple, kwargs...)
     function _interp_unified_scalar_pb(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         Δu = unthunk(Δy)
+        Δu isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         f_bar = _adj_seed(adj, Δu; deriv = deriv)
         ∂queries = eval_value ? ntuple(i -> _cotangent_dot(Δu, ds[i]), Val(N)) : NoTangent()
         return NoTangent(), NoTangent(), f_bar, ∂queries
@@ -401,8 +402,9 @@ function ChainRulesCore.rrule(
     y = FastInterpolations.interp(grids, data, queries; method = method, deriv = deriv, kwargs...)
     adj = FastInterpolations.hetero_adjoint(grids, queries; methods = method_tuple, kwargs...)
     function _interp_unified_batch_pb(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
-        f_bar = adj(unthunk(Δy); deriv = deriv)
+        Δu = unthunk(Δy)
+        Δu isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
+        f_bar = adj(Δu; deriv = deriv)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
     return y, _interp_unified_batch_pb
@@ -432,8 +434,8 @@ function ChainRulesCore.rrule(
     adj = adj_fn(itp.grids, (query,); _adjoint_kwargs_from_itp(itp)...)
 
     function _itp_nd_eval_pb(Δy)
-        Δy isa AbstractZero && return ZeroTangent(), ZeroTangent()
         Δy_val = unthunk(Δy)
+        Δy_val isa AbstractZero && return ZeroTangent(), ZeroTangent()
 
         grad = FastInterpolations.gradient(itp, query)
         ∂query = ntuple(i -> _cotangent_dot(Δy_val, grad[i]), Val(N))
@@ -462,8 +464,8 @@ function ChainRulesCore.rrule(
     adj = adj_fn(itp.grids, (query,); _adjoint_kwargs_from_itp(itp)...)
 
     function _gradient_itp_nd_pb(Δgrad_raw)
-        Δgrad_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δgrad = _unthunk_components(Δgrad_raw, Val(N))
+        Δgrad isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
 
         T_out = _data_bar_eltype(Tg, Δgrad)
         data_bar = zeros(T_out, _adjoint_output_size(adj)...)
@@ -499,8 +501,8 @@ function ChainRulesCore.rrule(
     adj = adj_fn(itp.grids, (query,); _adjoint_kwargs_from_itp(itp)...)
 
     function _hessian_itp_nd_pb(ΔH_raw)
-        ΔH_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         ΔH = unthunk(ΔH_raw)
+        ΔH isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
 
         T_out = _data_bar_eltype(Tg, eltype(ΔH))
         data_bar = zeros(T_out, _adjoint_output_size(adj)...)
@@ -541,8 +543,8 @@ function ChainRulesCore.rrule(
     adj = adj_fn(itp.grids, (query,); _adjoint_kwargs_from_itp(itp)...)
 
     function _laplacian_itp_nd_pb(Δlap_raw)
-        Δlap_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δlap = unthunk(Δlap_raw)
+        Δlap isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
 
         T_out = _data_bar_eltype(Tg, (Δlap,))
         data_bar = zeros(T_out, _adjoint_output_size(adj)...)
@@ -573,8 +575,8 @@ function ChainRulesCore.rrule(
     adj = adj_fn(itp.grids, (query,); _adjoint_kwargs_from_itp(itp)...)
 
     function _value_gradient_itp_nd_pb(Δ_raw)
-        Δ_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δ = unthunk(Δ_raw)
+        Δ isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δval, Δgrad = unthunk(Δ[1]), _unthunk_components(Δ[2], Val(N))
 
         T_out = _data_bar_eltype(Tg, Δgrad isa AbstractZero ? (Δval,) : (Δval, Δgrad...))

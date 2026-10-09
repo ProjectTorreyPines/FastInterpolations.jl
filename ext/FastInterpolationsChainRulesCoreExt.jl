@@ -141,8 +141,8 @@ function ChainRulesCore.rrule(
         Δy isa AbstractZero && return ZeroTangent(), ZeroTangent()
         Δy_val = unthunk(Δy)
         grad = FastInterpolations.gradient(itp, query_tuple)
-        ∂query = [real(conj(Δy_val) * grad[i]) for i in 1:N]
-        data_bar = @thunk(adj(Δy_val; deriv = EvalValue()))
+        ∂query = [_cotangent_dot(Δy_val, grad[i]) for i in 1:N]
+        data_bar = @thunk(_adj_seed(adj, Δy_val; deriv = EvalValue()))
         return data_bar, ∂query
     end
 
@@ -178,9 +178,29 @@ const _adjoint_kwargs_from_itp = FastInterpolations._adjoint_kwargs_from_itp
 
 # A tuple cotangent can arrive with lazy components (e.g. `hcat` in `jacobian` returns one
 # thunk per column), so unthunk the container and then every component.
-@inline _unthunk_components(Δ) = _unthunk_each(unthunk(Δ))
-@inline _unthunk_each(Δ::AbstractZero) = Δ
-@inline _unthunk_each(Δ) = map(unthunk, Tuple(Δ))
+# `Val(N)` keeps the length static (`Tuple(::Tangent)` infers `Tuple{Vararg}`).
+@inline _unthunk_components(Δ, n::Val) = _unthunk_each(unthunk(Δ), n)
+@inline _unthunk_each(Δ::AbstractZero, ::Val) = Δ
+@inline _unthunk_each(Δ, ::Val{N}) where {N} = ntuple(i -> unthunk(Δ[i]), Val(N))
+
+# One query's cotangent: a real one takes the scalar adjoint method; anything else
+# (complex, vector-valued) goes in as a batch of one, so an `SVector` cotangent is never
+# read as several query cotangents.
+@inline _adj_seed(adj, Δ::Real; kwargs...) = adj(Δ; kwargs...)
+@inline _adj_seed(adj, Δ; kwargs...) = adj([Δ]; kwargs...)
+
+# Data-bar eltype: the adjoint's own witness for the (non-zero) cotangent types.
+@inline _cotangent_type(::AbstractZero) = Union{}
+@inline _cotangent_type(Δ) = typeof(Δ)
+@inline _data_bar_eltype(::Type{Tg}, ::Type{T}) where {Tg, T} =
+    FastInterpolations._promote_eltype(FastInterpolations._interp_op, Tg, T, Tg)
+@inline _data_bar_eltype(::Type{Tg}, Δs::Tuple) where {Tg} =
+    _data_bar_eltype(Tg, promote_type(map(_cotangent_type, Δs)...))
+
+const _cotangent_dot = FastInterpolations._cotangent_dot
+# The data tangent has the user-data size (a `:exclusive` periodic axis is shorter than the
+# extended grid).
+const _adjoint_output_size = FastInterpolations._adjoint_output_size
 
 # `deriv` extracted explicitly — must not leak into adjoint or derivative computation.
 # When deriv is non-EvalValue (evaluating a derivative), query gradient requires
@@ -244,8 +264,8 @@ function ChainRulesCore.rrule(
     function _interp_nd_scalar_pb(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         Δu = unthunk(Δy)
-        f_bar = adj(Δu; deriv = deriv, kwargs...)
-        ∂queries = eval_value ? ntuple(i -> real(conj(Δu) * ds[i]), Val(N)) : NoTangent()
+        f_bar = _adj_seed(adj, Δu; deriv = deriv, kwargs...)
+        ∂queries = eval_value ? ntuple(i -> _cotangent_dot(Δu, ds[i]), Val(N)) : NoTangent()
         return NoTangent(), NoTangent(), f_bar, ∂queries
     end
     return y, _interp_nd_scalar_pb
@@ -359,8 +379,8 @@ function ChainRulesCore.rrule(
     function _interp_unified_scalar_pb(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         Δu = unthunk(Δy)
-        f_bar = adj(Δu; deriv = deriv)
-        ∂queries = eval_value ? ntuple(i -> real(conj(Δu) * ds[i]), Val(N)) : NoTangent()
+        f_bar = _adj_seed(adj, Δu; deriv = deriv)
+        ∂queries = eval_value ? ntuple(i -> _cotangent_dot(Δu, ds[i]), Val(N)) : NoTangent()
         return NoTangent(), NoTangent(), f_bar, ∂queries
     end
     return y, _interp_unified_scalar_pb
@@ -420,9 +440,9 @@ function ChainRulesCore.rrule(
         Δy_val = unthunk(Δy)
 
         grad = FastInterpolations.gradient(itp, query)
-        ∂query = ntuple(i -> real(conj(Δy_val) * grad[i]), Val(N))
+        ∂query = ntuple(i -> _cotangent_dot(Δy_val, grad[i]), Val(N))
 
-        data_bar = @thunk(adj(Δy_val; deriv = EvalValue()))
+        data_bar = @thunk(_adj_seed(adj, Δy_val; deriv = EvalValue()))
 
         return data_bar, ∂query
     end
@@ -447,19 +467,19 @@ function ChainRulesCore.rrule(
 
     function _gradient_itp_nd_pb(Δgrad_raw)
         Δgrad_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
-        Δgrad = _unthunk_components(Δgrad_raw)
+        Δgrad = _unthunk_components(Δgrad_raw, Val(N))
 
-        T_out = promote_type(Tg, typeof(first(Δgrad)))
-        data_bar = zeros(T_out, size(itp)...)
+        T_out = _data_bar_eltype(Tg, Δgrad)
+        data_bar = zeros(T_out, _adjoint_output_size(adj)...)
         for i in 1:N
             dg_i = Δgrad[i]
             iszero(dg_i) && continue
             ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
-            data_bar .+= adj(dg_i; deriv = ops_i)
+            data_bar .+= _adj_seed(adj, dg_i; deriv = ops_i)
         end
 
         H = FastInterpolations.hessian(itp, query)
-        ∂query = ntuple(j -> sum(real(conj(Δgrad[i]) * H[i, j]) for i in 1:N), Val(N))
+        ∂query = ntuple(j -> sum(_cotangent_dot(Δgrad[i], H[i, j]) for i in 1:N), Val(N))
 
         return NoTangent(), data_bar, ∂query
     end
@@ -486,21 +506,21 @@ function ChainRulesCore.rrule(
         ΔH_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         ΔH = unthunk(ΔH_raw)
 
-        T_out = promote_type(Tg, eltype(ΔH))
-        data_bar = zeros(T_out, size(itp)...)
+        T_out = _data_bar_eltype(Tg, eltype(ΔH))
+        data_bar = zeros(T_out, _adjoint_output_size(adj)...)
 
         for i in 1:N
             dh_ii = ΔH[i, i]
             iszero(dh_ii) && continue
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            data_bar .+= adj(dh_ii; deriv = ops)
+            data_bar .+= _adj_seed(adj, dh_ii; deriv = ops)
         end
 
         for i in 1:N, j in (i + 1):N
             dh_ij = ΔH[i, j] + ΔH[j, i]
             iszero(dh_ij) && continue
             ops = ntuple(k -> (k == i || k == j) ? DerivOp(1) : EvalValue(), Val(N))
-            data_bar .+= adj(dh_ij; deriv = ops)
+            data_bar .+= _adj_seed(adj, dh_ij; deriv = ops)
         end
 
         return NoTangent(), data_bar, ZeroTangent()
@@ -528,11 +548,11 @@ function ChainRulesCore.rrule(
         Δlap_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δlap = unthunk(Δlap_raw)
 
-        T_out = promote_type(Tg, typeof(Δlap))
-        data_bar = zeros(T_out, size(itp)...)
+        T_out = _data_bar_eltype(Tg, (Δlap,))
+        data_bar = zeros(T_out, _adjoint_output_size(adj)...)
         for i in 1:N
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            data_bar .+= adj(Δlap; deriv = ops)
+            data_bar .+= _adj_seed(adj, Δlap; deriv = ops)
         end
 
         return NoTangent(), data_bar, ZeroTangent()
@@ -559,17 +579,16 @@ function ChainRulesCore.rrule(
     function _value_gradient_itp_nd_pb(Δ_raw)
         Δ_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δ = unthunk(Δ_raw)
-        Δval, Δgrad = unthunk(Δ[1]), _unthunk_components(Δ[2])
+        Δval, Δgrad = unthunk(Δ[1]), _unthunk_components(Δ[2], Val(N))
 
-        T_grad = Δgrad isa AbstractZero ? Tg : promote_type(map(typeof, Δgrad)...)
-        T_out = promote_type(Tg, Tv, typeof(Δval), T_grad)
-        data_bar = zeros(T_out, size(itp)...)
+        T_out = _data_bar_eltype(Tg, Δgrad isa AbstractZero ? (Δval,) : (Δval, Δgrad...))
+        data_bar = zeros(T_out, _adjoint_output_size(adj)...)
         ∂query_val = ntuple(_ -> zero(Tg), Val(N))
         ∂query_grad = ntuple(_ -> zero(Tg), Val(N))
 
         if !(Δval isa AbstractZero) && !iszero(Δval)
-            data_bar .+= adj(Δval; deriv = EvalValue())
-            ∂query_val = ntuple(i -> real(conj(Δval) * grad[i]), Val(N))
+            data_bar .+= _adj_seed(adj, Δval; deriv = EvalValue())
+            ∂query_val = ntuple(i -> _cotangent_dot(Δval, grad[i]), Val(N))
         end
 
         if !(Δgrad isa AbstractZero)
@@ -577,10 +596,10 @@ function ChainRulesCore.rrule(
                 dg_i = Δgrad[i]
                 iszero(dg_i) && continue
                 ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
-                data_bar .+= adj(dg_i; deriv = ops_i)
+                data_bar .+= _adj_seed(adj, dg_i; deriv = ops_i)
             end
             H = FastInterpolations.hessian(itp, query)
-            ∂query_grad = ntuple(j -> sum(real(conj(Δgrad[i]) * H[i, j]) for i in 1:N), Val(N))
+            ∂query_grad = ntuple(j -> sum(_cotangent_dot(Δgrad[i], H[i, j]) for i in 1:N), Val(N))
         end
 
         ∂query = ntuple(i -> ∂query_val[i] + ∂query_grad[i], Val(N))

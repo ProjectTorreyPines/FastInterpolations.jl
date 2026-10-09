@@ -37,6 +37,10 @@ _adjoint_kwargs_from_itp(itp::LinearInterpolantND) = (extrap = itp.extraps,)
 _adjoint_kwargs_from_itp(itp::ConstantInterpolantND) = (side = itp.sides, extrap = itp.extraps)
 _adjoint_kwargs_from_itp(itp::HeteroInterpolantND) = (methods = itp.methods, extrap = itp.extraps)
 
+# ⟨Δ, ẏ⟩ for a real query: `real(conj(Δ) * ẏ)` for scalar data, summed over the
+# components for vector-valued data.
+@inline _cotangent_dot(Δ, ẏ) = real(LinearAlgebra.dot(Δ, ẏ))
+
 # CubicHermiteInterpolantND has no adjoint yet (user supplies data + 2^N-1
 # separate partial arrays, so the single-`data`-tangent protocol does not
 # apply). It subtypes `AbstractInterpolantND`, so the generic reverse-mode

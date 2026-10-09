@@ -152,7 +152,8 @@ Zygote uses ChainRulesCore for efficient differentiation. Registered `rrule`s ar
 for all four ND interpolant types — eval, `gradient`, `hessian`, `laplacian`, and
 `value_gradient` — with both `∂/∂query` and `∂/∂data` support. `jacobian` and
 `value_jacobian` are assembled from `gradient` / `value_gradient`, so Zygote
-differentiates them through those rules:
+differentiates them through those rules. Data may be real, complex, or vector-valued
+(e.g. `SVector`):
 
 ```julia
 using Zygote

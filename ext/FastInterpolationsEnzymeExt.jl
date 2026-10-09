@@ -322,7 +322,7 @@ function EnzymeRules.reverse(
         kwargs...
     ) where {N}
     adj, deriv_op = tape
-    f_bar = adj(dret.val; deriv = deriv_op)
+    f_bar = _adj_seed(adj, dret.val; deriv = deriv_op)
     data.dval .+= f_bar
     return (nothing, nothing, nothing)
 end

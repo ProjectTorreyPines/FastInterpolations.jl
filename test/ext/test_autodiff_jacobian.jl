@@ -11,6 +11,7 @@ using Test
 using FastInterpolations
 using Zygote
 using ForwardDiff
+using ChainRulesCore: rrule, @thunk, ZeroTangent, AbstractZero, unthunk
 
 # Zygote returns `nothing` for an all-zero gradient (constant interpolants).
 _or_zero(g, ref) = g === nothing ? zero(ref) : g
@@ -104,5 +105,27 @@ _or_zero(g::Tuple, _) = collect(map(gi -> gi === nothing ? 0.0 : gi, g))
 
         fv(d) = (vg = FastInterpolations.value_gradient(cubic_interp((x, y), d), q2); vg[1] + sum(abs2, hcat(vg[2]...)))
         @test Zygote.gradient(fv, data2)[1] ≈ ForwardDiff.gradient(fv, data2) rtol = 1.0e-10
+    end
+end
+
+# A cotangent can arrive as a thunk that resolves to a structural zero; the pullbacks must
+# unthunk before their zero guard instead of failing on (or propagating) a ZeroTangent.
+@testset "ND rrules — thunked zero cotangent" begin
+    x = range(0.0, 2.0, 11)
+    y = range(0.0, 1.0, 9)
+    q = (0.7, 0.4)
+    itp = cubic_interp((x, y), [sin(a) * cos(b) for a in x, b in y])
+    is_zero_tangent(t) = (u = unthunk(t); u isa AbstractZero || all(iszero, u))
+    for (label, (_, pb)) in (
+            ("eval", rrule(itp, q)),
+            ("eval (vector query)", rrule(itp, collect(q))),
+            ("gradient", rrule(FastInterpolations.gradient, itp, q)),
+            ("value_gradient", rrule(FastInterpolations.value_gradient, itp, q)),
+            ("hessian", rrule(FastInterpolations.hessian, itp, q)),
+            ("laplacian", rrule(FastInterpolations.laplacian, itp, q)),
+        )
+        @testset "$label" begin
+            @test all(is_zero_tangent, pb(@thunk(ZeroTangent())))
+        end
     end
 end

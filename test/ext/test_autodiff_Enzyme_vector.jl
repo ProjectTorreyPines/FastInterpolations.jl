@@ -35,6 +35,18 @@ if !_EV_SKIP && _EV_SUPPORTED
     _ev_jac(d) = (J = FastInterpolations.jacobian(_ev_itp(d), _EV_Q); _ev_s(_ev_col(J, 1))^2 + _ev_s(_ev_col(J, 2)))
     _ev_hess(d) = (H = FastInterpolations.hessian(_ev_itp(d), _EV_Q); _ev_s(H[1, 1])^2 + _ev_s(H[1, 2]) + _ev_s(H[2, 2])^2)
     _ev_lap(d) = _ev_s(FastInterpolations.laplacian(_ev_itp(d), _EV_Q))^2
+    _ev_oneshot(d) = _ev_s(cubic_interp((_EV_X, _EV_Y), d, _EV_Q))^2
+
+    # Independent oracle for the Float64 reference: central differences in every entry.
+    function _ev_fd(f, D; h = 1.0e-6)
+        g = similar(D)
+        for i in eachindex(D)
+            Dp = copy(D); Dp[i] += h
+            Dm = copy(D); Dm[i] -= h
+            g[i] = (f(Dp) - f(Dm)) / (2h)
+        end
+        return g
+    end
 
     @testset "ND vector calculus — vector-valued data, ∂/∂data via Enzyme" begin
         C = (
@@ -42,10 +54,10 @@ if !_EV_SKIP && _EV_SUPPORTED
             [a * b + 0.3 * a for a in _EV_X, b in _EV_Y],
             [cos(a + b) for a in _EV_X, b in _EV_Y],
         )
-        # (label, s coefficients, value from channels, channel k of a ∂data entry)
+        # (label, s coefficients, value from channels, channel k of a ∂data entry, eval error today)
         kinds = (
-            ("SVector{3}", (1.0, 2.0, 3.0), c -> SVector(c...), (e, k) -> e[k]),
-            ("ComplexF64", (1.0, 2.0), c -> complex(c...), (e, k) -> k == 1 ? real(e) : imag(e)),
+            ("SVector{3}", (1.0, 2.0, 3.0), c -> SVector(c...), (e, k) -> e[k], DimensionMismatch),
+            ("ComplexF64", (1.0, 2.0), c -> complex(c...), (e, k) -> k == 1 ? real(e) : imag(e), MethodError),
         )
         # (label, loss, Float64 oracle loss) — the jacobian loss equals the gradient loss
         ops = (
@@ -53,8 +65,9 @@ if !_EV_SKIP && _EV_SUPPORTED
             ("jacobian", _ev_jac, _ev_grad),
             ("hessian", _ev_hess, _ev_hess),
             ("laplacian", _ev_lap, _ev_lap),
+            ("one-shot eval", _ev_oneshot, _ev_oneshot),
         )
-        for (klabel, coef, mk, chan) in kinds
+        for (klabel, coef, mk, chan, eval_error) in kinds
             M = length(coef)
             data = [mk(ntuple(k -> C[k][i], M)) for i in CartesianIndices(C[1])]
             D = sum(coef[k] .* C[k] for k in 1:M)
@@ -64,6 +77,7 @@ if !_EV_SKIP && _EV_SUPPORTED
                     Enzyme.autodiff(Enzyme.Reverse, Enzyme.Const(f), Enzyme.Active, Enzyme.Duplicated(data, dd))
                     dD = zero(D)
                     Enzyme.autodiff(Enzyme.Reverse, Enzyme.Const(fref), Enzyme.Active, Enzyme.Duplicated(D, dD))
+                    @test dD ≈ _ev_fd(fref, D) rtol = 1.0e-6 atol = 1.0e-8
                     for k in 1:M
                         @test map(e -> chan(e, k), dd) ≈ coef[k] .* dD rtol = 1.0e-10 atol = 1.0e-12
                     end
@@ -74,7 +88,7 @@ if !_EV_SKIP && _EV_SUPPORTED
             # it must fail loudly, never return a silently zero gradient.
             @testset "$klabel | eval refuses" begin
                 dd = Enzyme.make_zero(data)
-                @test_throws Exception Enzyme.autodiff(
+                @test_throws eval_error Enzyme.autodiff(
                     Enzyme.Reverse, Enzyme.Const(_ev_eval), Enzyme.Active, Enzyme.Duplicated(data, dd)
                 )
             end

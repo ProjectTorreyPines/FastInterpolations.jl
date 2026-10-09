@@ -183,11 +183,7 @@ const _adjoint_kwargs_from_itp = FastInterpolations._adjoint_kwargs_from_itp
 @inline _unthunk_each(Δ::AbstractZero, ::Val) = Δ
 @inline _unthunk_each(Δ, ::Val{N}) where {N} = ntuple(i -> unthunk(Δ[i]), Val(N))
 
-# One query's cotangent: a real one takes the scalar adjoint method; anything else
-# (complex, vector-valued) goes in as a batch of one, so an `SVector` cotangent is never
-# read as several query cotangents.
-@inline _adj_seed(adj, Δ::Real; kwargs...) = adj(Δ; kwargs...)
-@inline _adj_seed(adj, Δ; kwargs...) = adj([Δ]; kwargs...)
+const _adj_seed = FastInterpolations._adj_seed
 
 # Data-bar eltype: the adjoint's own witness for the (non-zero) cotangent types.
 @inline _cotangent_type(::AbstractZero) = Union{}

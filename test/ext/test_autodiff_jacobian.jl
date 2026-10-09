@@ -31,6 +31,11 @@ _or_zero(g::Tuple, _) = collect(map(gi -> gi === nothing ? 0.0 : gi, g))
         ("constant", constant_interp),
         ("cubic", cubic_interp),
         ("hetero", (g, d) -> interp(g, d; method = (CubicInterp(), LinearInterp()))),
+        # `:exclusive`: the adjoint returns the user-data size, not the extended grid size
+        (
+            "cubic PeriodicBC exclusive",
+            (g, d) -> cubic_interp((g[1][1:(end - 1)], g[2]), d[1:(end - 1), :]; bc = (PeriodicBC(endpoint = :exclusive, period = 2.0), CubicFit())),
+        ),
     )
     W = [1.3 -0.7]
     L(J) = sum(W .* J .^ 2) + J[1, 2]          # both columns, nonlinear

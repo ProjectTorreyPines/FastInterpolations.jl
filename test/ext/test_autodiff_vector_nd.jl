@@ -64,7 +64,7 @@ _twin_ch(v, _) = v
     f1(a, b) = sin(π * a) * cos(b)
     f2(a, b) = cos(π * a) * b + 0.3
     f3(a, b) = sin(π * a + b)
-    twins = Tuple([f(a, b) for a in x, b in y] for f in (f1, f2, f3))   # exactly periodic in x
+    twins = Tuple([f(a, b) for a in x, b in y] for f in (f1, f2, f3))
 
     # (label, channels, value from channels, channel accessor; data-gradient entries use it too)
     kinds = (
@@ -77,7 +77,13 @@ _twin_ch(v, _) = v
         ("cubic", cubic_interp, first.(VEC_LOSSES)),
         ("linear", linear_interp, ("eval", "gradient", "jacobian")),
         ("quadratic", quadratic_interp, ("eval", "gradient", "jacobian")),
-        ("cubic PeriodicBC", (g, d) -> cubic_interp(g, d; bc = (PeriodicBC(), CubicFit())), ("eval", "jacobian")),
+        # `:exclusive` (last x row unused): an `:inclusive` endpoint ties data[end, :] to
+        # data[1, :], which the ForwardDiff oracle cannot perturb independently.
+        (
+            "cubic PeriodicBC",
+            (g, d) -> cubic_interp((g[1][1:(end - 1)], g[2]), d[1:(end - 1), :]; bc = (PeriodicBC(endpoint = :exclusive, period = 2.0), CubicFit())),
+            ("eval", "jacobian"),
+        ),
         ("hetero", (g, d) -> interp(g, d; method = (CubicInterp(), LinearInterp())), ("eval", "gradient", "jacobian")),
         ("constant", constant_interp, ("eval", "gradient")),
     )

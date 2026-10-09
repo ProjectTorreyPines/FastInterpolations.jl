@@ -32,6 +32,7 @@ const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 # ── Extension tests (order matters!) ──────────────────────────────────
 if EXT_CHUNK in ("all", "enzyme")
     include("test_autodiff_Enzyme.jl")
+    include("test_autodiff_Enzyme_vector.jl")   # vector-valued data, ∂/∂data
 end
 if EXT_CHUNK in ("all", "rest")
     include("test_autodiff_ForwardDiff.jl")

@@ -23,8 +23,8 @@
 
 | Function | Description |
 |----------|-------------|
-| `phs_interp(grids, data; reference_interp=ConstantRef(ρ₀))` | Interpolate `log(data/ρ₀)`, return `data` scale |
-| `phs_interp(grids, data; reference_interp=itp₀, reference_data=ρ₀)` | Reference from another interpolant, nodes pre-evaluated |
+| `phs_interp(grids, data; log_reference = c)` | Interpolate `log(data/c)` for a nonzero constant `c` with the sign of `data`, return `data` scale |
+| `phs_interp(grids, data; log_reference = ρ₀)` | Interpolate `log(data/ρ₀)` for a callable `ρ₀(q)`, such as an interpolant; derivative queries call `ρ₀(q; deriv = ops)` |
 
 See [Polyharmonic Splines (PHS)](../interpolation/phs.md) for the method, tuning guidance, and worked examples.
 
@@ -41,11 +41,4 @@ phs_interp!
 
 ```@docs
 PHSInterpolantND
-```
-
-## Log-transform Types
-
-```@docs
-PHSLogTransform
-ConstantRef
 ```

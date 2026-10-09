@@ -150,12 +150,15 @@ nothing  # hide
 
 Zygote uses ChainRulesCore for efficient differentiation. Registered `rrule`s are provided
 for all four ND interpolant types — eval, `gradient`, `hessian`, `laplacian`, and
-`value_gradient` — with both `∂/∂query` and `∂/∂data` support:
+`value_gradient` — with both `∂/∂query` and `∂/∂data` support. `jacobian` and
+`value_jacobian` are assembled from `gradient` / `value_gradient`, so Zygote
+differentiates them through those rules:
 
 ```julia
 using Zygote
 
 grad = Zygote.gradient(itp, [0.5, 0.5])[1]
+∂data = Zygote.gradient(d -> sum(abs2, FastInterpolations.jacobian(cubic_interp((x, y), d), (0.5, 0.5))), data)[1]
 ```
 
 Without the ChainRulesCore extension, Zygote falls back to source transformation,

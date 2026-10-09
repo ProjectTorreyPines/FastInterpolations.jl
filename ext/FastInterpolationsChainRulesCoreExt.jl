@@ -176,6 +176,12 @@ const _adjoint_func = FastInterpolations._adjoint_func
 const _adjoint_func_from_itp = FastInterpolations._adjoint_func_from_itp
 const _adjoint_kwargs_from_itp = FastInterpolations._adjoint_kwargs_from_itp
 
+# A tuple cotangent can arrive with lazy components (e.g. `hcat` in `jacobian` returns one
+# thunk per column), so unthunk the container and then every component.
+@inline _unthunk_components(Δ) = _unthunk_each(unthunk(Δ))
+@inline _unthunk_each(Δ::AbstractZero) = Δ
+@inline _unthunk_each(Δ) = map(unthunk, Tuple(Δ))
+
 # `deriv` extracted explicitly — must not leak into adjoint or derivative computation.
 # When deriv is non-EvalValue (evaluating a derivative), query gradient requires
 # higher-order derivatives — not supported; returns NoTangent() in that case.
@@ -441,7 +447,7 @@ function ChainRulesCore.rrule(
 
     function _gradient_itp_nd_pb(Δgrad_raw)
         Δgrad_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
-        Δgrad = unthunk(Δgrad_raw)
+        Δgrad = _unthunk_components(Δgrad_raw)
 
         T_out = promote_type(Tg, typeof(first(Δgrad)))
         data_bar = zeros(T_out, size(itp)...)
@@ -553,7 +559,7 @@ function ChainRulesCore.rrule(
     function _value_gradient_itp_nd_pb(Δ_raw)
         Δ_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δ = unthunk(Δ_raw)
-        Δval, Δgrad = Δ[1], Δ[2]
+        Δval, Δgrad = unthunk(Δ[1]), _unthunk_components(Δ[2])
 
         T_grad = Δgrad isa AbstractZero ? Tg : promote_type(map(typeof, Δgrad)...)
         T_out = promote_type(Tg, Tv, typeof(Δval), T_grad)

@@ -42,10 +42,22 @@ solver reads secants through this accessor instead of a buffer; `inv_h` comes fr
         y::AbstractVector,
         i::Int
     ) where {Tc}
+    return _quadratic_secant(Tc, x, y, i, _get_inv_h(x, i))
+end
+
+# `inv_h_i` supplied: a sweep that also needs `inv_h[i]` reads it once (on a raw axis it
+# is a division, and the stores between two reads keep the compiler from sharing it).
+@inline Base.@propagate_inbounds function _quadratic_secant(
+        ::Type{Tc},
+        x::AbstractVector,
+        y::AbstractVector,
+        i::Int,
+        inv_h_i
+    ) where {Tc}
     # Diffs lift into VALUE space (wrap-free for narrow eltypes); the [Y/X]
     # dimension enters via `inv_h`, never by converting y into it.
     Tvs = _value_space_eltype(eltype(x), eltype(y))
-    return convert(Tc, _fielddiff(Tvs, y[i + 1], y[i]) * _get_inv_h(x, i))
+    return convert(Tc, _fielddiff(Tvs, y[i + 1], y[i]) * inv_h_i)
 end
 
 # ========================================
@@ -54,9 +66,9 @@ end
 
 # Coefficient output of the slope sweep: `a[i] = (s[i] - d[i]) * inv_h[i]`, written in
 # the same loop as `d`. `a === nothing` → slopes only (ND partials).
-@inline _store_quadratic_coeff!(::Nothing, _, ::Int, _, _) = nothing
-@inline Base.@propagate_inbounds function _store_quadratic_coeff!(a::AbstractVector, x, i::Int, si, di)
-    a[i] = (si - di) * _get_inv_h(x, i)  # [Y/X] * [1/X] → [Y/X²]
+@inline _store_quadratic_coeff!(::Nothing, ::Int, _, _, _) = nothing
+@inline Base.@propagate_inbounds function _store_quadratic_coeff!(a::AbstractVector, i::Int, si, di, inv_h_i)
+    a[i] = (si - di) * inv_h_i  # [Y/X] * [1/X] → [Y/X²]
     return nothing
 end
 
@@ -84,9 +96,10 @@ With `a !== nothing`, the same sweep writes a[i] = (s[i] - d[i]) * inv_h[i].
     n = length(d)
     di = convert(Tc, d1)
     @inbounds for i in 1:(n - 1)
-        si = _quadratic_secant(Tc, x, y, i)
+        inv_h_i = _get_inv_h(x, i)
+        si = _quadratic_secant(Tc, x, y, i, inv_h_i)
         d[i] = di
-        _store_quadratic_coeff!(a, x, i, si, di)
+        _store_quadratic_coeff!(a, i, si, di, inv_h_i)
         di = convert(Tc, 2 * si - di)  # All Tv operations
     end
     @inbounds d[n] = di
@@ -118,10 +131,11 @@ With `a !== nothing`, the same sweep writes a[i] = (s[i] - d[i]) * inv_h[i].
     di = convert(Tc, dn)
     @inbounds d[n] = di
     @inbounds for i in (n - 1):-1:1
-        si = _quadratic_secant(Tc, x, y, i)
+        inv_h_i = _get_inv_h(x, i)
+        si = _quadratic_secant(Tc, x, y, i, inv_h_i)
         di = convert(Tc, 2 * si - di)  # All Tv operations
         d[i] = di
-        _store_quadratic_coeff!(a, x, i, si, di)
+        _store_quadratic_coeff!(a, i, si, di, inv_h_i)
     end
     return d
 end
@@ -248,8 +262,8 @@ then the recurrence sweep.
     sign = one(Tg)  # dimensionless ±1 — `one`, not `oneunit`
 
     @inbounds for i in 1:n_intervals
-        si = _quadratic_secant(Tc, x, y, i)
-        inv_h_i = _get_inv_h(x, i)  # precomputed — no inv() needed
+        inv_h_i = _get_inv_h(x, i)
+        si = _quadratic_secant(Tc, x, y, i, inv_h_i)
         inv_h_sum += inv_h_i
         numerator += sign * (si - β) * inv_h_i  # Tg * Tv * Tg → Tv
         β = 2 * si - β  # Tv operations

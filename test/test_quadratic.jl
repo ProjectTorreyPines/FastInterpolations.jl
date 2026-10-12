@@ -211,23 +211,22 @@ end
 # Group 3: Coefficient Computation Tests
 # ============================================================================
 @testitem "Quadratic Interpolation - Coefficient Computation" begin
-    using FastInterpolations: _compute_quadratic_secants!, _fill_slopes!,
-        _forward_recurrence!, _backward_recurrence!,
-        _compute_quadratic_coefficients!
+    using FastInterpolations: _QuadraticSecants, _fill_slopes!,
+        _forward_recurrence!, _backward_recurrence!
 
     @testset "secant computation" begin
         y = [0.0, 1.0, 4.0, 9.0]  # x²
         h = [1.0, 1.0, 1.0]       # uniform grid h=1
-        inv_h = [1.0, 1.0, 1.0]
         spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
-        s = zeros(3)
 
-        _compute_quadratic_secants!(s, y, spacing)
+        s = _QuadraticSecants{Float64}(y, spacing)   # lazy: s[i] computed on read
 
         # s[i] = (y[i+1] - y[i]) * inv_h[i]
+        @test length(s) == 3
         @test s[1] ≈ 1.0   # (1-0)/1
         @test s[2] ≈ 3.0   # (4-1)/1
         @test s[3] ≈ 5.0   # (9-4)/1
+        @test collect(s) == [1.0, 3.0, 5.0]
     end
 
     @testset "_fill_slopes! with Left(Deriv1)" begin
@@ -357,15 +356,15 @@ end
     end
 
     @testset "coefficient computation" begin
-        # a[i] = (s[i] - d[i]) * inv_h[i]
+        # a[i] = (s[i] - d[i]) * inv_h[i], written by the slope sweep itself
         s = [1.0, 3.0, 5.0]
-        d = [0.0, 2.0, 4.0, 6.0]
         h = [1.0, 1.0, 1.0]
-        inv_h = [1.0, 1.0, 1.0]
         spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
+        d = zeros(4)
         a = zeros(3)
 
-        _compute_quadratic_coefficients!(a, d, s, spacing)
+        _forward_recurrence!(d, s, 0.0, a, spacing)   # d = [0, 2, 4, 6]
+        @test d == [0.0, 2.0, 4.0, 6.0]
 
         # a[1] = (1 - 0) * 1 = 1
         # a[2] = (3 - 2) * 1 = 1
@@ -1568,7 +1567,7 @@ end
 # Group 12: MinCurvFit Mathematical Verification (Phase 4)
 # ============================================================================
 @testitem "Quadratic Interpolation - MinCurvFit Mathematical Verification" begin
-    using FastInterpolations: _fill_slopes!, _compute_quadratic_secants!
+    using FastInterpolations: _fill_slopes!
 
     # ========================================
     # Test 1: d[1] Optimality Verification

@@ -192,6 +192,11 @@ const _adj_seed = FastInterpolations._adj_seed
     FastInterpolations._promote_eltype(FastInterpolations._interp_op, Tg, T, Tg)
 @inline _data_bar_eltype(::Type{Tg}, Δs::Tuple) where {Tg} =
     _data_bar_eltype(Tg, promote_type(map(_cotangent_type, Δs)...))
+@inline _data_bar_eltype(::Type{Tg}, Δ::AbstractArray{T}) where {Tg, T} = _data_bar_eltype(Tg, T)
+# Zygote hands over part of an array of vector-valued entries as an `Array{Any}` holding
+# structural zeros, so read the type off the entries.
+_data_bar_eltype(::Type{Tg}, Δ::AbstractArray{Any}) where {Tg} =
+    _data_bar_eltype(Tg, mapreduce(_cotangent_type, promote_type, Δ; init = Union{}))
 
 const _cotangent_dot = FastInterpolations._cotangent_dot
 # The data tangent has the user-data size (a `:exclusive` periodic axis is shorter than the
@@ -504,7 +509,7 @@ function ChainRulesCore.rrule(
         ΔH = unthunk(ΔH_raw)
         ΔH isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
 
-        T_out = _data_bar_eltype(Tg, eltype(ΔH))
+        T_out = _data_bar_eltype(Tg, ΔH)
         data_bar = zeros(T_out, _adjoint_output_size(adj)...)
 
         for i in 1:N

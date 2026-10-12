@@ -153,7 +153,9 @@ end
     F, J = value_jacobian(itp, JQ)
     val, g = value_gradient(itp, JQ)
     @test F == val
-    @test F == itp(JQ)
+    # The value comes from the `value_gradient` kernel, not the eval kernel, so it can
+    # differ from `itp(JQ)` in the last ulp (seen on LTS).
+    @test F ≈ itp(JQ) rtol = 1.0e-14
     @test J == hcat(g...)                  # exactly the assembled value_gradient
     # `value_gradient` and `gradient` are separate kernels whose SVector results can
     # differ by a few ulps (pre-existing), so `jacobian` is matched approximately.

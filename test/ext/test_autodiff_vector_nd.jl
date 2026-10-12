@@ -54,6 +54,11 @@ const VEC_LOSSES = (
         end,
     ),
     ("laplacian", (itp_of, q, ch, M) -> sum(c -> VEC_W[c] * ch(FastInterpolations.laplacian(itp_of(c), q), c)^2, 1:M)),
+    # Partial cotangents: one gradient component, the value alone, one Hessian entry. The
+    # rules then see structural zeros (a `Matrix{Any}` Hessian cotangent for vector data).
+    ("gradient[2]", (itp_of, q, ch, M) -> sum(c -> VEC_W[c] * ch(FastInterpolations.gradient(itp_of(c), q)[2], c)^2, 1:M)),
+    ("value_gradient value", (itp_of, q, ch, M) -> sum(c -> VEC_W[c] * ch(FastInterpolations.value_gradient(itp_of(c), q)[1], c)^2, 1:M)),
+    ("hessian[1,2]", (itp_of, q, ch, M) -> sum(c -> VEC_W[c] * ch(FastInterpolations.hessian(itp_of(c), q)[1, 2], c)^2, 1:M)),
 )
 _twin_ch(v, _) = v
 
@@ -72,7 +77,7 @@ _twin_ch(v, _) = v
         ("ComplexF64", 2, c -> complex(c...), (v, c) -> c == 1 ? real(v) : imag(v)),
     )
     # ∂query of hessian / laplacian needs third derivatives (not provided by their rules).
-    query_ops = ("eval", "gradient", "value_gradient", "jacobian", "value_jacobian")
+    query_ops = ("eval", "gradient", "value_gradient", "jacobian", "value_jacobian", "gradient[2]", "value_gradient value")
     builders = (
         ("cubic", cubic_interp, first.(VEC_LOSSES)),
         ("linear", linear_interp, ("eval", "gradient", "jacobian")),
@@ -95,10 +100,16 @@ _twin_ch(v, _) = v
         @testset "$blabel | $klabel | $olabel" begin
             # data side
             g = Zygote.gradient(dd -> (itp = build((x, y), dd); loss(_ -> itp, q0, ch, M)), data)[1]
-            for c in 1:M
-                ref = ForwardDiff.gradient(dc -> twin_loss(ntuple(k -> k == c ? dc : twins[k], M), q0), twins[c])
-                got = g === nothing ? zero(ref) : map(e -> e === nothing ? 0.0 : ch(e, c), g)
-                @test got ≈ ref rtol = 1.0e-10 atol = 1.0e-12
+            refs = ntuple(c -> ForwardDiff.gradient(dc -> twin_loss(ntuple(k -> k == c ? dc : twins[k], M), q0), twins[c]), M)
+            if g === nothing    # Zygote's structural zero: only when every channel's gradient is zero
+                @test all(r -> all(iszero, r), refs)
+            else
+                # The data's own eltype; Zygote fills the unused rows of a sliced array (periodic
+                # builder) with `nothing`.
+                @test eltype(g) <: Union{Nothing, eltype(data)}
+                for c in 1:M
+                    @test map(e -> e === nothing ? 0.0 : ch(e, c), g) ≈ refs[c] rtol = 1.0e-10 atol = 1.0e-12
+                end
             end
             # query side
             if olabel in query_ops

@@ -26,7 +26,7 @@ Compute slopes (first derivatives) for a 1D data slice using quadratic
 spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
 
 # Algorithm
-1. Secant slopes s[i] = (y[i+1] - y[i]) / h[i], recomputed on read (`_QuadraticSecants`)
+1. Secant slopes s[i] = (y[i+1] - y[i]) / h[i], read via `_quadratic_secant` (no buffer)
 2. BC-dispatched recurrence via `_fill_slopes!`:
    - Left BC:  d[1] from BC, forward recurrence d[i+1] = 2*s[i] - d[i]
    - Right BC: d[n] from BC, backward recurrence d[i] = 2*s[i] - d[i+1]
@@ -54,7 +54,7 @@ function _slope_1d_quadratic!(
 
     # 2. BC-dispatched recurrence over secants read on the fly — `grid` carries cached
     #    `h`/`inv_h` when wrapped, raw `Vector` falls back to on-the-fly diff.
-    _fill_slopes!(d_out, _QuadraticSecants{Tv}(values, grid), grid, bc_typed, grid, values)
+    _fill_slopes!(d_out, nothing, grid, values, bc_typed)
 
     return d_out
 end

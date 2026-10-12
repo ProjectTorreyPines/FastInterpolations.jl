@@ -32,6 +32,7 @@ const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 # ── Extension tests (order matters!) ──────────────────────────────────
 if EXT_CHUNK in ("all", "enzyme")
     include("test_autodiff_Enzyme.jl")
+    include("test_autodiff_Enzyme_vector.jl")   # vector-valued data, ∂/∂data
 end
 if EXT_CHUNK in ("all", "rest")
     include("test_autodiff_ForwardDiff.jl")
@@ -42,6 +43,8 @@ if EXT_CHUNK in ("all", "rest")
     include("test_series_dual_grid.jl")             # All methods × Series × Dual grid
     include("test_nd_dual_grid.jl")                 # ND (Cubic/Quadratic/Hetero) Dual grid
     include("test_autodiff_Zygote.jl")
+    include("test_autodiff_jacobian.jl")    # ND jacobian / value_jacobian reverse mode
+    include("test_autodiff_vector_nd.jl")   # ND reverse mode for vector-valued data
     include("test_autodiff_hetero.jl")
     include("test_hermite_rrule.jl")
     include("test_symbolics.jl")

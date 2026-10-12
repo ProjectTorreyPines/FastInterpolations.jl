@@ -588,14 +588,16 @@ function _adjoint_periodic_solve!(
     _ldiv_tridiagonal_transpose!(z_bar, z_bar, cache.thomas)
 
     # Sherman-Morrison correction with q_t = A'^{-T} u
-    α = Tv(_get_h(cache.x, n))
+    # Grid scalars stay scalars (as in the forward correction), so `Tv` may be
+    # vector-valued.
+    α = _get_h(cache.x, n)
 
     @inbounds begin
         vTz = α * (z_bar[1] + z_bar[n])
-        vTq = α * (Tv(q_t[1]) + Tv(q_t[n]))
-        factor = vTz * inv(one(Tv) + vTq)
+        vTq = α * (q_t[1] + q_t[n])
+        factor = vTz * inv(one(vTq) + vTq)
         for i in 1:n
-            z_bar[i] -= factor * Tv(q_t[i])
+            z_bar[i] -= factor * q_t[i]
         end
     end
 

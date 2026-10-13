@@ -1,5 +1,8 @@
 # Polyharmonic Spline API
 
+!!! warning "Experimental"
+    PHS lives in `FastInterpolations.Experimental` and is loaded with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
+
 ## Overview
 
 ### One-shot (construction + evaluation)
@@ -33,12 +36,13 @@ See [Polyharmonic Splines (PHS)](../interpolation/phs.md) for the method, tuning
 ## Functions
 
 ```@docs
-phs_interp
-phs_interp!
+FastInterpolations.Experimental
+FastInterpolations.phs_interp
+FastInterpolations.phs_interp!
 ```
 
 ## Interpolant Type
 
 ```@docs
-PHSInterpolantND
+FastInterpolations.PHSInterpolantND
 ```

@@ -23,7 +23,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS, experimental)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
 
 ### Classical splines
 
@@ -45,7 +45,9 @@ One cubic Hermite basis, four choices of slope rule. All C¹-continuous, O(1) pe
 | `cardinal_interp` | `cardinal_adjoint` | Catmull-Rom with `tension`   | Animation, spline curves through control points |
 | `akima_interp`    | `akima_adjoint`    | Akima (5-point stencil)      | Noisy data, outlier-robust |
 
-### Polyharmonic Splines (PHS)
+### Polyharmonic Splines (PHS) — experimental
+
+> **Experimental:** load with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
 
 Local radial-basis-function interpolant on uniform rectilinear grids, blended across neighbouring stencils for C² continuity. An optional log-density transform (interpolate ln(ρ/ρ₀) against a user-supplied reference ρ₀) keeps derivatives accurate near steep features such as nuclear cusps.
 

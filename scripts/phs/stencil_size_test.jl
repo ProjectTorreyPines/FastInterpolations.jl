@@ -1,6 +1,7 @@
 #= Stencil Size Optimization Study =#
 
 using FastInterpolations
+using FastInterpolations.Experimental
 using Printf
 using Statistics
 

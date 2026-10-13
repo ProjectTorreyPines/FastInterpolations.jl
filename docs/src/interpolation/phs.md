@@ -1,5 +1,8 @@
 # Polyharmonic Splines (PHS)
 
+!!! warning "Experimental"
+    PHS lives in `FastInterpolations.Experimental` and is loaded with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
+
 ## Overview
 
 Polyharmonic splines (PHS) are **radial basis function (RBF) interpolants** optimized for smooth approximation of multidimensional gridded data. They are particularly effective for **smooth-on-log-scale data** and when combined with **custom reference functions**, enabling physics-informed interpolation in specialized domains like quantum chemistry.
@@ -66,6 +69,7 @@ with smooth weight $w_i(x)$ that transitions from 1 at node $x_i$ to 0 at distan
 
 ```julia
 using FastInterpolations
+using FastInterpolations.Experimental
 
 # Define grid and data
 x = range(0.0, 1.0, 20)
@@ -173,12 +177,12 @@ The accuracy and timing tables for this example are in [PHS Performance and Tuni
 
 PHS is a local radial-basis method rather than a piecewise polynomial, so parts of the common API do not apply or are not implemented yet:
 
-- **Uniform grids only.** The stencil geometry is built from one spacing per axis, so results are only correct when every axis is equally spaced. Non-uniform axes are accepted without error but the interpolant then no longer reproduces its own data (tracked as a `@test_broken` pin).
+- **Uniform grids only.** The stencil geometry is built from one spacing per axis, so results are only correct when every axis is equally spaced. Non-uniform vector axes are rejected with an `ArgumentError`.
 - **No boundary conditions.** Continuity comes from stencil blending, not from end conditions; there is no `bc` keyword.
-- **Search and hints.** Uniform grids locate the base node in O(1); non-uniform grids use a binary search. `search` is only used for out-of-domain checks and `hint` is ignored.
+- **Search and hints.** Range grids locate the base node in O(1); vector grids use a binary search. `search` is only used for out-of-domain checks and `hint` is ignored.
 - **Derivatives** use the standard `deriv` keyword. The `gradient`/`hessian`/`laplacian`/`jacobian` helpers do not support PHS yet.
 - **Not implemented:** adjoint operators, `integrate`, complex-valued data, the 1-D bare-vector constructor, `GriddedQuery`/`GridIdx` queries, and `ClampExtrap`/`WrapExtrap` (use `NoExtrap` or `FillExtrap`).
-- **Known issue:** first derivatives evaluated exactly on a grid node are inaccurate. This and the items above are tracked as `@test_broken` pins in `test/test_phs_broken_pins.jl`.
+- **Known issues:** first derivatives evaluated exactly on a grid node are inaccurate, and with `log_reference` second derivatives are limited to blend neighbourhoods of 27 candidate nodes (`blend_factor ≤ 1` in 3-D; wider blends raise an `ArgumentError`). These and the items above are tracked as `@test_broken` pins in `test/test_phs_broken_pins.jl`.
 
 ## References
 

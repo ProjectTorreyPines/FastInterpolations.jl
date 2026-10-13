@@ -41,6 +41,7 @@
 #     itp_phs(q; deriv = (DerivOp{2}(), DerivOp{0}(), DerivOp{0}()))  # ∂²ρ/∂x²
 
 using FastInterpolations
+using FastInterpolations.Experimental
 using DelimitedFiles
 using LinearAlgebra
 using Pickle

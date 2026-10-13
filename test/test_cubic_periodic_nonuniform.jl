@@ -1,12 +1,12 @@
 # Regression: PeriodicBC cubic spline on NON-uniform grids must solve the true
 # cyclic system h_{i-1}z_{i-1} + 2(h_{i-1}+h_i)z_i + h_i z_{i+1} = rhs_i.
-# (The super-diagonal was once shifted by one cell: invisible on uniform grids,
-# O(h³) values / O(h²) slopes on non-uniform ones.)
+# A super-diagonal shifted by one cell is invisible on uniform grids and gives
+# O(h³) values / O(h²) slopes on non-uniform ones.
 
 @testsnippet DensePeriodicSpline begin
     using LinearAlgebra
 
-    # Closed-cycle non-uniform grid on [0, 2π] (x[end] == 2π)
+    # Closed-cycle non-uniform grid on [0, 2π] (x[end] ≈ 2π)
     nonuniform_periodic_grid(n) = [2π * (t + 0.15 * sin(2π * t)) for t in range(0.0, 1.0, n)]
 
     # Dense reference: full m×m cyclic solve for the moments, returns q -> (S, S', S'')

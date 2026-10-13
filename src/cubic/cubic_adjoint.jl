@@ -571,7 +571,7 @@ end
 Adjoint Sherman-Morrison solve for periodic cubic spline.
 
 The periodic matrix A_cyc = A' + α·u·uᵀ is symmetric (A'[i,i+1] = A'[i+1,i] = h[i]);
-the transpose solve is kept so this stays exact for any factorization. It uses:
+the transpose solve is used so this stays exact for any factorization. It uses:
   A_cyc⁻ᵀ x = y_t - [α·uᵀy_t / (1 + α·uᵀq_t)] · q_t
 where y_t = A'⁻ᵀx and q_t = A'⁻ᵀu (precomputed at construction).
 

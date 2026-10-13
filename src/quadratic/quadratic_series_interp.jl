@@ -200,17 +200,10 @@ function quadratic_interp(
     # Trailing a-row filler — an [Y/X²]-space zero via value witness.
     _typed_zero = 0 * _coeff_op2(oneunit(eltype(x)), y_mat[1])
 
-    # Compute coefficients for each series from y_mat columns
+    # Compute coefficients for each series straight into its d/a columns
     for k in 1:n_ser
         y_col = @view y_mat[:, k]
-        d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted)
-
-        @inbounds for i in 1:n_pts
-            d_mat[i, k] = d_k[i]
-        end
-        @inbounds for i in 1:(n_pts - 1)
-            a_mat[i, k] = a_k[i]
-        end
+        _compute_quadratic_coeffs!(view(d_mat, :, k), view(a_mat, 1:(n_pts - 1), k), x, y_col, bc_promoted)
         a_mat[n_pts, k] = _typed_zero
     end
 

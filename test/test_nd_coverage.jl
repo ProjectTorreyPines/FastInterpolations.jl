@@ -311,7 +311,6 @@
     @testset "quadratic_nd_build.jl" begin
         import FastInterpolations:
             _slope_1d_quadratic!,
-            _differentiate_nd_along_dim_quadratic!,
             _get_effective_bc_quadratic,
             _compute_nd_partials_quadratic!,
             _build_nd_coeffs_quadratic

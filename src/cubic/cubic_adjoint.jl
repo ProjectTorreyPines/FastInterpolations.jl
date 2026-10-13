@@ -570,8 +570,8 @@ end
 """
 Adjoint Sherman-Morrison solve for periodic cubic spline.
 
-The periodic matrix A_cyc = A' + α·u·uᵀ is NOT symmetric for non-uniform grids
-(A'[i,i-1] = h[i-1] ≠ h[i] = A'[i,i+1]). The transpose inverse uses:
+The periodic matrix A_cyc = A' + α·u·uᵀ is symmetric (A'[i,i+1] = A'[i+1,i] = h[i]);
+the transpose solve is used so this stays exact for any factorization. It uses:
   A_cyc⁻ᵀ x = y_t - [α·uᵀy_t / (1 + α·uᵀq_t)] · q_t
 where y_t = A'⁻ᵀx and q_t = A'⁻ᵀu (precomputed at construction).
 
@@ -588,14 +588,16 @@ function _adjoint_periodic_solve!(
     _ldiv_tridiagonal_transpose!(z_bar, z_bar, cache.thomas)
 
     # Sherman-Morrison correction with q_t = A'^{-T} u
-    α = Tv(_get_h(cache.x, n))
+    # Grid scalars stay scalars (as in the forward correction), so `Tv` may be
+    # vector-valued.
+    α = _get_h(cache.x, n)
 
     @inbounds begin
         vTz = α * (z_bar[1] + z_bar[n])
-        vTq = α * (Tv(q_t[1]) + Tv(q_t[n]))
-        factor = vTz * inv(one(Tv) + vTq)
+        vTq = α * (q_t[1] + q_t[n])
+        factor = vTz * inv(one(vTq) + vTq)
         for i in 1:n
-            z_bar[i] -= factor * Tv(q_t[i])
+            z_bar[i] -= factor * q_t[i]
         end
     end
 

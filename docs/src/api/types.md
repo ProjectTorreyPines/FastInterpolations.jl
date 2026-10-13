@@ -100,6 +100,9 @@ value_gradient
 hessian
 hessian!
 laplacian
+jacobian
+jacobian!
+value_jacobian
 ```
 
 ## Boundary Conditions

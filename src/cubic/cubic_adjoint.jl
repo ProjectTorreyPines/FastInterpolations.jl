@@ -570,8 +570,8 @@ end
 """
 Adjoint Sherman-Morrison solve for periodic cubic spline.
 
-The periodic matrix A_cyc = A' + α·u·uᵀ is NOT symmetric for non-uniform grids
-(A'[i,i-1] = h[i-1] ≠ h[i] = A'[i,i+1]). The transpose inverse uses:
+The periodic matrix A_cyc = A' + α·u·uᵀ is symmetric (A'[i,i+1] = A'[i+1,i] = h[i]);
+the transpose solve is used so this stays exact for any factorization. It uses:
   A_cyc⁻ᵀ x = y_t - [α·uᵀy_t / (1 + α·uᵀq_t)] · q_t
 where y_t = A'⁻ᵀx and q_t = A'⁻ᵀu (precomputed at construction).
 

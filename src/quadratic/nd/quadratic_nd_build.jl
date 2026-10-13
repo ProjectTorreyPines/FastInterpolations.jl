@@ -121,43 +121,13 @@ end
 # ========================================
 
 """
-    _differentiate_nd_along_dim_quadratic!(out, data, grid, bc, d)
+    _differentiate_lines_quadratic!(out, data, grid, bc, ::Val{D})
 
-Compute ∂f/∂xₐ for N-dimensional array along dimension `d` using quadratic recurrence.
-
-Each 1D line along `d` goes to `_slope_1d_quadratic!` as a view: the solver reads the
-values and writes the slopes in place (strided lines included), so no line buffers or
-copies are needed. Unlike the cubic version, whose tridiagonal solve works in a
-contiguous buffer, the quadratic sweep reads `y[i]`, `y[i+1]` and writes `d[i]` only.
-
-# Arguments
-- `out::AbstractArray{Tv,N}`: Output array (same shape as data)
-- `data::AbstractArray{Tv,N}`: Input N-D array
-- `grid::AbstractVector{Tg}`: Grid points along dimension d
-- `bc::QuadraticBC`: Boundary condition
-- `d::Int`: Dimension to differentiate along (1 ≤ d ≤ N)
+Write ∂f/∂x_D of the N-D array `data` into `out`. Each 1D line along `D` goes to
+`_slope_1d_quadratic!` as a view and is solved in place: the sweep reads `y[i]`, `y[i+1]`
+and writes `d[i]` once, so it needs no line buffer (cubic's tridiagonal solve does).
+`D` is static, so the line views are concretely typed.
 """
-function _differentiate_nd_along_dim_quadratic!(
-        out::AbstractArray{Tv, N},
-        data::AbstractArray{Tv, N},
-        grid::AbstractVector{Tg},
-        bc::AbstractBC,
-        d::Int
-    ) where {Tv, Tg, N}
-    @boundscheck begin
-        1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
-        size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
-        size(data, d) == length(grid) || throw(
-            DimensionMismatch(
-                "size(data, $d)=$(size(data, d)) must match length(grid)=$(length(grid))"
-            )
-        )
-    end
-    return _differentiate_lines_quadratic!(out, data, grid, bc, Val(d))
-end
-
-# Line loop with the dimension static, so the line views have concrete types. Consecutive
-# lines differ in the leading indices and share cache lines.
 function _differentiate_lines_quadratic!(
         out::AbstractArray{Tv, N},
         data::AbstractArray{Tv, N},

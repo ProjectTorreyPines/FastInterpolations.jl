@@ -12,6 +12,7 @@
 # So each pin is written so that it evaluates `true` ONLY once the bug is fixed.
 # When a follow-up PR lands the fix, the pin turns red ("promote me to @test"):
 # replace `@test_broken` with `@test` and the test becomes a permanent guard.
+# Promoted pins keep their § id and drop BROKEN from the testitem name.
 #
 # TWO PIN SHAPES:
 #   * Wrong-VALUE bugs       → `@test_broken got ≈ want`  (plain; @test_broken
@@ -62,7 +63,7 @@ end
 @testitem "PHS BROKEN PIN §R2 — log-transform first derivative at a grid node" begin
     x = collect(range(0.0, 2pi, 41))
     data = 2.0 .+ sin.(x)   # strictly positive: log-density transform domain
-    itp = phs_interp((x,), data; reference_interp = ConstantRef(1.0))
+    itp = phs_interp((x,), data; log_reference = 1.0)
     node = x[21]
     # d/dx of (2 + sin x) = cos x. today: ≈ -0.634   want: cos(node) = -1.0.
     @test_broken itp((node,); deriv = (DerivOp(1),)) ≈ cos(node) atol = 1.0e-2
@@ -240,20 +241,16 @@ end
     @test_broken is_throwing(() -> phs_interp((x,), y; blend_factor = 0.0), ArgumentError)
 end
 
-# ── F4/O4: log-density transform silently accepts non-positive data ──────────
+# ── F4/O4 (fixed): the log transform rejects non-positive data ────────────────
 # §F4 (and the phs.md "Custom Reference" example). Under the log transform the
-# constructor stores `log(data/ρ₀)`. NEGATIVE data already throws DomainError
-# (loud, fine), but an EXACT ZERO yields log(0) = -Inf silently — construction
-# succeeds and evaluation near that node returns NaN. The fix should require
-# strictly-positive data and reject zeros too. (Pin uses 1+cos, which is ≥ 0 and
-# hits exactly 0 at x = π — no negatives, so today it does NOT throw.)
-@testitem "PHS BROKEN PIN §F4 — log transform rejects non-positive (zero) data" setup = [PHSBrokenHelpers] begin
+# constructor stores `log(data/ρ₀)`. Negative data used to throw DomainError and an
+# exact zero stored log(0) = -Inf silently, so evaluation near that node returned
+# NaN. The constructor now checks every ratio and throws ArgumentError. (The data
+# 1+cos is ≥ 0 and hits exactly 0 at x = π.)
+@testitem "PHS PIN §F4 — log transform rejects non-positive (zero) data" setup = [PHSBrokenHelpers] begin
     x = collect(range(0.0, 2pi, 41))
     data = 1.0 .+ cos.(x)   # ≥ 0 with an exact zero at x = π; no negatives
-    @test_broken is_throwing(
-        () -> phs_interp((x,), data; reference_interp = ConstantRef(1.0)),
-        Union{DomainError, ArgumentError},
-    )
+    @test is_throwing(() -> phs_interp((x,), data; log_reference = 1.0), ArgumentError)
 end
 
 # ── F3: 1D bare-vector construction convenience missing ──────────────────────
@@ -320,16 +317,15 @@ end
     q = (1.3, 1.37, 1.21)
     want = (4 * (q[1] - 1.5)^2 - 2) * exp(-sum(abs2, q .- 1.5))   # ∂²/∂x² ≈ -1.598
     ops = (DerivOp(2), DerivOp(0), DerivOp(0))
-    ref = ConstantRef(1.0)
     if Base.JLOptions().check_bounds == 2
         @test_broken false
         @test_broken false
     else
         # today: BoundsError (swallowed as Broken)   want: ≈ -1.598 (-1.615 before the regression)
-        itp = phs_interp((x, x, x), data; stencil_size = 4, blend_factor = 2.0, reference_interp = ref)
+        itp = phs_interp((x, x, x), data; stencil_size = 4, blend_factor = 2.0, log_reference = 1.0)
         @test_broken itp(q; deriv = ops) ≈ want rtol = 5.0e-2
         # the one-shot default is 2.0, so the default call overflows as well
-        @test_broken phs_interp((x, x, x), data, q; stencil_size = 4, reference_interp = ref, deriv = ops) ≈
+        @test_broken phs_interp((x, x, x), data, q; stencil_size = 4, log_reference = 1.0, deriv = ops) ≈
             want rtol = 5.0e-2
     end
 end
@@ -346,7 +342,7 @@ end
     ops = (DerivOp(2), DerivOp(0), DerivOp(0))
     ts = range(1.123, 1.127; step = 1.0e-6)
     maxjump(itp) = maximum(abs, diff([itp((t, 1.37, 1.21); deriv = ops) for t in ts]))
-    itp = phs_interp((x, x, x), data; stencil_size = 4, reference_interp = ConstantRef(1.0))
+    itp = phs_interp((x, x, x), data; stencil_size = 4, log_reference = 1.0)
     # today: 0.154, a step that does not shrink with finer sampling   want: ~6e-5
     @test_broken maxjump(itp) < 1.0e-3
     # control: the same quantity without the log transform is continuous today
@@ -387,12 +383,53 @@ end
     @test_broken itp(([GridIdx(4), GridIdx(5)], [yq, yq])) ≈ [itp((x[4], yq)), itp((x[5], yq))]
 end
 
-# ── F5: reference_data is silently ignored without reference_interp ───────────
-# §F5. The log transform is entered only when `reference_interp !== nothing`, so a
-# lone `reference_data` array is dropped without notice and the data are
-# interpolated untransformed. Pinned to rejecting the combination.
-@testitem "PHS BROKEN PIN §F5 — reference_data without reference_interp rejected" setup = [PHSBrokenHelpers] begin
+# ── F5 (fixed): the reference_data keyword is gone ─────────────────────────────
+# §F5. `reference_data` was silently dropped unless `reference_interp` was also
+# given. Both keywords are replaced by `log_reference`, so the old keyword is now
+# rejected outright.
+@testitem "PHS PIN §F5 — the removed reference_data keyword is rejected" begin
     x = collect(range(0.0, 2pi, 41))
     data = 2.0 .+ sin.(x)
-    @test_broken is_throwing(() -> phs_interp((x,), data; reference_data = ones(length(x))), ArgumentError)
+    @test_throws MethodError phs_interp((x,), data; reference_data = ones(length(x)))
+end
+
+# ── R11 (fixed): the constant reference answers an order-0 deriv tuple ──────────
+# §R11 (claudedocs/design/2026-09-30-phs-log-reference-api.md §4.3). `ConstantRef`
+# returned zero whenever `deriv !== nothing`, so an all-`EvalValue` tuple got 0
+# instead of the value. The internal constant reference decides by the total order.
+@testitem "PHS PIN §R11 — constant reference answers an order-0 deriv tuple with its value" begin
+    q = (0.1, 0.2)
+    @test FastInterpolations._phs_ref_value(2.5, q) == 2.5
+    @test FastInterpolations._phs_ref_deriv(2.5, q, (DerivOp(1), EvalValue())) == 0.0
+    @test FastInterpolations._phs_ref_deriv(2.5, q, (EvalValue(), EvalValue())) == 2.5
+    @test FastInterpolations._phs_ref_deriv(5, q, (DerivOp(1), EvalValue())) === 0
+end
+
+# ── F6: value-only reference fails derivative queries with a MethodError ──────
+# §F6 (design note §2.5). A plain function `p -> ρ₀(p)` answers value queries, but a
+# derivative query calls `ρ₀(q; deriv = ops)` and fails deep inside with
+# `MethodError: no method matching (::var"#…")(…; deriv)`. Fixed when such a
+# reference is recognised at build and derivative queries raise a clear ArgumentError.
+@testitem "PHS BROKEN PIN §F6 — value-only reference: derivative query raises ArgumentError" setup = [PHSBrokenHelpers] begin
+    x = range(0.0, 1.0; length = 12)
+    y = range(0.0, 1.0; length = 12)
+    rho = [exp(-xi) * (1.5 + yj) for xi in x, yj in y]
+    itp = phs_interp((x, y), rho; log_reference = p -> exp(-p[1]))
+    q = (0.43, 0.61)
+    @test itp(q) ≈ exp(-q[1]) * (1.5 + q[2]) rtol = 1.0e-3   # control: value path works
+    # today: MethodError from the reference, which takes no `deriv` keyword
+    @test_broken is_throwing(() -> itp(q; deriv = (DerivOp(1), EvalValue())), ArgumentError)
+end
+
+# ── F7 (fixed): an array passed as the reference is rejected clearly ────────────
+# §F7 (design note §2.5, §3.3). A same-shape ρ₀ array is not callable and used to
+# leak `MethodError: objects of type Matrix{Float64} are not callable`. Arrays are
+# now rejected with an explanatory ArgumentError: ρ₀ is needed between nodes too,
+# and a reference sampled on the data grid adds no information.
+@testitem "PHS PIN §F7 — array reference rejected with ArgumentError" setup = [PHSBrokenHelpers] begin
+    x = range(0.0, 1.0; length = 12)
+    y = range(0.0, 1.0; length = 12)
+    rho = [exp(-xi) * (1.5 + yj) for xi in x, yj in y]
+    rho0 = [exp(-xi) for xi in x, yj in y]
+    @test is_throwing(() -> phs_interp((x, y), rho; log_reference = rho0), ArgumentError)
 end

@@ -61,7 +61,7 @@ end
     x = range(0.2, Float64(pi), 18)
     y = range(0.2, Float64(pi), 18)
     rho = [2.0 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
-    itp = phs_interp((x, y), rho; stencil_size = 6, degree = 3, reference_interp = ConstantRef(1.0))
+    itp = phs_interp((x, y), rho; stencil_size = 6, degree = 3, log_reference = 1.0)
 
     q_interior = (1.0, 1.1)
     q_node = (Float64(x[8]), Float64(y[9]))
@@ -341,27 +341,7 @@ end
     @test allocs <= ND_ALLOC_THRESHOLD
 end
 
-@testitem "ConstantRef — value and derivatives" setup = [AllocConstants] begin
-    # ConstantRef is a simple callable for constant reference values
-    ref = ConstantRef(2.5)
-
-    # Value query returns the constant
-    @test ref((1.0, 2.0, 3.0)) == 2.5
-    @test ref((0.0, 0.0, 0.0)) == 2.5
-
-    # Derivative queries return zero
-    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{0}(), DerivOp{0}())) == 0.0
-    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{0}(), DerivOp{1}(), DerivOp{0}())) == 0.0
-    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{0}(), DerivOp{0}(), DerivOp{2}())) == 0.0
-    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{1}(), DerivOp{0}())) == 0.0
-
-    # Type preservation
-    ref_int = ConstantRef(5)
-    @test ref_int((1.0, 2.0, 3.0)) == 5
-    @test ref_int((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{0}(), DerivOp{0}())) == 0
-end
-
-@testitem "PHS with log-transform (ConstantRef)" setup = [AllocConstants] begin
+@testitem "PHS with log-transform (constant reference)" setup = [AllocConstants] begin
     # Build a 2D PHS with log-transform: f = ln(ρ / ρ₀) where ρ₀ = 1.0
     # This tests that stored data is log(ρ) and evaluation returns exp(f)
     x = range(0.0, π, 20)
@@ -369,12 +349,11 @@ end
     # 1.5 + 0.4*sin*cos has range [1.1, 1.9] — strictly positive everywhere
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
 
-    ref = ConstantRef(1.0)
 
     itp = phs_interp(
         (x, y), rho;
         stencil_size = 5, degree = 3,
-        reference_interp = ref
+        log_reference = 1.0
     )
 
     @test itp isa PHSInterpolantND
@@ -398,11 +377,10 @@ end
     y = range(0.0, π, 25)
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
 
-    ref = ConstantRef(1.0)
     itp = phs_interp(
         (x, y), rho;
         stencil_size = 6, degree = 3,
-        reference_interp = ref
+        log_reference = 1.0
     )
 
     h = 1.0e-4
@@ -454,39 +432,6 @@ end
 
     # eval_type: promoted evaluation type
     @test FastInterpolations.eval_type(itp) == promote_type(eltype(x), eltype(data))
-end
-
-@testitem "PHSInterpolantND reference_data fast path" begin
-    # Exercise the branch where reference_data is supplied alongside reference_interp,
-    # bypassing per-node evaluation of reference_interp during construction.
-    # Use ConstantRef(1.0) so that evaluating at each node gives exactly 1.0;
-    # supply reference_data = ones(...) to match, so both paths are equivalent.
-    x = range(0.0, 1.0, 12)
-    y = range(0.0, 1.0, 12)
-    data = [1.0 + 0.2 * sin(π * xi) * cos(π * yj) for xi in x, yj in y]
-
-    ref = ConstantRef(1.0)
-    # Pre-computed ρ₀ = 1.0 at every node (matches ConstantRef(1.0))
-    rho0_precomp = ones(12, 12)
-
-    # Build via reference_data fast path (skips per-node ref evaluation)
-    itp_fast = phs_interp(
-        (x, y), data;
-        stencil_size = 4, degree = 3,
-        reference_interp = ref,
-        reference_data = rho0_precomp
-    )
-
-    # Build via slow path (evaluates ref at every node) for comparison
-    itp_slow = phs_interp(
-        (x, y), data;
-        stencil_size = 4, degree = 3,
-        reference_interp = ref
-    )
-
-    # Both should give identical results because the ρ₀ arrays are the same
-    q = (0.5, 0.5)
-    @test itp_fast(q) ≈ itp_slow(q) atol = 1.0e-10
 end
 
 # ----------------------------------------
@@ -807,8 +752,7 @@ end
     x = range(0.2, Float64(π), 20)
     y = range(0.2, Float64(π), 20)
     rho = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
-    ref = ConstantRef(1.0)
-    itp = phs_interp((x, y), rho; stencil_size = 6, degree = 3, reference_interp = ref)
+    itp = phs_interp((x, y), rho; stencil_size = 6, degree = 3, log_reference = 1.0)
 
     h = 1.0e-4
     qx, qy = 1.2, 1.0
@@ -835,8 +779,7 @@ end
     x = range(0.2, Float64(π), 15)
     y = range(0.2, Float64(π), 15)
     rho = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
-    ref = ConstantRef(1.0)
-    itp = phs_interp((x, y), rho; stencil_size = 5, degree = 3, reference_interp = ref)
+    itp = phs_interp((x, y), rho; stencil_size = 5, degree = 3, log_reference = 1.0)
 
     qx = Float64(x[8])   # exact grid node
     qy = Float64(y[8])
@@ -939,7 +882,7 @@ end
     rho2 = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
     itp_log = phs_interp(
         (x, y), rho2; stencil_size = 5, degree = 3,
-        reference_interp = ConstantRef(1.0)
+        log_reference = 1.0
     )
     z_G = FastInterpolations._phs_eval_blended_G(
         itp_log, (qx, qy), (DerivOp{2}(), DerivOp{1}())
@@ -1011,7 +954,7 @@ end
     rho_val = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
     itp_custom = phs_interp(
         (x, y), rho_val; stencil_size = 5, degree = 3,
-        reference_interp = ref_obj
+        log_reference = ref_obj
     )
     @test itp_custom((1.5, 1.5)) > 0.0
     @test isfinite(itp_custom((1.5, 1.5); deriv = (DerivOp{1}(), EvalValue())))

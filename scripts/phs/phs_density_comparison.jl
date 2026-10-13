@@ -14,7 +14,7 @@
 #
 # For PHS, the reference density is the analytical promolecule density
 # constructed from critic2 PBE wavefunction files, enabling log-density
-# smoothing via the reference_interp interface.
+# smoothing via the log_reference keyword.
 #
 # Data files (edit the paths below if needed):
 #   3D grid : phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_O7H21crop.pkl
@@ -505,7 +505,7 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # a cubic spline of log(ρ₀) near nuclear cusps.
 time_phs = @elapsed itp_phs = phs_interp(
     grids, rho_3d; stencil_size = 8, degree = 3,
-    reference_interp = ref_rho0
+    log_reference = ref_rho0
 )
 build_times["PHS"] = time_phs
 @printf "    %.4f seconds\n" time_phs

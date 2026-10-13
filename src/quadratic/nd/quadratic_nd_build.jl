@@ -26,7 +26,7 @@ Compute slopes (first derivatives) for a 1D data slice using quadratic
 spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
 
 # Algorithm
-1. Compute secant slopes: s[i] = (y[i+1] - y[i]) / h[i]
+1. Secant slopes s[i] = (y[i+1] - y[i]) / h[i], read via `_quadratic_secant` (no buffer)
 2. BC-dispatched recurrence via `_fill_slopes!`:
    - Left BC:  d[1] from BC, forward recurrence d[i+1] = 2*s[i] - d[i]
    - Right BC: d[n] from BC, backward recurrence d[i] = 2*s[i] - d[i+1]
@@ -37,7 +37,7 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
 - `grid::AbstractVector{Tg}`: Grid points for this dimension
 - `bc::QuadraticBC`: Boundary condition (Left, Right, or MinCurvFit)
 """
-@with_pool pool function _slope_1d_quadratic!(
+function _slope_1d_quadratic!(
         d_out::AbstractVector{Tv},
         values::AbstractVector{Tv},
         grid::AbstractVector{Tg},
@@ -47,19 +47,14 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     @assert n == length(grid) "values and grid must have same length"
     @assert n >= 2 "Need at least 2 points"
 
-    secant = acquire!(pool, Tv, n - 1)
-
-    # 1. Compute secant slopes — `grid` carries cached `h`/`inv_h` when wrapped,
-    #    raw `Vector` falls back to on-the-fly diff via `_get_inv_h(::AbstractVector, i)`.
-    _compute_quadratic_secants!(secant, values, grid)
-
-    # 2. Normalize BC values to Tv (lazy normalization — Tv is known here)
+    # 1. Normalize BC values to Tv (lazy normalization — Tv is known here)
     # This ensures _fill_slopes! always receives Tv-typed values,
     # making convert(Tv, bc.val) an identity operation.
     bc_typed = _normalize_bc(bc, first(values))
 
-    # 3. Fill slopes via BC-dispatched recurrence
-    _fill_slopes!(d_out, secant, grid, bc_typed, grid, values)
+    # 2. BC-dispatched recurrence over secants read on the fly — `grid` carries cached
+    #    `h`/`inv_h` when wrapped, raw `Vector` falls back to on-the-fly diff.
+    _fill_slopes!(d_out, nothing, grid, values, bc_typed)
 
     return d_out
 end

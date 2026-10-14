@@ -9,7 +9,7 @@
 #
 # Type Parameters:
 #   Tg  — Grid/coordinate float type (Float32 or Float64)
-#   Tv  — Value type (Float, Complex{Float}, any duck-typed scalar)
+#   Tv  — Value float type (real floating point only)
 #   N   — Number of dimensions
 #   K   — PHS degree (compile-time Int for Val{K} dispatch to radial kernels)
 
@@ -29,7 +29,7 @@ indices — identical to the reference Fortran implementation.
 
 # Type Parameters
 - `Tg`: Grid float type
-- `Tv`: Value type (Float, Complex, duck-typed scalar)
+- `Tv`: Value float type (real floating point only)
 - `N`:  Number of dimensions
 - `K`:  PHS degree (1, 3, 5, …)
 

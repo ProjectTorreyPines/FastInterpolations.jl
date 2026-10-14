@@ -30,6 +30,7 @@ const PROFILE = true          # Enable/disable the CPU profiling run
 # Dependencies
 # ============================================================
 using FastInterpolations
+using FastInterpolations.Experimental
 using DelimitedFiles
 using LinearAlgebra
 using Pickle

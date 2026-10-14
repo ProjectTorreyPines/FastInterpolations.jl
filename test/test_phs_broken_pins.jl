@@ -22,12 +22,12 @@
 #                              (the correct fixed behaviour is to raise an error;
 #                              `is_throwing` lives in setup.jl / PHSBrokenHelpers).
 #
-# FIX-DIRECTION CAVEAT for R3 / R5 / O1 / O2:
-#   These are pinned to the *conservative* fix recommended in the review —
-#   REJECT the unsupported input with an `ArgumentError`. If a follow-up instead
-#   chooses to *implement* the feature (true non-uniform grids, real Clamp/Wrap
-#   extrapolation, derivatives of order ≥ 3), the pin will stay Broken and should
-#   be REPLACED with a value test rather than promoted.
+# FIX DIRECTION for R3 / R5 / O1 / O3:
+#   These pins assert the IMPLEMENTED behaviour (true non-uniform grids, real
+#   Clamp/Wrap/Extend extrapolation, derivatives of order ≥ 3, complex data). The
+#   constructor and callables now REJECT these inputs with an ArgumentError
+#   (test_phs_gates.jl), which keeps the pins Broken: the throw happens inside
+#   @test_broken. They stay as tracking pins until a feature is implemented.
 # ============================================================================
 
 # ── R2: derivative queried EXACTLY at a grid node is silently wrong ──────────
@@ -38,6 +38,7 @@
 # because TwicePrecision shifts the stored node coord by ~1 ulp, dodging d≈0.
 
 @testitem "PHS BROKEN PIN §R2 — 1D first derivative at a grid node" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 41))
     itp = phs_interp((x,), sin.(x))
     node = x[21]
@@ -46,6 +47,7 @@
 end
 
 @testitem "PHS BROKEN PIN §R2 — 2D first derivative at a grid node" begin
+    using FastInterpolations.Experimental
     gx = collect(range(0.0, 2pi, 31))
     gy = collect(range(0.0, 2pi, 31))
     data = [sin(xi) * cos(yj) for xi in gx, yj in gy]
@@ -61,6 +63,7 @@ end
 # a DIFFERENT code path from the plain pins above (822-826). Pinned separately so
 # fixing one path does not silently leave the other broken.
 @testitem "PHS BROKEN PIN §R2 — log-transform first derivative at a grid node" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 41))
     data = 2.0 .+ sin.(x)   # strictly positive: log-density transform domain
     itp = phs_interp((x,), data; log_reference = 1.0)
@@ -83,6 +86,7 @@ end
 # path (checked here at an OFF-node point, where the deriv path is correct).
 
 @testitem "PHS BROKEN PIN §O4 — gradient/hessian/laplacian work on PHS" begin
+    using FastInterpolations.Experimental
     gx = collect(range(0.0, 2pi, 31))
     gy = collect(range(0.0, 2pi, 31))
     data = [sin(xi) * cos(yj) for xi in gx, yj in gy]
@@ -115,6 +119,7 @@ end
 # When fixed (buffers typed by promote_type(Tv,Tg)) eval returns a Complex value.
 
 @testitem "PHS BROKEN PIN §O3 — Complex-valued data evaluates" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 30))
     # Genuinely complex data (NONZERO imaginary part). A zero-imaginary Complex
     # would silently down-convert to Float64 and pass, hiding the bug — so the
@@ -139,6 +144,7 @@ end
 # inside @test_broken so the pin still records Broken if a follow-up instead REJECTS
 # non-uniform grids at construction (the conservative alternative in review §R3).
 @testitem "PHS BROKEN PIN §R3 — non-uniform grid reproduces data and linears" begin
+    using FastInterpolations.Experimental
     # deterministic, strictly-increasing, genuinely non-uniform grid (15 nodes)
     xnu = [0.0, 0.25, 0.55, 0.7, 1.1, 1.7, 1.85, 2.4, 3.0, 3.15, 3.8, 4.5, 4.7, 5.3, 6.0]
 
@@ -153,17 +159,18 @@ end
     @test_broken phs_interp((xnu,), dlin; stencil_size = 6, degree = 3)((2.7,)) ≈ (2 * 2.7 + 1) atol = 1.0e-8
 end
 
-# ── R4: batch path skips domain validation ──────────────────────────────────
-# §R4. _phs_batch_impl! never calls _phs_check_domain, so out-of-domain queries
-# under the default NoExtrap silently return RBF-extrapolated garbage or 0.0 —
-# while the scalar path correctly throws DomainError for the same query.
+# ── R4 (fixed): batch path validates the domain ───────────────────────────────
+# §R4. _phs_batch_impl! used to skip the domain check, so out-of-domain batch
+# queries under NoExtrap returned RBF-extrapolated garbage or 0.0 while the scalar
+# path threw DomainError. The batch path now validates the same way.
 
-@testitem "PHS BROKEN PIN §R4 — batch out-of-domain query throws (NoExtrap)" setup = [PHSBrokenHelpers] begin
+@testitem "PHS PIN §R4 — batch out-of-domain query throws (NoExtrap)" setup = [PHSBrokenHelpers] begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 30))
     itp = phs_interp((x,), sin.(x))
     out = zeros(3)
-    # 8.0 is outside [0, 2π]; scalar itp((8.0,)) throws DomainError, batch does not.
-    @test_broken is_throwing(() -> itp(out, ([0.5, 1.5, 8.0],)), DomainError)
+    # 8.0 is outside [0, 2π]; the batch domain gate is elided under --check-bounds=no
+    Base.JLOptions().check_bounds != 2 && @test is_throwing(() -> itp(out, ([0.5, 1.5, 8.0],)), DomainError)
 end
 
 # ── R5: ClampExtrap / WrapExtrap accepted but never applied → WRONG VALUE ─────
@@ -178,6 +185,7 @@ end
 # records Broken — rather than erroring the testitem — if a follow-up instead takes
 # the conservative REJECT route (review §R5) and throws at construction.
 @testitem "PHS BROKEN PIN §R5 — Clamp/Wrap extrapolation returns the correct value" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 30))
     y = cos.(x)                                  # boundary value cos(2π) = 1.0 (≠ 0)
     bnd = y[end]
@@ -200,10 +208,11 @@ end
 # silent 0.0 as the broken state; flips when far-OOB produces an explicit (finite,
 # nonzero) extension. If 0.0 is later accepted as a documented limitation, delete this.
 @testitem "PHS BROKEN PIN §R5 — ExtendExtrap far-OOB is a deliberate extension (not silent 0)" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 30))
     y = cos.(x)
-    v = phs_interp((x,), y; extrap = ExtendExtrap())((8.0,))   # today: 0.0 (blend collapse)
-    @test_broken isfinite(v) && !iszero(v)
+    # ExtendExtrap is now rejected at construction (ArgumentError), which keeps this Broken
+    @test_broken (v = phs_interp((x,), y; extrap = ExtendExtrap())((8.0,)); isfinite(v) && !iszero(v))
 end
 
 # ── O1: derivative order ≥ 3 silently returns 0.0 — should return the TRUE value ─
@@ -217,6 +226,7 @@ end
 # correct value is NONZERO but not necessarily positive — d4 ≈ -5.34 here. q=3.3 gives
 # a large, FD-stable reference (d3 ≈ 1.34, d4 ≈ -5.34; both stable to <0.1% under h).
 @testitem "PHS BROKEN PIN §O1 — derivative order ≥ 3 returns the true nonzero value" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 30))
     itp = phs_interp((x,), sin.(x))
     q = 3.3
@@ -230,15 +240,16 @@ end
     @test_broken itp((q,); deriv = (DerivOp(4),)) ≈ d4_ref rtol = 0.05
 end
 
-# ── O2: blend_factor not validated → silent all-zero output ──────────────────
-# §O2. blend_factor ≤ 0 makes every blend weight vanish so the interpolant
-# returns 0.0 everywhere; degree and stencil_size are validated but this is not.
+# ── O2 (fixed): non-positive blend_factor is rejected ────────────────────────
+# §O2. blend_factor ≤ 0 made every blend weight vanish so the interpolant returned
+# 0.0 everywhere. The constructor now rejects it (see test_phs_gates.jl).
 
-@testitem "PHS BROKEN PIN §O2 — invalid blend_factor rejected" setup = [PHSBrokenHelpers] begin
+@testitem "PHS PIN §O2 — invalid blend_factor rejected" setup = [PHSBrokenHelpers] begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 41))
     y = sin.(x)
-    @test_broken is_throwing(() -> phs_interp((x,), y; blend_factor = -1.0), ArgumentError)
-    @test_broken is_throwing(() -> phs_interp((x,), y; blend_factor = 0.0), ArgumentError)
+    @test is_throwing(() -> phs_interp((x,), y; blend_factor = -1.0), ArgumentError)
+    @test is_throwing(() -> phs_interp((x,), y; blend_factor = 0.0), ArgumentError)
 end
 
 # ── F4/O4 (fixed): the log transform rejects non-positive data ────────────────
@@ -248,6 +259,7 @@ end
 # NaN. The constructor now checks every ratio and throws ArgumentError. (The data
 # 1+cos is ≥ 0 and hits exactly 0 at x = π.)
 @testitem "PHS PIN §F4 — log transform rejects non-positive (zero) data" setup = [PHSBrokenHelpers] begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 41))
     data = 1.0 .+ cos.(x)   # ≥ 0 with an exact zero at x = π; no negatives
     @test is_throwing(() -> phs_interp((x,), data; log_reference = 1.0), ArgumentError)
@@ -260,6 +272,7 @@ end
 # follow-up wrapper `phs_interp(x::AbstractVector, y::AbstractVector; ...)` should
 # delegate to the tuple form, so the two must agree exactly.
 @testitem "PHS BROKEN PIN §F3 — 1D bare-vector construction works" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 30))
     y = sin.(x)
     want = phs_interp((x,), y)((1.0,))   # canonical tuple form
@@ -279,6 +292,7 @@ end
 # same inputs give different results depending on the entry point. Fixed when both
 # paths resolve the default from one place.
 @testitem "PHS BROKEN PIN §R7 — one-shot and persistent share the default blend_factor" begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 15)
     y = range(0.0, π, 15)
     data = [sin(xi + yj) for xi in x, yj in y]
@@ -293,14 +307,16 @@ end
 # (h/2)·√N from its nearest nodes, so with the default blend_factor = 1.0 all
 # weights are ~0 near 4-D (and higher) cell centres, Σw < eps, and the evaluator
 # returns zero. blend_factor = 2.0 (the paper's a = 2 × longest grid step) gives
-# 3.797 here. Fixed by a dimension-aware default.
+# 3.797 here. The constructor now rejects the default in 4-D (ArgumentError) instead
+# of returning 0.0, which keeps this Broken. Fixed by a dimension-aware default.
 @testitem "PHS BROKEN PIN §R8 — 4-D default blend_factor covers cell centres" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 3.0, 7)
     h = step(x)
     f(p) = sum(sin, p)
     data = [f(Tuple(I) .* h .- h) for I in CartesianIndices(ntuple(_ -> 7, 4))]
     c = ntuple(_ -> (x[3] + x[4]) / 2, 4)
-    # today: exactly 0.0   want: ≈ 3.796
+    # today: ArgumentError (was exactly 0.0)   want: ≈ 3.796
     @test_broken phs_interp(ntuple(_ -> x, 4), data; stencil_size = 3)(c) ≈ f(c) rtol = 1.0e-2
 end
 
@@ -308,10 +324,12 @@ end
 # §R9. `_phs_eval_blended_G_with_hess` (log transform + 2nd derivatives) collects
 # blend nodes into a buffer of fixed length 27, the candidate count for 3-D with
 # blend_factor ≤ 1. Wider blends (≳ 1.8 in 3-D, including the paper's 2.0 and the
-# one-shot default) overflow it with a BoundsError. With bounds checks disabled the
-# same write goes out of bounds silently, so the evaluation is skipped there (CI
-# always runs with bounds checks on).
+# one-shot default) overflowed it with a BoundsError (an out-of-bounds write with
+# bounds checks off). A gate now rejects log transform + 2nd derivatives whenever
+# the blend's candidate box exceeds 27 nodes, so these calls raise ArgumentError
+# until the kernel is fixed.
 @testitem "PHS BROKEN PIN §R9 — log-transform 2nd derivative with blend_factor = 2.0" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 3.0, 13)
     data = [exp(-((a - 1.5)^2 + (b - 1.5)^2 + (c - 1.5)^2)) + 0.5 for a in x, b in x, c in x]
     q = (1.3, 1.37, 1.21)
@@ -321,7 +339,7 @@ end
         @test_broken false
         @test_broken false
     else
-        # today: BoundsError (swallowed as Broken)   want: ≈ -1.598 (-1.615 before the regression)
+        # today: ArgumentError from the gate (was BoundsError)   want: ≈ -1.598
         itp = phs_interp((x, x, x), data; stencil_size = 4, blend_factor = 2.0, log_reference = 1.0)
         @test_broken itp(q; deriv = ops) ≈ want rtol = 5.0e-2
         # the one-shot default is 2.0, so the default call overflows as well
@@ -337,6 +355,7 @@ end
 # there even with the default blend_factor. The other blend paths sum every
 # candidate and stay continuous. The probe crosses the mid-plane x = 1.125.
 @testitem "PHS BROKEN PIN §R10 — log-transform 2nd derivative is continuous" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 3.0, 13)
     data = [exp(-((a - 1.5)^2 + (b - 1.5)^2 + (c - 1.5)^2)) + 0.5 for a in x, b in x, c in x]
     ops = (DerivOp(2), DerivOp(0), DerivOp(0))
@@ -349,18 +368,17 @@ end
     @test maxjump(phs_interp((x, x, x), data; stencil_size = 4)) < 1.0e-3
 end
 
-# ── O2 (coverage): blend_factor below the cell-coverage threshold → silent 0.0 ─
+# ── O2 (coverage, fixed): blend_factor below the cell-coverage threshold ───────
 # §O2. Coverage needs a > (h/2)·√N, since a cell centre is the point farthest from
-# every node. Below that, queries near cell centres get Σw < eps and evaluate to
-# 0.0: 1-D with blend_factor = 0.3 at a cell midpoint, or 4-D with an explicit 1.0.
-# Pinned to the conservative fix (reject); replace with value pins if a follow-up
-# makes such blends work instead.
-@testitem "PHS BROKEN PIN §O2 — blend_factor below the coverage threshold rejected" setup = [PHSBrokenHelpers] begin
+# every node. Below that, queries near cell centres got Σw < eps and evaluated to
+# 0.0 (1-D with blend_factor = 0.3, 4-D with an explicit 1.0); both are now rejected.
+@testitem "PHS PIN §O2 — blend_factor below the coverage threshold rejected" setup = [PHSBrokenHelpers] begin
+    using FastInterpolations.Experimental
     x1 = collect(range(0.0, 2pi, 41))
-    @test_broken is_throwing(() -> phs_interp((x1,), sin.(x1); blend_factor = 0.3), ArgumentError)
+    @test is_throwing(() -> phs_interp((x1,), sin.(x1); blend_factor = 0.3), ArgumentError)
     x4 = range(0.0, 3.0, 7)
     data4 = [sum(sin, Tuple(I) .* step(x4) .- step(x4)) for I in CartesianIndices(ntuple(_ -> 7, 4))]
-    @test_broken is_throwing(
+    @test is_throwing(
         () -> phs_interp(ntuple(_ -> x4, 4), data4; stencil_size = 3, blend_factor = 1.0),
         ArgumentError,
     )
@@ -371,6 +389,7 @@ end
 # GridIdx needs query resolution (`_phs_check_domain` / `_phs_eval` reject it);
 # both are MethodErrors today. The N = 1 GriddedQuery forwards already work.
 @testitem "PHS BROKEN PIN §O9 — GriddedQuery (N ≥ 2) and GridIdx queries" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 1.0, 11)
     y = range(0.0, 1.0, 11)
     data = [sin(a) * cos(b) for a in x, b in y]
@@ -388,6 +407,7 @@ end
 # given. Both keywords are replaced by `log_reference`, so the old keyword is now
 # rejected outright.
 @testitem "PHS PIN §F5 — the removed reference_data keyword is rejected" begin
+    using FastInterpolations.Experimental
     x = collect(range(0.0, 2pi, 41))
     data = 2.0 .+ sin.(x)
     @test_throws MethodError phs_interp((x,), data; reference_data = ones(length(x)))
@@ -398,6 +418,7 @@ end
 # returned zero whenever `deriv !== nothing`, so an all-`EvalValue` tuple got 0
 # instead of the value. The internal constant reference decides by the total order.
 @testitem "PHS PIN §R11 — constant reference answers an order-0 deriv tuple with its value" begin
+    using FastInterpolations.Experimental
     q = (0.1, 0.2)
     @test FastInterpolations._phs_ref_value(2.5, q) == 2.5
     @test FastInterpolations._phs_ref_deriv(2.5, q, (DerivOp(1), EvalValue())) == 0.0
@@ -411,6 +432,7 @@ end
 # `MethodError: no method matching (::var"#…")(…; deriv)`. Fixed when such a
 # reference is recognised at build and derivative queries raise a clear ArgumentError.
 @testitem "PHS BROKEN PIN §F6 — value-only reference: derivative query raises ArgumentError" setup = [PHSBrokenHelpers] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 1.0; length = 12)
     y = range(0.0, 1.0; length = 12)
     rho = [exp(-xi) * (1.5 + yj) for xi in x, yj in y]
@@ -427,6 +449,7 @@ end
 # now rejected with an explanatory ArgumentError: ρ₀ is needed between nodes too,
 # and a reference sampled on the data grid adds no information.
 @testitem "PHS PIN §F7 — array reference rejected with ArgumentError" setup = [PHSBrokenHelpers] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 1.0; length = 12)
     y = range(0.0, 1.0; length = 12)
     rho = [exp(-xi) * (1.5 + yj) for xi in x, yj in y]

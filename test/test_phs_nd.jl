@@ -1,4 +1,5 @@
 @testitem "PHS ND Interpolation — polynomial reproduction (1D)" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # A degree-3 PHS with linear augmentation should exactly reproduce linear functions
     x = range(0.0, 5.0, 20)
     data = 2.0 .* collect(x) .+ 1.0   # linear: f(x) = 2x + 1
@@ -24,6 +25,7 @@
 end
 
 @testitem "PHS eval internals — _phs_eval_stencil handles undersized rhs/coeff buffers" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 2pi, 15)
     y = range(0.0, 2pi, 15)
     data = [sin(xi) * cos(yj) + 0.2 for xi in x, yj in y]
@@ -45,6 +47,7 @@ end
 end
 
 @testitem "PHS eval internals — coeff cache fallback when thread cache vector is undersized" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 1.0, 12)
     y = [sin(2pi * xi) for xi in x]
     itp = phs_interp((x,), y; stencil_size = 6, degree = 3)
@@ -58,6 +61,7 @@ end
 end
 
 @testitem "PHS eval internals — direct _phs_eval_blended_G derivative branches" begin
+    using FastInterpolations.Experimental
     x = range(0.2, Float64(pi), 18)
     y = range(0.2, Float64(pi), 18)
     rho = [2.0 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
@@ -87,6 +91,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — batch FillExtrap OOB assignment" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # Targets _phs_batch_impl! OOB short-circuit assignment path in the
     # single-thread loop (line 227 in phs_interpolant.jl).
     x = range(0.0, 1.0, 16)
@@ -107,6 +112,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — batch threaded branch" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # Targets _phs_batch_impl! threaded branch (line 233 in phs_interpolant.jl)
     # when tests run with JULIA_NUM_THREADS > 1.
     x = range(0.0, 2pi, 40)
@@ -129,6 +135,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — 2D accuracy" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # Smooth test function
     x = range(0.0, 2π, 20)
     y = range(0.0, 2π, 20)
@@ -157,6 +164,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — one-shot equals interpolant" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 15)
     y = range(0.0, π, 15)
     data = [sin(xi + yj) for xi in x, yj in y]
@@ -182,6 +190,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — in-place one-shot" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 12)
     y = range(0.0, π, 12)
     data = [cos(xi) * sin(yj) for xi in x, yj in y]
@@ -197,6 +206,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — gradient via DerivOp" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 2π, 25)
     y = range(0.0, 2π, 25)
     data = [sin(xi) * cos(yj) for xi in x, yj in y]
@@ -222,6 +232,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — second derivatives" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 2π, 30)
     y = range(0.0, 2π, 30)
     data = [sin(xi) * cos(yj) for xi in x, yj in y]
@@ -238,6 +249,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — blending continuity" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # Verify that the interpolant doesn't have large jumps in the interior
     # (a basic check that blending is working)
     x = range(0.0, 5.0, 20)
@@ -263,6 +275,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — 3D basic" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 2.0, 8)
     y = range(0.0, 2.0, 8)
     z = range(0.0, 2.0, 8)
@@ -282,6 +295,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — vararg and AbstractVector call" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 3.0, 15)
     y = range(0.0, 3.0, 15)
     data = [xi^2 + yj^2 for xi in x, yj in y]
@@ -299,6 +313,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — batch in-place" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 2π, 20)
     y = range(0.0, 2π, 20)
     data = [sin(xi + yj) for xi in x, yj in y]
@@ -324,6 +339,7 @@ end
 end
 
 @testitem "PHS ND Interpolation — allocation check" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, 2π, 20)
     y = range(0.0, 2π, 20)
     data = [sin(xi) * cos(yj) for xi in x, yj in y]
@@ -342,6 +358,7 @@ end
 end
 
 @testitem "PHS with log-transform (constant reference)" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # Build a 2D PHS with log-transform: f = ln(ρ / ρ₀) where ρ₀ = 1.0
     # This tests that stored data is log(ρ) and evaluation returns exp(f)
     x = range(0.0, π, 20)
@@ -371,6 +388,7 @@ end
 end
 
 @testitem "PHS log-transform — gradient vs. finite difference" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # Verify that analytical gradients match finite differences
     # in the log-transformed PHS
     x = range(0.0, π, 25)
@@ -402,6 +420,7 @@ end
 end
 
 @testitem "PHSInterpolantND protocol methods (_grid, _extrap, _search, axes)" begin
+    using FastInterpolations.Experimental
     # Exercise the per-axis introspection methods required by AbstractInterpolantND
     x = range(0.0, 1.0, 10)
     y = range(0.0, 1.0, 10)
@@ -440,6 +459,7 @@ end
 # ----------------------------------------
 
 @testitem "phs_stencil internals — _phs_stencil_key" begin
+    using FastInterpolations.Experimental
     # _phs_stencil_key is defined in phs_stencil.jl (line 122) but is not invoked
     # by any current code path; call it directly to hit that line.
     offsets_1d = [(-2,), (-1,), (0,), (1,), (2,)]
@@ -455,6 +475,7 @@ end
 end
 
 @testitem "phs_stencil internals — _phs_clamp_offsets no shift (interior node)" begin
+    using FastInterpolations.Experimental
     # When every abs index is already in-bounds the function returns the original
     # vector unchanged (hits lines 138, 145–152, and the early-return on line 155).
     offsets = [(-2,), (-1,), (0,), (1,), (2,)]
@@ -465,6 +486,7 @@ end
 end
 
 @testitem "phs_stencil internals — _phs_clamp_offsets left boundary shift" begin
+    using FastInterpolations.Experimental
     # base_idx=(1,) + offset=(-2,) → abs idx = -1 < 1 → needs a right-shift of +2.
     # Covers lines 138, 145–152, 155 (falls through), and 156 (new array returned).
     offsets = [(-2,), (-1,), (0,), (1,), (2,)]
@@ -482,6 +504,7 @@ end
 end
 
 @testitem "phs_stencil internals — _phs_clamp_offsets right boundary shift" begin
+    using FastInterpolations.Experimental
     # base_idx=(10,) + offset=(+2,) → abs idx = 12 > 10 → needs a left-shift of -2.
     offsets = [(-2,), (-1,), (0,), (1,), (2,)]
     base_idx = (10,)
@@ -497,6 +520,7 @@ end
 end
 
 @testitem "phs_stencil internals — _phs_clamp_offsets 2D corner shift" begin
+    using FastInterpolations.Experimental
     # 2D: dim 1 near left boundary, dim 2 interior.
     # dim 1: lo = 2 + (-2) = 0 < 1 → shift_d1 = 1;  dim 2: no shift.
     offsets = [(i, j) for i in -2:2 for j in -2:2]
@@ -515,6 +539,7 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 
 @testitem "PHS kernels — phi/phi_prime/phi_dprime direct (K=1, K=7, general K)" begin
+    using FastInterpolations.Experimental
     # ── General K fallback (K not in {1,3,5,7}) ──────────────────────────────
     # _phs_phi: r<=0 guard (line 28) and normal path (line 29)
     @test FastInterpolations._phs_phi(0.0, Val{2}()) == 0.0
@@ -566,6 +591,7 @@ end
 end
 
 @testitem "PHS kernels — blend weight 2-arg variants (dead-code coverage)" begin
+    using FastInterpolations.Experimental
     # The 2-arg (d, a) overloads are never called by phs_eval.jl — it always
     # uses the 3-arg (d, a, a3) forms with pre-computed a3.  Call them directly
     # to mark those source lines as covered.
@@ -599,6 +625,7 @@ end
 end
 
 @testitem "PHS kernels — smoothing transform unrollers (dead-code coverage)" begin
+    using FastInterpolations.Experimental
     # These helpers (_phs_unroll_value, _phs_unroll_grad_component,
     # _phs_unroll_hess_component) are defined in phs_kernels.jl but are not
     # called from phs_eval.jl — the log-transform unrolling is inlined directly.
@@ -636,6 +663,7 @@ end
 end
 
 @testitem "PHS kernels — _phs_n_poly and mixed-partial deriv2 (ax1≠ax2)" begin
+    using FastInterpolations.Experimental
     # _phs_n_poly (line 291): dead helper, never called from phs_stencil.jl
     @test FastInterpolations._phs_n_poly(1, 0) == 1    # constant in 1D
     @test FastInterpolations._phs_n_poly(2, 1) == 3    # linear in 2D
@@ -657,6 +685,7 @@ end
 end
 
 @testitem "PHS kernels — K=1 and K=7 via PHS interpolant (phi/phi_prime/phi_dprime specializations)" begin
+    using FastInterpolations.Experimental
     # K=1: covers _phs_phi(r, Val{1}()), _phs_phi_prime(r, Val{1}()),
     #          _phs_phi_dprime(r, Val{1}()) through the hot evaluation loop.
     # A degree-1 PHS with constant augmentation exactly reproduces constants.
@@ -697,7 +726,8 @@ end
 # Coverage: phs_eval.jl missed lines — Batch 1
 # ======================================================
 
-@testitem "PHS eval — non-uniform grid (_CachedVector binary search)" begin
+@testitem "PHS eval — Vector grid (_CachedVector binary search)" begin
+    using FastInterpolations.Experimental
     # A Vector grid is wrapped as _CachedVector, which triggers the O(log n) binary
     # search path in _phs_find_base_node instead of the O(1) _CachedRange formula.
     x = collect(range(0.0, 2π, 20))  # Vector{Float64} → _CachedVector
@@ -707,11 +737,12 @@ end
     for qx in [0.3, 1.0, 2.0, 4.0, 5.8]
         @test itp((qx,)) ≈ sin(qx) atol = 0.01
     end
-    # Derivative on non-uniform grid
+    # Derivative on a Vector grid
     @test itp((1.5,); deriv = (DerivOp{1}(),)) ≈ cos(1.5) atol = 0.1
 end
 
 @testitem "PHS eval — d≈0 branches at grid node, no log-transform" begin
+    using FastInterpolations.Experimental
     # Querying at EXACTLY a grid node makes d_dist = 0 for the base node,
     # forcing the blend loop into the d≈0 else-branch.
     #   • First derivative  → lines 586-588 in _phs_eval_blended
@@ -747,6 +778,7 @@ end
 end
 
 @testitem "PHS log-transform — second derivatives diagonal and off-diagonal" begin
+    using FastInterpolations.Experimental
     # Exercises the entire second-derivative branch of _phs_eval_blended_G
     # (lines 789-874) and _phs_eval_with_transform (lines 913-929).
     x = range(0.2, Float64(π), 20)
@@ -771,6 +803,7 @@ end
 end
 
 @testitem "PHS log-transform — d≈0 at grid node" begin
+    using FastInterpolations.Experimental
     # Querying at a grid node with a log-transform interpolant:
     #   • First derivative  → d≈0 in _phs_eval_blended_G, lines 774-777
     #   • Second derivative → d≈0 in _phs_eval_blended_G, lines 850-857
@@ -801,6 +834,7 @@ end
 end
 
 @testitem "PHS eval — dead-code _phs_eval_coeffs_value_and_two_deriv1 + total_deriv≥3 fallbacks" begin
+    using FastInterpolations.Experimental
     # ── Setup: build a 2D interpolant and extract a solved stencil ──────────
     x = range(0.0, 2π, 15)
     y = range(0.0, 2π, 15)
@@ -873,8 +907,10 @@ end
     )
     @test z_fc == 0.0
 
-    # ── _phs_eval_blended: total_deriv≥3 fallback (line 674) ──
-    z_blended = itp((qx, qy); deriv = (DerivOp{2}(), DerivOp{1}()))
+    # ── _phs_eval_blended: total_deriv≥3 fallback (unreachable from the callables,
+    # which reject total order ≥ 3) ──
+    @test_throws ArgumentError itp((qx, qy); deriv = (DerivOp{2}(), DerivOp{1}()))
+    z_blended = FastInterpolations._phs_eval_blended(itp, (qx, qy), (DerivOp{2}(), DerivOp{1}()))
     @test z_blended == 0.0
 
     # ── _phs_eval_blended_G: total_deriv≥3 fallback (line 874) ──
@@ -889,8 +925,9 @@ end
     )
     @test z_G == 0.0
 
-    # ── _phs_eval_with_transform: total_deriv≥3 fallback (line 932) ──
-    z_tr = itp_log((qx, qy); deriv = (DerivOp{2}(), DerivOp{1}()))
+    # ── _phs_eval_with_transform: total_deriv≥3 fallback (internal only) ──
+    @test_throws ArgumentError itp_log((qx, qy); deriv = (DerivOp{2}(), DerivOp{1}()))
+    z_tr = FastInterpolations._phs_eval_with_transform(itp_log, (qx, qy), (DerivOp{2}(), DerivOp{1}()))
     @test z_tr == 0.0
 
     # ── _phs_eval_coeffs_value_and_deriv1_and_deriv2: off-diagonal else-branch (lines 292-303) ──
@@ -907,6 +944,7 @@ end
 end
 
 @testitem "PHS eval — K!=3 and custom reference function coverage" begin
+    using FastInterpolations.Experimental
     # ── Setup with degree=5 (K=5) so coefficients have correct size ──
     x = range(0.0, 2π, 15)
     y = range(0.0, 2π, 15)
@@ -971,6 +1009,7 @@ end
 end
 
 @testitem "PHS eval — additional LocalCoverage gaps" begin
+    using FastInterpolations.Experimental
     # Setup standard 2D PHS interpolant (K=3) and some coordinates/buffers
     x = range(0.0, 2π, 15)
     y = range(0.0, 2π, 15)
@@ -1036,6 +1075,7 @@ end
 end
 
 @testitem "PHS ND — 1-axis GriddedQuery forwards to the coordinate-vector batch path" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # A 1-axis GriddedQuery is an AbstractVector, so the generic N=1 in-place
     # gridded functor (`AbstractInterpolantND{,,1}` × `GriddedQuery`) and the PHS
     # batch callable (`PHSInterpolantND` × `AbstractVector`) split: each wins one

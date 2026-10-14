@@ -5,6 +5,7 @@
 # callable ρ₀(q). Design: claudedocs/design/2026-09-30-phs-log-reference-api.md
 
 @testitem "PHS log_reference — constant value does not change the result" begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 20)
     y = range(0.0, π, 20)
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
@@ -22,6 +23,7 @@
 end
 
 @testitem "PHS log_reference — negative constant handles all-negative data" begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 20)
     y = range(0.0, π, 20)
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
@@ -34,6 +36,7 @@ end
 end
 
 @testitem "PHS log_reference — invalid references rejected at build" begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 12)
     y = range(0.0, π, 12)
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
@@ -59,6 +62,7 @@ end
 end
 
 @testitem "PHS log_reference — interpolant reference is used natively" begin
+    using FastInterpolations.Experimental
     ρ0f(a, b) = exp(-hypot(a - 0.3, b - 0.2))
     exact(a, b) = ρ0f(a, b) * (1.5 + 0.3 * sin(2a) * cos(b))
     xf = range(0.0, 1.0, 81)                        # the reference comes from finer data
@@ -74,6 +78,7 @@ end
 end
 
 @testitem "PHS log_reference — value-only function answers value queries" begin
+    using FastInterpolations.Experimental
     x = range(0.0, 1.0, 12)
     rho = [exp(-a) * (1.5 + b) for a in x, b in x]
     itp = phs_interp((x, x), rho; log_reference = p -> exp(-p[1]))
@@ -82,6 +87,7 @@ end
 end
 
 @testitem "PHS log_reference — a callable that takes deriv supplies its own derivatives" begin
+    using FastInterpolations.Experimental
     # A callable that accepts `deriv`, declared or through `kw...`, answers derivative
     # queries itself, as interpolants do. These references answer 0.25 for any
     # derivative, unlike the derivative of their value (0), so the result shows that
@@ -112,6 +118,7 @@ end
 end
 
 @testitem "PHS log_reference — Float32 data keeps Float32" begin
+    using FastInterpolations.Experimental
     x = range(0.0f0, 1.0f0, 12)
     rho = Float32[1.5 + 0.4 * sin(a) * cos(b) for a in x, b in x]
     itp = phs_interp((x, x), rho; stencil_size = 4, log_reference = 1.0)
@@ -120,6 +127,7 @@ end
 end
 
 @testitem "PHS log_reference — one-shot forms forward it" begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 16)
     rho = [1.5 + 0.4 * sin(a) * cos(b) for a in x, b in x]
     kw = (; stencil_size = 5, blend_factor = 1.0, log_reference = 1.0)   # one-shot blend default differs (§R7)
@@ -134,6 +142,7 @@ end
 end
 
 @testitem "PHS log_reference — extreme but representable constant is accepted" begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 20)
     rho = [1.5 + 0.4 * sin(a) * cos(b) for a in x, b in x]
     q = (1.1, 0.7)
@@ -143,6 +152,7 @@ end
 end
 
 @testitem "PHS log_reference — constant reference evaluation does not allocate" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     x = range(0.0, π, 16)
     rho = [1.5 + 0.4 * sin(a) * cos(b) for a in x, b in x]
     itp = phs_interp((x, x), rho; stencil_size = 5, log_reference = 1.0)
@@ -162,6 +172,7 @@ end
 end
 
 @testitem "PHS log_reference — callable reference evaluation does not allocate" setup = [AllocConstants] begin
+    using FastInterpolations.Experimental
     # ρ₀ = exp(-Σ aₖ xₖ²) with hand-written derivatives; it reads every coordinate.
     struct GaussRef{N}
         a::NTuple{N, Float64}
@@ -199,6 +210,7 @@ end
 end
 
 @testitem "PHS log_reference — transform evaluation docstring is attached" begin
+    using FastInterpolations.Experimental
     # A blank line between a docstring and its definition silently detaches it.
     meta = Base.Docs.meta(FastInterpolations)
     @test haskey(meta, Base.Docs.Binding(FastInterpolations, :_phs_eval_with_transform))

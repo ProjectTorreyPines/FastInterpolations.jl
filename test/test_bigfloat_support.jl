@@ -14,6 +14,11 @@
 #    Float64 literal coefficient (e.g. `2/3`) in the antiderivative basis caps
 #    the error at ~1e-18 instead of ~1e-77. The ND cubic bounded integrate's
 #    partial-cell weights share that basis.
+#
+# 3. Cubic autocache: BigFloat precision is global state, not part of the type,
+#    and `isequal` ignores it — a factorization built at 256 bits must not be
+#    served to a 512-bit build on an equal (dyadic) grid. Each precision keeps
+#    and reuses its own entry, as Float32/Float64 do via separate banks.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @testitem "BigInt-length ranges build like their Vector twin" begin
@@ -93,4 +98,41 @@ end
     # Float32 stays Float32 (no silent widening of the result type).
     g32 = Float32.(0:16) ./ 16
     @test integrate(pchip_interp(g32, g32 ./ 3 .+ 1.0f0 / 7), 0.0f0, 1.0f0) isa Float32
+end
+
+@testitem "Cubic autocache keeps one entry per BigFloat precision" begin
+    grid() = collect(range(big(0), big(1); length = 33))   # dyadic nodes: == across precisions
+    q = big(1) / 3
+
+    clear_cubic_cache!()
+    c256 = setprecision(BigFloat, 256) do
+        g = grid()
+        cubic_interp(g, sin.(g)).cache
+    end
+    setprecision(BigFloat, 512) do
+        g = grid()
+        y = sin.(g)
+        itp = cubic_interp(g, y)
+        @test itp.cache !== c256                                   # 256-bit entry not served
+        @test precision(itp.cache.thomas.inv_d[1]) == 512
+        @test itp(q) == cubic_interp(g, y; autocache = false)(q)
+        @test cubic_interp(g, y).cache === itp.cache               # 512-bit entry reused
+    end
+    setprecision(BigFloat, 256) do
+        g = grid()
+        @test cubic_interp(g, sin.(g)).cache === c256              # 256-bit entry still reused
+    end
+
+    # Int grid + BigFloat data banks under Vector{BigFloat}; periodic has its own pool.
+    for (g, kw) in ((collect(0:32), (;)), (grid(), (; bc = PeriodicBC())))
+        clear_cubic_cache!()
+        f(x) = cospi(2 * BigFloat(x) / last(g))
+        setprecision(() -> cubic_interp(g, f.(g); kw...)(q), BigFloat, 256)
+        setprecision(BigFloat, 512) do
+            y = f.(g)
+            itp = cubic_interp(g, y; kw...)
+            @test precision(itp.cache.thomas.inv_d[1]) == 512
+            @test itp(q) == cubic_interp(g, y; kw..., autocache = false)(q)
+        end
+    end
 end

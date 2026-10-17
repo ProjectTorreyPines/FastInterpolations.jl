@@ -279,9 +279,9 @@ end
 @inline _nd_weight_rank(::Type{<:Union{LinearInterp, ConstantInterp}}) = 1
 @inline _nd_weight_rank(::Type{<:Union{CubicInterp, QuadraticInterp}}) = 2
 
-# The ΔH antiderivatives carry Float64 coefficients, so the cubic pair converts
-# back to the promoted input precision (`oftype`) — same numerics as the generic
-# engine's per-cell `convert(Tout, …)`, keeping Float32 outputs Float32.
+# The ΔH antiderivatives evaluate at `t`'s precision; `oftype` pins the cubic pair
+# to the promoted input precision — same numerics as the generic engine's per-cell
+# `convert(Tout, …)`, keeping Float32 outputs Float32.
 @inline function _nd_cell_weights0(::CubicInterp, u0, u1, h)
     t0 = u0 / h
     t1 = u1 / h

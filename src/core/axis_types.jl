@@ -76,12 +76,13 @@ end
 # `typeof(tag)` (constant-folded under specialization); `T`/`Tinv` are inferred from
 # the value arguments, so call sites carry no type parameters. The raw 7-arg inner
 # ctor stays for explicit-domain rebuilds (e.g. the asymmetric bracket in
-# `_to_float_adding_endpoint`).
-@inline function _cached_range(tag::_AbstractAxisTag, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv, typeof(tag)}(lo, hi, h, inv_h, len, lo, hi)
+# `_to_float_adding_endpoint`). `len::Integer` → `Int`: a range's `length` follows its
+# integer type (`big(0):big(16)`, `big.(0:16) ./ 16` report a `BigInt` length).
+@inline function _cached_range(tag::_AbstractAxisTag, lo::T, hi::T, h::T, inv_h::Tinv, len::Integer) where {T, Tinv}
+    return _CachedRange{T, Tinv, typeof(tag)}(lo, hi, h, inv_h, Int(len), lo, hi)
 end
-@inline function _cached_range(::_WidenedDomain, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv, _WidenedDomain}(lo, hi, h, inv_h, len, prevfloat(lo), nextfloat(hi))
+@inline function _cached_range(::_WidenedDomain, lo::T, hi::T, h::T, inv_h::Tinv, len::Integer) where {T, Tinv}
+    return _CachedRange{T, Tinv, _WidenedDomain}(lo, hi, h, inv_h, Int(len), prevfloat(lo), nextfloat(hi))
 end
 
 # Identity passthrough — re-wrapping would discard the cached fields.

@@ -192,6 +192,40 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         end
     end
 
+    # Built straight from device data: the same storage as a CPU build moved with `adapt`,
+    # no host round trip (allowscalar(false) would reject any element read).
+    @testset "$T $gname: built from device data" for T in (Float32, Float64), (gname, x) in gpu_grids(T, 33)
+        y = gpu_fy.(x)
+        ymax = maximum(abs, y)
+        q_oob = gpu_queries(T, 257)[2]
+        xd = gname == "Range" ? x : JLArray(collect(x))
+        yd = JLArray(y)
+        ref = linear_interp(x, y; extrap = ClampExtrap())
+        bitp = linear_interp(xd, yd; extrap = ClampExtrap())
+        @test typeof(bitp) === typeof(adapt(JLArray, ref))
+        @test parent(bitp.y) !== yd                                       # default store copies
+        @test gpu_close(bitp(JLArray(q_oob)), ref(q_oob), ymax)
+        @test gpu_close(bitp.(JLArray(q_oob)), ref.(q_oob), ymax)
+        @test typeof(adapt(Array, bitp)) === typeof(ref)                  # back to host storage
+        # reference store aliases the caller's device arrays
+        ritp = linear_interp(xd, yd; extrap = ClampExtrap(), store = StorePolicy(copy = false))
+        @test parent(ritp.y) === yd
+        gname == "Vector" && @test parent(ritp.x) === xd
+        # an uncached axis is still device storage
+        uitp = linear_interp(xd, yd; extrap = ClampExtrap(), store = StorePolicy(cache_axis = false))
+        @test uitp.x isa (gname == "Range" ? FI._CachedRange : FI._DeviceVector{T})
+        @test gpu_close(uitp(JLArray(q_oob)), ref(q_oob), ymax)
+    end
+
+    @testset "integer device data is promoted on the device" begin
+        x = JLArray(collect(range(0.0f0, 1.0f0; length = 9)))
+        y = JLArray(Int32.(0:8))
+        itp = linear_interp(x, y; extrap = ClampExtrap())
+        @test itp.y isa FI._DeviceVector{Float32}
+        @test parent(itp.y) isa JLArray
+        @test Array(itp(JLArray(Float32[0.0625, 0.5]))) ≈ Float32[0.5, 4.0]
+    end
+
     @testset "batch admission and storage checks" begin
         x = range(0.0f0, 1.0f0; length = 33)
         y = gpu_fy.(x)

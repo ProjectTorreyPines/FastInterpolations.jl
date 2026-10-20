@@ -57,3 +57,19 @@ end
 # Whether (adapted) storage lives on a device. The GPUArrays extension answers `true` for
 # GPU arrays; everything else is host storage.
 _is_device_storage(::Any) = false
+
+# ── Construction seams ──
+# The GPUArrays extension turns device inputs into `_DeviceVector` leaves at the shared
+# normalization seams. A leaf is already normalized: re-entry (outer → inner constructor)
+# passes it through whether or not axis caching is requested (a device grid keeps no
+# spacing caches), converting its eltype on the device when the promoted grid type differs;
+# ownership copies stay on the device.
+@inline _policy_axis(x::_DeviceVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, true}) where {Tg, CG, CV} =
+    _device_eltype(x, Tg)
+@inline _policy_axis(x::_DeviceVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
+    _device_eltype(x, Tg)
+@inline _device_eltype(x::_DeviceVector{T}, ::Type{T}) where {T} = x
+@inline _device_eltype(x::_DeviceVector, ::Type{T}) where {T} = _DeviceArray(T.(parent(x)))
+
+@inline _convert_copy(x::_DeviceVector{T}, ::Type{T}) where {T} = _DeviceArray(copy(parent(x)))
+@inline _convert_copy(x::_DeviceVector, ::Type{T}) where {T} = _DeviceArray(T.(parent(x)))

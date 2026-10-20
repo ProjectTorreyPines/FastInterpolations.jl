@@ -25,11 +25,32 @@ using FastInterpolations
 using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtrap,
     AbstractSearchPolicy, DerivOp, EvalValue, _DeviceArray, _DeviceVector, _itp_grid,
     _itp_extrap, _itp_search, _itp_eval_scalar, _resolve_extrap_override, _promote_eltype,
-    _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob
+    _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob, NoBC,
+    StorePolicy
 import Adapt
 using GPUArrays: AbstractGPUVector, AnyGPUArray, AnyGPUVector
 
 FastInterpolations._is_device_storage(::AnyGPUArray) = true
+
+# ── GPU-native construction ──
+# Device inputs reach the shared normalization seams; these keep them on the device as
+# `_DeviceArray` leaves — eltype conversion broadcast on the device, ownership per
+# StorePolicy (copy by default, alias with `copy = false`), never a host `Vector`. A uniform
+# grid still becomes a `_CachedRange`; periodic boundary conditions are not supported yet.
+FastInterpolations._policy_axis(x::AnyGPUVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, true}) where {Tg, CG, CV} =
+    _DeviceArray(_device_convert(x, Tg))
+FastInterpolations._policy_axis(x::AnyGPUVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
+    _DeviceArray(_device_convert(x, Tg))
+
+FastInterpolations._own_or_ref_values(y::AnyGPUVector, ::Type{Tv}, ::StorePolicy{CG, true, CA}) where {Tv, CG, CA} =
+    _DeviceArray(_device_copy(y, Tv))
+FastInterpolations._own_or_ref_values(y::AnyGPUVector{Tv}, ::Type{Tv}, ::StorePolicy{CG, false, CA}) where {Tv, CG, CA} =
+    _DeviceArray(y)
+FastInterpolations._own_or_ref_values(y::AnyGPUVector, ::Type{Tv}, ::StorePolicy{CG, false, CA}) where {Tv, CG, CA} =
+    _DeviceArray(Tv.(y))
+
+_device_convert(a, ::Type{T}) where {T} = eltype(a) === T ? a : T.(a)
+_device_copy(a, ::Type{T}) where {T} = eltype(a) === T ? copy(a) : T.(a)
 
 # ── Admission ──
 # Admitted families list the arrays their evaluation reads; any other family is rejected

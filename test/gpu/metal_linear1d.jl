@@ -120,6 +120,18 @@ end
             @test gpu_close(adapt(MtlArray, itp)(v), itp(q_oob[1:2:end]), ymax)
         end
 
+        # Built straight from Metal arrays: same storage as a CPU build moved with `adapt`.
+        @testset "$gname: built from device data" begin
+            xd = gname == "Range" ? x : MtlArray(collect(x))
+            bitp = linear_interp(xd, MtlArray(y); extrap = ClampExtrap())
+            @test typeof(bitp) === typeof(adapt(MtlArray, itp))
+            @test gpu_close(bitp(MtlArray(q_oob)), itp(q_oob), ymax)
+            @test gpu_close(bitp.(MtlArray(q_oob)), itp.(q_oob), ymax)
+            iitp = linear_interp(xd, MtlArray(Int32.(1:length(x))); extrap = ClampExtrap())
+            @test iitp.y isa FI._DeviceVector{T, <:MtlArray}               # promoted on the device
+            @test gpu_close(iitp(MtlArray(q_oob)), linear_interp(x, Int32.(1:length(x)); extrap = ClampExtrap())(q_oob), T(length(x)))
+        end
+
         @testset "$gname: stored hint-carrying policy compiles ($(nameof(typeof(s))))" for s in (LinearBinarySearch(), LinearSearch())
             itp_s = linear_interp(x, y; extrap = ClampExtrap(), search = s)
             @test gpu_close(adapt(MtlArray, itp_s).(MtlArray(q_oob)), itp_s.(q_oob), ymax)

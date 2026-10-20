@@ -10,12 +10,12 @@ include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels 
 include("axis_types.jl")       # 4b. Axis struct definitions (_CachedRange / _CachedVector / _ExclusivePeriodicAxis / _ReparamAxis) — central types-first
 include("cached_range.jl")     # 5. _CachedRange methods (_to_float, _get_h, _resolve_axis, _cache_axis*)
 include("cached_vector.jl")    # 5c. _CachedVector methods (build ctor, _get_h, _resolve_axis, _cache_axis*)
-include("device_support.jl")   # 5d. _RawFields sentinel + _DeviceArray (device storage leaf for the GPU extensions)
 include("search.jl")           # 6. Search policy + interval search
 include("axis_indices.jl")     # 6a. Compact/explicit fixed-size per-axis indices
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("store_policy.jl")     # 7b. StorePolicy (copy vs reference storage) + own/ref helpers
+include("device_support.jl")   # 7c. _RawFields sentinel + _DeviceArray (device storage leaf for the GPU extensions)
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
 include("periodic_axis.jl")    # 8b. _ExclusivePeriodicAxis wrapper (axis-side representation transform for `:exclusive` BC on Vector grids)
 include("periodic_data.jl")    # 8c. _ExclusivePeriodicData wrapper (data-side cyclic-indexing companion)

@@ -36,6 +36,13 @@ end
         @test Base.get_extension(FastInterpolations, :FastInterpolationsMetalExt) === nothing
     end
 
+    @testset "batch admission: host data and unsupported families are rejected" begin
+        x = range(zero(T), one(T); length = 33)
+        q = MtlArray(gpu_queries(T, 64)[1])
+        @test_throws ArgumentError linear_interp(x, gpu_fy.(x))(q)       # not on the device yet
+        @test_throws ArgumentError cubic_interp(x, gpu_fy.(x))(q)        # family not admitted
+    end
+
     # Uniform grids: the isbits `_CachedRange` stays a range inside Metal kernels, with
     # Float32-only fields even for Base `range` input (Float64 internals) and Int `1:n`.
     @testset "range grid ($rname) stays a range on the device" for (rname, x) in gpu_range_grids(T, 65)
@@ -74,6 +81,43 @@ end
             @test gpu_close(ditp.(MtlArray(q)), itp_e.(q), ymax)
             dcpu = deriv1(itp_e).(q)
             @test gpu_close(deriv1(ditp).(MtlArray(q)), dcpu, maximum(abs, filter(!isnan, dcpu)))
+        end
+
+        @testset "$gname: batch call parity ($ename)" for (ename, e, qk) in (gpu_extraps(T)..., ("NoExtrap", NoExtrap(), :in))
+            itp_e = linear_interp(x, y; extrap = e)
+            ditp = adapt(MtlArray, itp_e)
+            q = qk === :in ? q_in : q_oob
+            qd = MtlArray(q)
+            @test gpu_close(ditp(qd), itp_e(q), ymax)
+            out = similar(qd)
+            @test ditp(out, qd) === out
+            @test gpu_close(out, itp_e(q), ymax)
+            dcpu = itp_e(q; deriv = DerivOp(1))
+            @test gpu_close(ditp(qd; deriv = DerivOp(1)), dcpu, maximum(abs, filter(!isnan, dcpu)))
+        end
+
+        # The device-side domain check compiles on Metal; on failure the host formats the
+        # CPU error from two endpoint copies, so bounds and message match the CPU.
+        @testset "$gname: batch NoExtrap OOB throws the CPU error" begin
+            itp_n = linear_interp(x, y)
+            cpu_err = try
+                itp_n(q_oob)
+            catch err
+                err
+            end
+            gpu_err = try
+                adapt(MtlArray, itp_n)(MtlArray(q_oob))
+            catch err
+                err
+            end
+            @test gpu_err isa DomainError
+            @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
+        end
+
+        @testset "$gname: strided GPU view queries" begin
+            qd = MtlArray(q_oob)
+            v = view(qd, 1:2:length(qd))
+            @test gpu_close(adapt(MtlArray, itp)(v), itp(q_oob[1:2:end]), ymax)
         end
 
         @testset "$gname: stored hint-carrying policy compiles ($(nameof(typeof(s))))" for s in (LinearBinarySearch(), LinearSearch())

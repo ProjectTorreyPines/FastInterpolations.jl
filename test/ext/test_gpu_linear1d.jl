@@ -109,6 +109,55 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
             @test d isa FI.DerivativeView{1}
             @test d.parent.y isa FI._DeviceVector{T}
         end
+
+        @testset "$T $gname: batch call ($ename)" for (ename, e, qk) in (gpu_extraps(T)..., ("NoExtrap", NoExtrap(), :in))
+            itp_e = linear_interp(x, y; extrap = e)
+            ditp = adapt(JLArray, itp_e)
+            q = qk === :in ? q_in : q_oob
+            qd = JLArray(q)
+            res = ditp(qd)
+            @test res isa JLArray{T}
+            @test gpu_close(res, itp_e(q), ymax)
+            out = similar(qd)
+            @test ditp(out, qd) === out
+            @test gpu_close(out, itp_e(q), ymax)
+            dcpu = itp_e(q; deriv = DerivOp(1))
+            @test gpu_close(ditp(qd; deriv = DerivOp(1)), dcpu, maximum(abs, filter(!isnan, dcpu)))
+        end
+
+        @testset "$T $gname: batch planning" begin
+            itp_n = linear_interp(x, y)                                   # NoExtrap
+            ditp = adapt(JLArray, itp_n)
+            cpu_err = try
+                itp_n(q_oob)
+            catch err
+                err
+            end
+            gpu_err = try
+                ditp(JLArray(q_oob))
+            catch err
+                err
+            end
+            @test gpu_err isa DomainError
+            @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)  # same bounds and message
+            @test gpu_close(ditp(JLArray(q_in); extrap = InBounds()), itp_n(q_in), ymax)
+            @test_throws ArgumentError itp_n(q_oob; extrap = ClampExtrap())        # override contract:
+            @test_throws ArgumentError ditp(JLArray(q_oob); extrap = ClampExtrap()) # InBounds only, as on the CPU
+            @test_throws ArgumentError ditp(JLArray(q_in); hint = Ref(1))
+            @test_throws DimensionMismatch ditp(JLArray(zeros(T, 3)), JLArray(q_in))
+            @test length(ditp(JLArray(T[]))) == 0
+        end
+
+        @testset "$T $gname: strided GPU views" begin
+            ditp = adapt(JLArray, itp)
+            qd = JLArray(q_oob)
+            v = view(qd, 1:2:length(qd))
+            @test gpu_close(ditp(v), itp(q_oob[1:2:end]), ymax)
+            out = JLArray(zeros(T, 2 * length(v)))
+            ov = view(out, 2:2:length(out))
+            @test ditp(ov, v) === ov
+            @test gpu_close(Array(out)[2:2:end], itp(q_oob[1:2:end]), ymax)
+        end
     end
 
     # Uniform grids need no device storage: the isbits `_CachedRange` travels by value into
@@ -141,6 +190,26 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
             q = gpu_queries(Float32, 257)[2]
             @test gpu_close(itp32.(q), ref.(q), 2.0f0)
         end
+    end
+
+    @testset "batch admission and storage checks" begin
+        x = range(0.0f0, 1.0f0; length = 33)
+        y = gpu_fy.(x)
+        q = gpu_queries(Float32, 64)[1]
+        qd = JLArray(q)
+        itp = linear_interp(x, y)
+        ditp = adapt(JLArray, itp)
+        @test_throws ArgumentError itp(qd)                                 # data still on the host
+        @test_throws ArgumentError ditp(Vector{Float32}(undef, 64), qd)    # mixed output / query storage
+        @test_throws ArgumentError ditp(similar(qd), q)
+        citp = cubic_interp(x, y)
+        @test_throws ArgumentError citp(qd)                                # family not admitted
+        @test_throws ArgumentError citp(JLArray(Float32[]))                # ... checked before the empty shortcut
+        dref = deriv1(itp)(q)
+        @test gpu_close(deriv1(ditp)(qd), dref, maximum(abs, dref))        # DerivativeView → GPU batch path
+        # Built from device data (range grid): already device-resident, evaluated in place.
+        bitp = linear_interp(x, JLArray(y))
+        @test gpu_close(bitp(qd), itp(q), maximum(abs, y))
     end
 
     @testset "no method ambiguities from the extensions" begin

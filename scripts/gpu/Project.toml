@@ -1,0 +1,10 @@
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+FastInterpolations = "9ea80cae-fc13-4c00-8066-6eaedb12f34b"
+GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+
+[sources]
+FastInterpolations = {path = "../.."}

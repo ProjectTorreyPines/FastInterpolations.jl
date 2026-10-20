@@ -20,7 +20,7 @@ module FastInterpolationsAdaptExt
 using FastInterpolations
 using FastInterpolations: LinearInterpolant, LinearInterpolantND, DerivativeView, _CachedRange, _CachedVector,
     _DeviceArray, _DeviceVector, _Generic, _RawFields, _is_device_storage, _to_float,
-    _promote_extrap
+    _promote_extrap, _ExclusivePeriodicAxis, _ExclusivePeriodicData
 import Adapt
 
 function Adapt.adapt_structure(to, itp::LinearInterpolant)
@@ -70,6 +70,11 @@ function _adapt_axis(to, x::_DeviceVector, _, _)
 end
 
 _adapt_axis(to, x::AbstractVector, _, _) = _wrap_device(Adapt.adapt(to, x))   # raw grids
+
+# Periodic wrappers (one-shot `:exclusive` storage) keep their kind around the adapted inner.
+Adapt.adapt_structure(to, g::_ExclusivePeriodicAxis{Te, X, Tp}) where {Te, X, Tp} =
+    (inner = Adapt.adapt(to, g.inner); _ExclusivePeriodicAxis{Te, typeof(inner), Tp}(_RawFields(), inner, g.period, g._x_max))
+Adapt.adapt_structure(to, c::_ExclusivePeriodicData) = _ExclusivePeriodicData(Adapt.adapt(to, c.inner))
 
 # Standalone leaves keep their kind (interpolants route their fields through the rules above).
 Adapt.adapt_structure(_, x::_CachedRange) = x

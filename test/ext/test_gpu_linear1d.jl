@@ -255,9 +255,35 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
         @test_throws ArgumentError linear_interp(x, y, JLArray(q_in))                 # data on the host
         @test_throws ArgumentError linear_interp!(zeros(Float32, 64), xd, yd, JLArray(q_in))  # host output
-        @test_throws ArgumentError linear_interp(xd, yd, JLArray(q_in); bc = PeriodicBC())   # not supported yet
+        @test_throws ArgumentError linear_interp(xd, yd, JLArray(q_in); hint = Ref(1))        # no host hint
+        cpu_err = try
+            linear_interp(x, y, q_in; bc = PeriodicBC())
+        catch err
+            err
+        end         # y[end] ≠ y[1]
+        gpu_err = try
+            linear_interp(xd, yd, JLArray(q_in); bc = PeriodicBC())
+        catch err
+            err
+        end
+        @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
         v = view(JLArray(q_oob), 1:2:64)
         @test gpu_close(linear_interp(xd, yd, v; extrap = ClampExtrap()), linear_interp(x, y, q_oob[1:2:end]; extrap = ClampExtrap()), 2.0f0)
+        # a hint-carrying search policy runs with a fresh per-thread searcher
+        @test gpu_close(linear_interp(xd, yd, JLArray(q_oob); extrap = ClampExtrap(), search = LinearBinarySearch()), linear_interp(x, y, q_oob; extrap = ClampExtrap()), 2.0f0)
+        # shaped GPU queries keep their shape
+        qm = reshape(q_in, 8, 8)
+        rm = linear_interp(xd, yd, JLArray(qm))
+        @test rm isa JLArray{Float32, 2}
+        @test gpu_close(rm, linear_interp(x, y, qm), 2.0f0)
+    end
+
+    # One-shot GPU calls take the core one-shot route: only the storage leaves and the
+    # execution/planning seams below it are GPU methods; the API entry is the core one.
+    @testset "one-shot uses the core API route" begin
+        xd, yd, qd = JLArray(collect(range(0.0f0, 1.0f0; length = 9))), JLArray(rand(Float32, 9)), JLArray(rand(Float32, 4))
+        @test which(linear_interp, typeof.((xd, yd, qd))).module === FastInterpolations
+        @test which(linear_interp!, typeof.((similar(qd), xd, yd, qd))).module === FastInterpolations
     end
 
     # Periodic boundary conditions: queries span several periods (WrapExtrap in the kernel).

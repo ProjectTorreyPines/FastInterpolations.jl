@@ -5,14 +5,6 @@
 # package: the extensions decide WHEN storage is device storage; these types define how the
 # shared evaluation code reads it.
 
-"""
-    _RawFields
-
-Sentinel selecting an interpolant's raw inner constructor: fields are stored as given,
-already normalized by an earlier construction. Rebuilds an interpolant around moved arrays
-(Adapt), where the normalizing constructor would copy or normalize on the host.
-"""
-struct _RawFields end
 
 """
     _DeviceArray{T, N, A} <: AbstractArray{T, N}
@@ -58,6 +50,10 @@ function _show_axis_detail(io::IO, g::_DeviceVector)
     _show_print(io, "Device vector", :magenta)
     return print(io, ", $(length(g)) points")
 end
+
+# Search on a device grid: threads share no hint, so AutoSearch is a per-query binary search
+# (the policy counterpart of `AbstractRange → DirectSearch`); query order is never probed.
+@inline _resolve_search_policy(::_DeviceVector, xq, ::AutoSearch, hint) = BinarySearch()
 
 # Whether (adapted) storage lives on a device. The GPUArrays extension answers `true` for
 # GPU arrays; everything else is host storage.

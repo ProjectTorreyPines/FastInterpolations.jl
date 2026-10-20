@@ -28,7 +28,10 @@ using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtr
     _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob, NoBC, AbstractBC,
     StorePolicy, PeriodicBC, periodic_check, _PlainAxisBC, _resolve_exclusive_period,
     _throw_excl_endpoint_too_small, AbstractInterpolantND, LinearInterpolantND,
-    _resolve_extrap_override_nd, _eval_nd_scalar_query, _query_eltype, _check_domain
+    _resolve_extrap_override_nd, _eval_nd_scalar_query, _query_eltype, _check_domain,
+    _ExclusivePeriodicAxis, _ExclusivePeriodicData, _RawFields, _resolve_bc_period,
+    _throw_excl_axis_period_too_small, _linear_eval_at_point, Searcher, NoHint, RefHint,
+    AbstractEvalOp
 import Adapt
 using GPUArrays: AbstractGPUVector, AnyGPUArray, AnyGPUVector
 
@@ -90,6 +93,7 @@ _gpu_batch_storage(itp::AbstractInterpolant1D) =
 
 # Usable inside a kernel: device storage, or plain isbits data (e.g. `_CachedRange`).
 _on_device(a) = a isa _DeviceArray || FastInterpolations._is_device_storage(a) || isbits(a)
+_on_device(g::Union{_ExclusivePeriodicAxis, _ExclusivePeriodicData}) = _on_device(g.inner)
 
 function _check_gpu_batch(itp)
     all(_on_device, _gpu_batch_storage(itp)) || throw(
@@ -161,37 +165,80 @@ end
 ) where {Tg, Tv, Tq <: Number} = _gpu_inplace(itp, output, xq; kwargs...)
 
 # ── One-shot ──
-# On a device a linear one-shot call is a build that aliases its inputs (no copy, no spacing
-# caches: nothing is precomputed) followed by the batch runner above — the same device
-# paths at no extra cost. Host data with GPU queries is rejected by the runner's admission.
-function FastInterpolations.linear_interp(
-        x::AbstractVector,
-        y::AbstractVector,
-        xq::AnyGPUVector{Tq};
-        bc::AbstractBC = NoBC(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tq <: Number}
-    return _oneshot_itp(x, y, bc, extrap, search)(xq; deriv, hint)
+# One-shot calls on GPU queries take the core one-shot route (`linear_interp` /
+# `linear_interp!` are the core methods): the storage leaves and the planning/execution
+# seams below it are the only GPU methods. No interpolant is built and nothing is copied
+# unless an eltype conversion asks for it.
+FastInterpolations._resolve_axis(x::AnyGPUVector, ::_PlainAxisBC, ::Type{Tg}) where {Tg} = _DeviceArray(_device_convert(x, Tg))
+
+# `:exclusive`: the shared lazy wrapper around a device leaf; its seam point `x[1] + period`
+# comes from the two endpoints, read once on the host.
+function FastInterpolations._resolve_axis(x::AnyGPUVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    inner = _DeviceArray(_device_convert(x, Tg))
+    period = _resolve_bc_period(inner, bc).period
+    Te = promote_type(Tg, typeof(period))
+    inner_e = Te === Tg ? inner : _DeviceArray(Te.(parent(inner)))
+    x1, xn = _host_endpoints(inner_e)
+    x_max = x1 + Te(period)
+    xn < x_max || _throw_excl_axis_period_too_small(period, x_max, xn)
+    return _ExclusivePeriodicAxis{Te, typeof(inner_e), typeof(period)}(_RawFields(), inner_e, period, x_max)
 end
 
-function FastInterpolations.linear_interp!(
-        output::AbstractVector,
+FastInterpolations._resolve_data(y::AnyGPUArray, ::NoBC) = _DeviceArray(y)
+function FastInterpolations._resolve_data(y::AnyGPUArray, bc::PeriodicBC{:inclusive})
+    periodic_check(bc) && FastInterpolations._check_periodic_endpoints(bc, y)
+    return _DeviceArray(y)
+end
+FastInterpolations._resolve_data(y::AnyGPUArray, ::PeriodicBC{:extended}) = _DeviceArray(y)
+FastInterpolations._resolve_data(y::AnyGPUArray, ::PeriodicBC{:exclusive}) = _ExclusivePeriodicData(_DeviceArray(y))
+
+FastInterpolations._check_periodic_endpoints(bc::PeriodicBC{:inclusive}, y::_DeviceVector) =
+    FastInterpolations._check_periodic_endpoints(bc, parent(y))
+
+FastInterpolations._alloc_query_output(::Type{T}, q::AnyGPUArray) where {T} = similar(q, T)
+
+# Searching is planned before the loop: reject host grids here (before any query is read),
+# and host hints (device threads cannot write one back).
+function FastInterpolations._resolve_search(grid, q::AnyGPUArray, search, ::Nothing)
+    _on_device(grid) || _throw_host_oneshot()
+    return FastInterpolations._to_searcher(FastInterpolations._resolve_search_policy(grid, q, search, nothing), nothing)
+end
+FastInterpolations._resolve_search(grid, ::AnyGPUArray, search, ::Base.RefValue{Int}) =
+    throw(ArgumentError("`hint` is not supported for GPU array queries (device threads cannot share a host Ref)"))
+@noinline _throw_host_oneshot() =
+    throw(ArgumentError("one-shot GPU queries need the grid and the data on the device too"))
+
+function FastInterpolations._linear_interp_loop!(
+        output::AbstractArray,
         x::AbstractVector,
         y::AbstractVector,
-        xq::AnyGPUVector{Tq};
-        bc::AbstractBC = NoBC(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tq <: Number}
-    return _oneshot_itp(x, y, bc, extrap, search)(output, xq; deriv, hint)
+        x_targets::AnyGPUArray,
+        extrap::AbstractExtrap,
+        op::AbstractEvalOp,
+        searcher::Searcher
+    )
+    (_on_device(x) && _on_device(y)) || _throw_host_oneshot()
+    FastInterpolations._is_device_storage(output) || _throw_mixed_storage()
+    isempty(x_targets) && return output
+    extrap_eff = _gpu_domain_check(x, x_targets, extrap)
+    output .= _OneShotEval{typeof(searcher)}(x, y, extrap_eff, op).(x_targets)
+    return output
 end
 
-_oneshot_itp(x, y, bc, extrap, search) = linear_interp(x, y; bc, extrap, search, store = StorePolicy(copy = false))
+# The CPU one-shot point evaluation, per thread. A searcher carries no shared state across
+# threads: each one starts fresh (a hint-carrying policy keeps a thread-local hint).
+struct _OneShotEval{S, X, Y, E, O}
+    x::X
+    y::Y
+    extrap::E
+    op::O
+end
+_OneShotEval{S}(x, y, extrap, op) where {S} = _OneShotEval{S, typeof(x), typeof(y), typeof(extrap), typeof(op)}(x, y, extrap, op)
+@inline (f::_OneShotEval{S})(q) where {S} = _linear_eval_at_point(f.x, f.y, q, f.extrap, f.op, _fresh_searcher(S))
+Adapt.adapt_structure(to, f::_OneShotEval{S}) where {S} = _OneShotEval{S}(Adapt.adapt(to, f.x), Adapt.adapt(to, f.y), f.extrap, f.op)
+
+@inline _fresh_searcher(::Type{Searcher{P, NoHint}}) where {P} = Searcher{P, NoHint}(NoHint())
+@inline _fresh_searcher(::Type{Searcher{P, RefHint}}) where {P} = Searcher{P, RefHint}(RefHint())
 
 function _gpu_eval!(output, itp, xq, deriv, extrap, search, hint)
     hint === nothing ||

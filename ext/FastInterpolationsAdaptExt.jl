@@ -18,7 +18,7 @@
 module FastInterpolationsAdaptExt
 
 using FastInterpolations
-using FastInterpolations: LinearInterpolant, DerivativeView, _CachedRange, _CachedVector,
+using FastInterpolations: LinearInterpolant, LinearInterpolantND, DerivativeView, _CachedRange, _CachedVector,
     _DeviceArray, _DeviceVector, _Generic, _RawFields, _is_device_storage, _to_float,
     _promote_extrap
 import Adapt
@@ -28,6 +28,14 @@ function Adapt.adapt_structure(to, itp::LinearInterpolant)
     x = _adapt_axis(to, itp.x, eltype(itp.y), eltype(y))
     extrap = eltype(y) === eltype(itp.y) ? itp.extrap : _promote_extrap(itp.extrap, eltype(y))
     return LinearInterpolant(_RawFields(), x, y, extrap, itp.search_policy)
+end
+
+function Adapt.adapt_structure(to, itp::LinearInterpolantND)
+    data = _adapt_data(to, itp.data)
+    Tv, Tv2 = eltype(itp.data), eltype(data)
+    grids = map(g -> _adapt_axis(to, g, Tv, Tv2), itp.grids)
+    extraps = Tv2 === Tv ? itp.extraps : map(e -> _promote_extrap(e, Tv2), itp.extraps)
+    return LinearInterpolantND(_RawFields(), grids, data, extraps, itp.searches)
 end
 
 Adapt.adapt_structure(to, d::DerivativeView{O}) where {O} = _derivative_view(Val(O), Adapt.adapt(to, d.parent))

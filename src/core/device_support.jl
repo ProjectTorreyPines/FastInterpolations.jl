@@ -39,8 +39,8 @@ Base.parent(a::_DeviceArray) = a.inner
 Base.size(a::_DeviceArray) = size(a.inner)
 Base.IndexStyle(::Type{<:_DeviceArray}) = IndexLinear()
 @inline Base.@propagate_inbounds Base.getindex(a::_DeviceArray, i::Int) = a.inner[i]
-@inline Base.first(v::_DeviceVector) = @inbounds v.inner[begin]
-@inline Base.last(v::_DeviceVector) = @inbounds v.inner[end]
+@inline Base.first(a::_DeviceArray) = @inbounds a.inner[begin]
+@inline Base.last(a::_DeviceArray) = @inbounds a.inner[end]
 
 Base.show(io::IO, a::_DeviceArray) =
     print(io, "_DeviceArray(", join(size(a), "×"), " ", nameof(typeof(a.inner)), "{", eltype(a), "})")
@@ -52,6 +52,11 @@ function _show_grid_row(io::IO, is_last::Bool, x::_DeviceVector)
     _show_print(io, "Grid:  ", :light_black)
     _show_print(io, "Device vector", :magenta)
     return print(io, ", $(length(x)) points")
+end
+
+function _show_axis_detail(io::IO, g::_DeviceVector)
+    _show_print(io, "Device vector", :magenta)
+    return print(io, ", $(length(g)) points")
 end
 
 # Whether (adapted) storage lives on a device. The GPUArrays extension answers `true` for
@@ -73,6 +78,9 @@ const _PlainAxisBC = Union{NoBC, PeriodicBC{:inclusive}, PeriodicBC{:extended}}
     _device_eltype(x, Tg)
 @inline _policy_axis(x::_DeviceVector, ::_PlainAxisBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
     _device_eltype(x, Tg)
+# Tg-less form (ND factories: grids arrive already value-promoted).
+@inline _policy_axis(x::_DeviceVector, ::_PlainAxisBC, ::StorePolicy{CG, CV, true}) where {CG, CV} = x
+@inline _policy_axis(x::_DeviceVector, ::_PlainAxisBC, ::StorePolicy{CG, CV, false}) where {CG, CV} = x
 @inline _device_eltype(x::_DeviceVector{T}, ::Type{T}) where {T} = x
 @inline _device_eltype(x::_DeviceVector, ::Type{T}) where {T} = _DeviceArray(T.(parent(x)))
 

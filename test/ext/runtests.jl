@@ -54,4 +54,5 @@ end
 # Last: loads the GPUArrays stack (JLArrays) into the process.
 if EXT_CHUNK in ("all", "rest", "gpu")
     include("test_gpu_linear1d.jl")
+    include("test_gpu_linear_nd.jl")
 end

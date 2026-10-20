@@ -101,6 +101,21 @@ struct LinearInterpolantND{
             grids_c, data_c, extraps, searches
         )
     end
+
+    # Raw: fields stored as-is (already normalized by a previous construction) —
+    # the Adapt extension's rebuild around moved arrays.
+    function LinearInterpolantND(
+            ::_RawFields,
+            grids::Tuple{Vararg{AbstractVector, N}},
+            data::AbstractArray{Tv, N},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}}
+        ) where {Tv, N}
+        Tg = _promote_grid_eltype(grids)
+        return new{Tg, Tv, N, typeof(grids), typeof(extraps), typeof(searches), typeof(data)}(
+            grids, data, extraps, searches
+        )
+    end
 end
 
 # ========================================

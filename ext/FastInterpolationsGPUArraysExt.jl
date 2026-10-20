@@ -27,7 +27,8 @@ using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtr
     _itp_extrap, _itp_search, _itp_eval_scalar, _resolve_extrap_override, _promote_eltype,
     _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob, NoBC, AbstractBC,
     StorePolicy, PeriodicBC, periodic_check, _PlainAxisBC, _resolve_exclusive_period,
-    _throw_excl_endpoint_too_small
+    _throw_excl_endpoint_too_small, AbstractInterpolantND, LinearInterpolantND,
+    _resolve_extrap_override_nd, _eval_nd_scalar_query, _query_eltype, _check_domain
 import Adapt
 using GPUArrays: AbstractGPUVector, AnyGPUArray, AnyGPUVector
 
@@ -49,6 +50,13 @@ FastInterpolations._own_or_ref_values(y::AnyGPUVector{Tv}, ::Type{Tv}, ::StorePo
     _DeviceArray(y)
 FastInterpolations._own_or_ref_values(y::AnyGPUVector, ::Type{Tv}, ::StorePolicy{CG, false, CA}) where {Tv, CG, CA} =
     _DeviceArray(Tv.(y))
+
+# ND factories normalize grids through the Tg-less seam (grids already value-promoted) and
+# store data through `_own_or_ref_data`.
+FastInterpolations._policy_axis(x::AnyGPUVector, ::_PlainAxisBC, ::StorePolicy{CG, CV, true}) where {CG, CV} = _DeviceArray(x)
+FastInterpolations._policy_axis(x::AnyGPUVector, ::_PlainAxisBC, ::StorePolicy{CG, CV, false}) where {CG, CV} = _DeviceArray(x)
+FastInterpolations._own_or_ref_data(data::AnyGPUArray, ::StorePolicy{CG, true, CA}) where {CG, CA} = _DeviceArray(copy(data))
+FastInterpolations._own_or_ref_data(data::AnyGPUArray, ::StorePolicy{CG, false, CA}) where {CG, CA} = _DeviceArray(data)
 
 _device_convert(a, ::Type{T}) where {T} = eltype(a) === T ? a : T.(a)
 _device_copy(a, ::Type{T}) where {T} = eltype(a) === T ? copy(a) : T.(a)
@@ -221,5 +229,127 @@ _host_endpoints(x) = x
 _host_endpoints(x::_DeviceVector) = _host_endpoints(parent(x))
 _host_endpoints(a::AnyGPUVector) = [_host_element(a, firstindex(a)), _host_element(a, lastindex(a))]
 _host_element(a, i) = only(Array(view(a, i:i)))
+
+# ── ND batch runner ──
+# SoA queries (a tuple of GPU coordinate vectors) and AoS queries (a GPU vector of points:
+# N-tuples or static vectors). As in 1D, the runner takes the call at the entry, checks the
+# NoExtrap axes on the device, and broadcasts the family's scalar ND evaluation.
+_gpu_batch_storage(itp::LinearInterpolantND) = (itp.grids..., itp.data)
+_gpu_batch_storage(itp::AbstractInterpolantND) =
+    throw(ArgumentError("GPU batch evaluation is not supported for $(nameof(typeof(itp))) yet"))
+
+const _GPUPoints = AnyGPUVector{<:Union{Tuple, AbstractVector}}
+const _GPUQueriesND = Union{Tuple{Vararg{AnyGPUVector}}, _GPUPoints}
+
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        queries::Tuple{Vararg{AnyGPUVector, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kwargs...
+    ) where {Tg, Tv, N}
+    _check_gpu_batch(itp)
+    output = similar(first(queries), _promote_eltype(itp, _query_eltype(queries), deriv))
+    return _gpu_eval_nd!(output, itp, queries; deriv, kwargs...)
+end
+
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        queries::_GPUPoints;
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kwargs...
+    ) where {Tg, Tv, N}
+    _check_gpu_batch(itp)
+    output = similar(queries, _promote_eltype(itp, _query_eltype(queries), deriv))
+    return _gpu_eval_nd!(output, itp, queries; deriv, kwargs...)
+end
+
+(itp::AbstractInterpolantND{Tg, Tv, N})(
+    output::AbstractVector, queries::Tuple{Vararg{AnyGPUVector, N}}; kwargs...
+) where {Tg, Tv, N} = _gpu_inplace_nd(itp, output, queries; kwargs...)
+(itp::AbstractInterpolantND{Tg, Tv, N})(
+    output::AbstractVector, queries::_GPUPoints; kwargs...
+) where {Tg, Tv, N} = _gpu_inplace_nd(itp, output, queries; kwargs...)
+
+function _gpu_inplace_nd(itp, output, queries; kwargs...)
+    _check_gpu_batch(itp)
+    FastInterpolations._is_device_storage(output) || _throw_mixed_storage()
+    length(output) == _nd_length(queries) ||
+        throw(DimensionMismatch("output length $(length(output)) must match the number of query points $(_nd_length(queries))"))
+    return _gpu_eval_nd!(output, itp, queries; kwargs...)
+end
+
+_nd_length(q::Tuple) = length(first(q))
+_nd_length(q) = length(q)
+
+function _gpu_eval_nd!(
+        output, itp::AbstractInterpolantND{Tg, Tv, N}, queries;
+        deriv = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
+        search = itp.searches,
+        hint = nothing
+    ) where {Tg, Tv, N}
+    hint === nothing ||
+        throw(ArgumentError("`hint` is not supported for GPU array queries (device threads cannot share a host Ref)"))
+    queries isa Tuple && (
+        all(q -> length(q) == length(first(queries)), queries) ||
+            throw(DimensionMismatch("all coordinate vectors of a SoA query must have the same length"))
+    )
+    _nd_length(queries) == 0 && return output
+    overrides = _gpu_domain_check_nd(itp.grids, queries, _resolve_extrap_override_nd(itp, extrap))
+    f = _DeviceEvalND(itp, deriv, overrides, search)
+    if queries isa Tuple
+        output .= f.(tuple.(queries...))
+    else
+        output .= f.(queries)
+    end
+    return output
+end
+
+# Per-axis call-time overrides for the kernel: `InBounds()` on each NoExtrap axis once the
+# device check passed, `nothing` (stored extrap) elsewhere.
+function _gpu_domain_check_nd(grids::NTuple{N, Any}, queries::Tuple, extraps) where {N}
+    return map(_axis_override, grids, queries, extraps, ntuple(identity, Val(N)))
+end
+_axis_override(_, _, ::AbstractExtrap, _) = nothing
+function _axis_override(g, q, ::NoExtrap, d)
+    mapreduce(v -> _in_domain(g, v), &, q) || _throw_batch_oob(_host_endpoints(g), q, d)
+    return InBounds()
+end
+
+function _gpu_domain_check_nd(grids::NTuple{N, Any}, queries, extraps) where {N}
+    overrides = map(e -> e isa NoExtrap ? InBounds() : nothing, extraps)
+    all(isnothing, overrides) && return overrides
+    mapreduce(q -> _point_in_domain(grids, q, extraps), &, queries) || _throw_point_oob(grids, queries, extraps)
+    return overrides
+end
+
+@inline _point_in_domain(grids::NTuple{N, Any}, q, extraps) where {N} =
+    reduce(&, map((g, e, d) -> _axis_in_domain(g, @inbounds(q[d]), e), grids, extraps, ntuple(identity, Val(N))))
+@inline _axis_in_domain(g, v, ::NoExtrap) = _in_domain(g, v)
+@inline _axis_in_domain(_, _, ::AbstractExtrap) = true
+
+# Failure path only: the first out-of-domain point (CPU order: point-major, then axis) is
+# copied to the host and re-checked by the CPU code, so the error matches the CPU's.
+@noinline function _throw_point_oob(grids::NTuple{N, Any}, queries, extraps) where {N}
+    i = findfirst(q -> !_point_in_domain(grids, q, extraps), queries)
+    q = _host_element(queries, i)
+    map(grids, extraps, ntuple(identity, Val(N))) do g, e, d
+        e isa NoExtrap && _check_domain(_host_endpoints(g), q[d], NoExtrap(), d)
+        nothing
+    end
+    return nothing
+end
+
+struct _DeviceEvalND{N, I, O, E, P}
+    itp::I
+    deriv::O
+    extrap::E
+    search::P
+end
+_DeviceEvalND(itp::AbstractInterpolantND{Tg, Tv, N}, deriv, extrap, search) where {Tg, Tv, N} =
+    _DeviceEvalND{N, typeof(itp), typeof(deriv), typeof(extrap), typeof(search)}(itp, deriv, extrap, search)
+
+@inline (f::_DeviceEvalND{N})(q) where {N} =
+    _eval_nd_scalar_query(f.itp, ntuple(d -> @inbounds(q[d]), Val(N)), f.deriv, f.extrap, f.search, nothing)
+
+Adapt.adapt_structure(to, f::_DeviceEvalND) = _DeviceEvalND(Adapt.adapt(to, f.itp), f.deriv, f.extrap, f.search)
 
 end # module

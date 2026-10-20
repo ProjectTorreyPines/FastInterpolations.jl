@@ -776,22 +776,24 @@ function _show_nd_grids_summary(io::IO, is_last::Bool, grids::Tuple)
         g = grids[d]
         is_last_axis = (d == N)
         axis_prefix = is_last_axis ? "└─ " : "├─ "
-        grid_type = g isa AbstractRange ? "Range" : "Vector"
-        x_min_str = _format_num(first(g))
-        x_max_str = _format_num(last(g))
 
         _show_print(io, tree_prefix, :light_black)
         _show_print(io, axis_prefix, :light_black)
         _show_print(io, "x", :light_black)
         _show_print(io, _subscript_digit(d), :light_black)
         print(io, ": ")
-        _show_print(io, grid_type, :magenta)
-        print(io, " ∈ [$x_min_str, $x_max_str]")
+        _show_axis_detail(io, g)
         if d < N
             println(io)
         end
     end
     return
+end
+
+# One axis of an ND grid summary: kind and bounds.
+function _show_axis_detail(io::IO, g::AbstractVector)
+    _show_print(io, g isa AbstractRange ? "Range" : "Vector", :magenta)
+    return print(io, " ∈ [$(_format_num(first(g))), $(_format_num(last(g)))]")
 end
 
 """Convert digit to Unicode subscript for axis labels (x₁, x₂, etc.)."""

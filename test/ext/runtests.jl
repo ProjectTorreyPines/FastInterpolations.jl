@@ -16,14 +16,15 @@
 # which dissolves the Enzyme-before-CRC ordering constraint between chunks):
 #   enzyme → only the Enzyme tests (the dominant cost: ~36 min on Julia 1.12)
 #   rest   → everything else (never loads Enzyme)
+#   gpu    → only the GPU storage tests (also part of `rest`; for scoped local runs)
 #   unset  → full suite in the documented order (local runs and CI.yml unchanged)
 
 using Test
 using FastInterpolations
 
 const EXT_CHUNK = get(ENV, "EXT_TEST_CHUNK", "all")
-EXT_CHUNK in ("all", "enzyme", "rest") ||
-    error("EXT_TEST_CHUNK=$(repr(EXT_CHUNK)) — expected \"enzyme\", \"rest\", or unset (full suite)")
+EXT_CHUNK in ("all", "enzyme", "rest", "gpu") ||
+    error("EXT_TEST_CHUNK=$(repr(EXT_CHUNK)) — expected \"enzyme\", \"rest\", \"gpu\", or unset (full suite)")
 
 # Shared constants (mirrored from top-level runtests.jl)
 const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
@@ -49,4 +50,8 @@ if EXT_CHUNK in ("all", "rest")
     include("test_hermite_rrule.jl")
     include("test_symbolics.jl")
     include("test_recipes.jl")
+end
+# Last: loads the GPUArrays stack (JLArrays) into the process.
+if EXT_CHUNK in ("all", "rest", "gpu")
+    include("test_gpu_linear1d.jl")
 end

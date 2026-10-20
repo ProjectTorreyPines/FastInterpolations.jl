@@ -85,6 +85,14 @@ struct LinearInterpolant{
         yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
+
+    # Raw: fields stored as-is (already normalized by a previous construction) —
+    # the Adapt extension's rebuild around moved arrays.
+    function LinearInterpolant(
+            ::_RawFields, x::AbstractVector, y::AbstractVector, ev::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        return new{eltype(x), eltype(y), typeof(x), typeof(y), E, P}(x, y, ev, search)
+    end
 end
 
 # Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`

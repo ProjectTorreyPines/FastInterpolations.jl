@@ -132,6 +132,16 @@ end
             @test gpu_close(iitp(MtlArray(q_oob)), linear_interp(x, Int32.(1:length(x)); extrap = ClampExtrap())(q_oob), T(length(x)))
         end
 
+        @testset "$gname: one-shot on device data ($ename)" for (ename, e, qk) in (gpu_extraps(T)..., ("NoExtrap", NoExtrap(), :in))
+            q = qk === :in ? q_in : q_oob
+            xd = gname == "Range" ? x : MtlArray(collect(x))
+            ref = linear_interp(x, y, q; extrap = e)
+            @test gpu_close(linear_interp(xd, MtlArray(y), MtlArray(q); extrap = e), ref, ymax)
+            out = MtlArray(similar(q))
+            @test linear_interp!(out, xd, MtlArray(y), MtlArray(q); extrap = e) === out
+            @test gpu_close(out, ref, ymax)
+        end
+
         @testset "$gname: stored hint-carrying policy compiles ($(nameof(typeof(s))))" for s in (LinearBinarySearch(), LinearSearch())
             itp_s = linear_interp(x, y; extrap = ClampExtrap(), search = s)
             @test gpu_close(adapt(MtlArray, itp_s).(MtlArray(q_oob)), itp_s.(q_oob), ymax)

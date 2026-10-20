@@ -25,7 +25,7 @@ using FastInterpolations
 using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtrap,
     AbstractSearchPolicy, DerivOp, EvalValue, _DeviceArray, _DeviceVector, _itp_grid,
     _itp_extrap, _itp_search, _itp_eval_scalar, _resolve_extrap_override, _promote_eltype,
-    _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob, NoBC,
+    _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob, NoBC, AbstractBC,
     StorePolicy
 import Adapt
 using GPUArrays: AbstractGPUVector, AnyGPUArray, AnyGPUVector
@@ -130,6 +130,42 @@ end
 (itp::AbstractInterpolant1D{Tg, Tv})(
     output::AnyGPUVector, xq::AbstractGPUVector{Tq}; kwargs...
 ) where {Tg, Tv, Tq <: Number} = _gpu_inplace(itp, output, xq; kwargs...)
+
+# ── One-shot ──
+# On a device a linear one-shot call is a build that aliases its inputs (no copy, no spacing
+# caches: nothing is precomputed) followed by the batch runner above — the same device
+# paths at no extra cost. Host data with GPU queries is rejected by the runner's admission.
+function FastInterpolations.linear_interp(
+        x::AbstractVector,
+        y::AbstractVector,
+        xq::AnyGPUVector{Tq};
+        bc::AbstractBC = NoBC(),
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tq <: Number}
+    return _oneshot_itp(x, y, bc, extrap, search)(xq; deriv, hint)
+end
+
+function FastInterpolations.linear_interp!(
+        output::AbstractVector,
+        x::AbstractVector,
+        y::AbstractVector,
+        xq::AnyGPUVector{Tq};
+        bc::AbstractBC = NoBC(),
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tq <: Number}
+    return _oneshot_itp(x, y, bc, extrap, search)(output, xq; deriv, hint)
+end
+
+function _oneshot_itp(x, y, bc, extrap, search)
+    bc isa NoBC || throw(ArgumentError("boundary condition $(bc) is not supported for GPU array queries yet"))
+    return linear_interp(x, y; extrap, search, store = StorePolicy(copy = false))
+end
 
 function _gpu_eval!(output, itp, xq, deriv, extrap, search, hint)
     hint === nothing ||

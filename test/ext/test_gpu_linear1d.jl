@@ -217,6 +217,49 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         @test gpu_close(uitp(JLArray(q_oob)), ref(q_oob), ymax)
     end
 
+    # One-shot calls on device data: the same device paths as a persistent build.
+    @testset "$T $gname: one-shot ($ename)" for T in (Float32, Float64), (gname, x) in gpu_grids(T, 33),
+            (ename, e, qk) in (gpu_extraps(T)..., ("NoExtrap", NoExtrap(), :in))
+        y = gpu_fy.(x)
+        ymax = maximum(abs, y)
+        q_in, q_oob = gpu_queries(T, 257)
+        q = qk === :in ? q_in : q_oob
+        xd = gname == "Range" ? x : JLArray(collect(x))
+        yd, qd = JLArray(y), JLArray(q)
+        res = linear_interp(xd, yd, qd; extrap = e)
+        @test res isa JLArray{T}
+        @test gpu_close(res, linear_interp(x, y, q; extrap = e), ymax)
+        out = similar(qd)
+        @test linear_interp!(out, xd, yd, qd; extrap = e) === out
+        @test gpu_close(out, linear_interp(x, y, q; extrap = e), ymax)
+        dcpu = linear_interp(x, y, q; extrap = e, deriv = DerivOp(1))
+        @test gpu_close(linear_interp(xd, yd, qd; extrap = e, deriv = DerivOp(1)), dcpu, maximum(abs, filter(!isnan, dcpu)))
+    end
+
+    @testset "one-shot planning and admission" begin
+        x = collect(range(0.0f0, 1.0f0; length = 33))
+        y = gpu_fy.(x)
+        q_in, q_oob = gpu_queries(Float32, 64)
+        xd, yd = JLArray(x), JLArray(y)
+        cpu_err = try
+            linear_interp(x, y, q_oob)
+        catch err
+            err
+        end
+        gpu_err = try
+            linear_interp(xd, yd, JLArray(q_oob))
+        catch err
+            err
+        end
+        @test gpu_err isa DomainError
+        @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
+        @test_throws ArgumentError linear_interp(x, y, JLArray(q_in))                 # data on the host
+        @test_throws ArgumentError linear_interp!(zeros(Float32, 64), xd, yd, JLArray(q_in))  # host output
+        @test_throws ArgumentError linear_interp(xd, yd, JLArray(q_in); bc = PeriodicBC())   # not supported yet
+        v = view(JLArray(q_oob), 1:2:64)
+        @test gpu_close(linear_interp(xd, yd, v; extrap = ClampExtrap()), linear_interp(x, y, q_oob[1:2:end]; extrap = ClampExtrap()), 2.0f0)
+    end
+
     @testset "integer device data is promoted on the device" begin
         x = JLArray(collect(range(0.0f0, 1.0f0; length = 9)))
         y = JLArray(Int32.(0:8))

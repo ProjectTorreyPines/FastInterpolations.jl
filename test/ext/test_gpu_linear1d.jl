@@ -260,6 +260,47 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         @test gpu_close(linear_interp(xd, yd, v; extrap = ClampExtrap()), linear_interp(x, y, q_oob[1:2:end]; extrap = ClampExtrap()), 2.0f0)
     end
 
+    # Periodic boundary conditions: queries span several periods (WrapExtrap in the kernel).
+    @testset "$T periodic $(bname) ($gname)" for T in (Float32, Float64), (gname, x) in gpu_grids(T, 33),
+            bname in ("inclusive", "exclusive")
+        q = T(3.6) .* gpu_queries(T, 257)[1] .- T(1.3)
+        if bname == "inclusive"
+            xs, ys, bc = x, sin.(2 * T(π) .* x), PeriodicBC()
+        else
+            xs, ys, bc = x[1:(end - 1)], sin.(2 * T(π) .* x[1:(end - 1)]), PeriodicBC(endpoint = :exclusive, period = one(T))
+        end
+        ref = linear_interp(xs, ys; bc)
+        cpu = ref(q)
+        @test gpu_close(adapt(JLArray, ref)(JLArray(q)), cpu, one(T))              # moved CPU build
+        @test gpu_close(adapt(JLArray, ref).(JLArray(q)), cpu, one(T))
+        xd = gname == "Range" ? xs : JLArray(collect(xs))
+        bitp = linear_interp(xd, JLArray(ys); bc)                                 # built from device data
+        @test typeof(bitp) === typeof(adapt(JLArray, ref))
+        @test gpu_close(bitp(JLArray(q)), cpu, one(T))
+        @test gpu_close(bitp(JLArray(q); deriv = DerivOp(1)), ref(q; deriv = DerivOp(1)), 8 * one(T))
+        @test gpu_close(linear_interp(xd, JLArray(ys), JLArray(q); bc), linear_interp(xs, ys, q; bc), one(T))  # one-shot
+    end
+
+    @testset "periodic construction checks on device data" begin
+        x = collect(range(0.0f0, 1.0f0; length = 17))
+        bad = sin.(2.0f0 * Float32(π) .* x) .+ x                                  # y[end] ≠ y[1]
+        cpu_err = try
+            linear_interp(x, bad; bc = PeriodicBC())
+        catch err
+            err
+        end
+        gpu_err = try
+            linear_interp(JLArray(x), JLArray(bad); bc = PeriodicBC())
+        catch err
+            err
+        end
+        @test gpu_err isa ArgumentError
+        @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
+        @test linear_interp(JLArray(x), JLArray(bad); bc = PeriodicBC(check = false)).y isa FI._DeviceVector
+        # a non-uniform exclusive grid needs an explicit period, as on the CPU
+        @test_throws ArgumentError linear_interp(JLArray(x[1:(end - 1)]), JLArray(bad[1:(end - 1)]); bc = PeriodicBC(endpoint = :exclusive))
+    end
+
     @testset "integer device data is promoted on the device" begin
         x = JLArray(collect(range(0.0f0, 1.0f0; length = 9)))
         y = JLArray(Int32.(0:8))

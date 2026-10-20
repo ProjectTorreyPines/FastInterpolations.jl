@@ -142,6 +142,23 @@ end
             @test gpu_close(out, ref, ymax)
         end
 
+        # Periodic: WrapExtrap compiles in kernels; device data is prepared on the device.
+        @testset "$gname: periodic $bname" for bname in ("inclusive", "exclusive")
+            qp = T(3.6) .* q_in .- T(1.3)
+            if bname == "inclusive"
+                xs, ys, bc = x, sin.(2 * T(π) .* x), PeriodicBC()
+            else
+                xs, ys, bc = x[1:(end - 1)], sin.(2 * T(π) .* x[1:(end - 1)]), PeriodicBC(endpoint = :exclusive, period = one(T))
+            end
+            ref = linear_interp(xs, ys; bc)
+            cpu = ref(qp)
+            @test gpu_close(adapt(MtlArray, ref)(MtlArray(qp)), cpu, one(T))
+            @test gpu_close(adapt(MtlArray, ref).(MtlArray(qp)), cpu, one(T))
+            xd = gname == "Range" ? xs : MtlArray(collect(xs))
+            @test gpu_close(linear_interp(xd, MtlArray(ys); bc)(MtlArray(qp)), cpu, one(T))
+            @test gpu_close(linear_interp(xd, MtlArray(ys), MtlArray(qp); bc), linear_interp(xs, ys, qp; bc), one(T))
+        end
+
         @testset "$gname: stored hint-carrying policy compiles ($(nameof(typeof(s))))" for s in (LinearBinarySearch(), LinearSearch())
             itp_s = linear_interp(x, y; extrap = ClampExtrap(), search = s)
             @test gpu_close(adapt(MtlArray, itp_s).(MtlArray(q_oob)), itp_s.(q_oob), ymax)

@@ -64,9 +64,14 @@ _is_device_storage(::Any) = false
 # passes it through whether or not axis caching is requested (a device grid keeps no
 # spacing caches), converting its eltype on the device when the promoted grid type differs;
 # ownership copies stay on the device.
-@inline _policy_axis(x::_DeviceVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, true}) where {Tg, CG, CV} =
+#
+# Boundary conditions whose stored grid is a plain grid (exclusive periodic data is extended
+# to `:extended` before the grid is normalized); the GPU seams accept exactly these.
+const _PlainAxisBC = Union{NoBC, PeriodicBC{:inclusive}, PeriodicBC{:extended}}
+
+@inline _policy_axis(x::_DeviceVector, ::_PlainAxisBC, ::Type{Tg}, ::StorePolicy{CG, CV, true}) where {Tg, CG, CV} =
     _device_eltype(x, Tg)
-@inline _policy_axis(x::_DeviceVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
+@inline _policy_axis(x::_DeviceVector, ::_PlainAxisBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
     _device_eltype(x, Tg)
 @inline _device_eltype(x::_DeviceVector{T}, ::Type{T}) where {T} = x
 @inline _device_eltype(x::_DeviceVector, ::Type{T}) where {T} = _DeviceArray(T.(parent(x)))

@@ -26,7 +26,8 @@ using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtr
     AbstractSearchPolicy, DerivOp, EvalValue, _DeviceArray, _DeviceVector, _itp_grid,
     _itp_extrap, _itp_search, _itp_eval_scalar, _resolve_extrap_override, _promote_eltype,
     _resolve_search, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob, NoBC, AbstractBC,
-    StorePolicy
+    StorePolicy, PeriodicBC, periodic_check, _PlainAxisBC, _resolve_exclusive_period,
+    _throw_excl_endpoint_too_small
 import Adapt
 using GPUArrays: AbstractGPUVector, AnyGPUArray, AnyGPUVector
 
@@ -36,10 +37,10 @@ FastInterpolations._is_device_storage(::AnyGPUArray) = true
 # Device inputs reach the shared normalization seams; these keep them on the device as
 # `_DeviceArray` leaves — eltype conversion broadcast on the device, ownership per
 # StorePolicy (copy by default, alias with `copy = false`), never a host `Vector`. A uniform
-# grid still becomes a `_CachedRange`; periodic boundary conditions are not supported yet.
-FastInterpolations._policy_axis(x::AnyGPUVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, true}) where {Tg, CG, CV} =
+# grid still becomes a `_CachedRange`.
+FastInterpolations._policy_axis(x::AnyGPUVector, ::_PlainAxisBC, ::Type{Tg}, ::StorePolicy{CG, CV, true}) where {Tg, CG, CV} =
     _DeviceArray(_device_convert(x, Tg))
-FastInterpolations._policy_axis(x::AnyGPUVector, ::NoBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
+FastInterpolations._policy_axis(x::AnyGPUVector, ::_PlainAxisBC, ::Type{Tg}, ::StorePolicy{CG, CV, false}) where {Tg, CG, CV} =
     _DeviceArray(_device_convert(x, Tg))
 
 FastInterpolations._own_or_ref_values(y::AnyGPUVector, ::Type{Tv}, ::StorePolicy{CG, true, CA}) where {Tv, CG, CA} =
@@ -51,6 +52,26 @@ FastInterpolations._own_or_ref_values(y::AnyGPUVector, ::Type{Tv}, ::StorePolicy
 
 _device_convert(a, ::Type{T}) where {T} = eltype(a) === T ? a : T.(a)
 _device_copy(a, ::Type{T}) where {T} = eltype(a) === T ? copy(a) : T.(a)
+
+# Periodic preparation on device data, before the grid is normalized. Inclusive: the
+# endpoint-match check reads two values (one transfer at construction). Exclusive: the data
+# gains its seam value by a device copy of `y[1]`; a GPU grid gains `x[1] + period` from its
+# two endpoints, read once.
+function FastInterpolations._check_periodic_endpoints(bc::PeriodicBC{:inclusive}, y::AnyGPUVector)
+    periodic_check(bc) || return nothing
+    FastInterpolations._check_periodic_endpoints(_host_endpoints(y))
+    return nothing
+end
+
+FastInterpolations._extend_values(y::AnyGPUVector) = vcat(y, view(y, firstindex(y):firstindex(y)))
+
+function FastInterpolations._extend_exclusive(x::AnyGPUVector, y::AbstractVector, bc::PeriodicBC)
+    period = _resolve_exclusive_period(x, bc)
+    x1, xn = _host_endpoints(x)
+    x_end = x1 + eltype(x)(period)
+    xn < x_end || _throw_excl_endpoint_too_small(period, x_end, xn)
+    return vcat(x, fill!(similar(x, 1), x_end)), FastInterpolations._extend_values(y)
+end
 
 # ── Admission ──
 # Admitted families list the arrays their evaluation reads; any other family is rejected
@@ -162,10 +183,7 @@ function FastInterpolations.linear_interp!(
     return _oneshot_itp(x, y, bc, extrap, search)(output, xq; deriv, hint)
 end
 
-function _oneshot_itp(x, y, bc, extrap, search)
-    bc isa NoBC || throw(ArgumentError("boundary condition $(bc) is not supported for GPU array queries yet"))
-    return linear_interp(x, y; extrap, search, store = StorePolicy(copy = false))
-end
+_oneshot_itp(x, y, bc, extrap, search) = linear_interp(x, y; bc, extrap, search, store = StorePolicy(copy = false))
 
 function _gpu_eval!(output, itp, xq, deriv, extrap, search, hint)
     hint === nothing ||
@@ -200,7 +218,8 @@ end
 # grid's two endpoints; the query extremes are device reductions.
 @noinline _throw_gpu_batch_oob(x, xq) = _throw_batch_oob(_host_endpoints(x), xq)
 _host_endpoints(x) = x
-_host_endpoints(x::_DeviceVector) = [_host_element(parent(x), firstindex(x)), _host_element(parent(x), lastindex(x))]
+_host_endpoints(x::_DeviceVector) = _host_endpoints(parent(x))
+_host_endpoints(a::AnyGPUVector) = [_host_element(a, firstindex(a)), _host_element(a, lastindex(a))]
 _host_element(a, i) = only(Array(view(a, i:i)))
 
 end # module

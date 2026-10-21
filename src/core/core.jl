@@ -15,7 +15,7 @@ include("axis_indices.jl")     # 6a. Compact/explicit fixed-size per-axis indice
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("store_policy.jl")     # 7b. StorePolicy (copy vs reference storage) + own/ref helpers
-include("device_support.jl")   # 7c. _RawFields sentinel + _DeviceArray (device storage leaf for the GPU extensions)
+include("device_support.jl")   # 7c. _DeviceArray (device storage leaf for the GPU extensions) + its seam methods
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
 include("periodic_axis.jl")    # 8b. _ExclusivePeriodicAxis wrapper (axis-side representation transform for `:exclusive` BC on Vector grids)
 include("periodic_data.jl")    # 8c. _ExclusivePeriodicData wrapper (data-side cyclic-indexing companion)

@@ -2,7 +2,8 @@
 # extension test (test/ext/test_gpu_linear_nd.jl, CI) and the local Metal test
 # (test/gpu/metal_linear_nd.jl). Deterministic data, no Random dependency.
 
-include(joinpath(@__DIR__, "linear1d_cases.jl"))     # gpu_close, gpu_fy
+# gpu_close, gpu_fy; the ext runner has already included it for the 1D file.
+isdefined(@__MODULE__, :gpu_close) || include(joinpath(@__DIR__, "linear1d_cases.jl"))
 
 # 2D and 3D grids mixing uniform (→ `_CachedRange`) and non-uniform (→ device vector) axes.
 nonuniform(::Type{T}, n) where {T} = T[(T(i - 1) / T(n - 1))^T(1.5) for i in 1:n]

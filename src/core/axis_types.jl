@@ -20,6 +20,16 @@
 #                                            → cached_vector.jl
 #                                            → ... → periodic_axis.jl
 
+"""
+    _RawFields
+
+Sentinel selecting a raw inner constructor: fields are stored as given, already normalized
+or validated by an earlier construction. Rebuilds a type around moved arrays (Adapt) or
+around device storage, where the normalizing constructor would copy, normalize or read
+elements on the host.
+"""
+struct _RawFields end
+
 # ─────────────────────────────────────────────────────────────────────────────
 # _CachedRange — normalized AbstractRange
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,16 +58,6 @@ normalized to `_CachedRange` via `_to_float` at public API boundaries.
 # `lo ≡ 1` (`first` returns a literal → `lo == 1` tests constant-fold). `_WidenedDomain`
 # lets `_domain_bounds` read the widened x86_64 bracket instead of `lo`/`hi`. Every
 # other call site dispatches on `::_CachedRange{T,Tinv}`, which matches all tags.
-"""
-    _RawFields
-
-Sentinel selecting a raw inner constructor: fields are stored as given, already normalized
-or validated by an earlier construction. Rebuilds a type around moved arrays (Adapt) or
-around device storage, where the normalizing constructor would copy, normalize or read
-elements on the host.
-"""
-struct _RawFields end
-
 abstract type _AbstractAxisTag end
 struct _Generic <: _AbstractAxisTag end       # default: step is a runtime field
 abstract type _AbstractUnitStep <: _AbstractAxisTag end

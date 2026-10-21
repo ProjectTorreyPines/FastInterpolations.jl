@@ -15,8 +15,9 @@
 # and the batch loop. Planning reads no query and keeps the CPU batch contracts (call-time
 # extrap override, NoExtrap throws before any output is written), while the work runs on
 # the device: the NoExtrap domain check is one reduction whose bounds are computed in the
-# kernel, and the loop is one broadcast of the family's point evaluation. Families are
-# admitted one by one, once their point evaluation is verified to compile in GPU kernels.
+# kernel, and the loop is one broadcast of the family's point evaluation. A family is
+# admitted by declaring its storage (`_storage` / `_rebuild`), once its point evaluation is
+# verified to compile in GPU kernels.
 
 module FastInterpolationsGPUArraysExt
 
@@ -24,10 +25,10 @@ using FastInterpolations
 using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtrap,
     _DeviceArray, _DeviceVector, _itp_grid, _itp_eval_scalar, _domain_bounds, _extract_primal, _ge, _le, _throw_batch_oob,
     StorePolicy, PeriodicBC, periodic_check, _PlainAxisBC, _resolve_exclusive_period,
-    _throw_excl_endpoint_too_small, AbstractInterpolantND, LinearInterpolantND,
+    _throw_excl_endpoint_too_small, AbstractInterpolantND,
     _eval_nd_scalar_query, _check_domain, _query_validate, _query_length,
     _ExclusivePeriodicAxis, _ExclusivePeriodicData, _RawFields, _resolve_bc_period,
-    _throw_excl_axis_period_too_small, _linear_eval_at_point, Searcher, NoHint, RefHint,
+    _throw_excl_axis_period_too_small, _storage, _device_eltype, Searcher, NoHint, RefHint,
     AbstractEvalOp
 import Adapt
 using GPUArrays: AnyGPUArray, AnyGPUVector
@@ -82,25 +83,24 @@ function FastInterpolations._extend_exclusive(x::AnyGPUVector, y::AbstractVector
 end
 
 # ── Admission ──
-# Admitted families list the arrays their evaluation reads; any other family is rejected
-# at its loop seam, before any query is read or any kernel launched.
-_gpu_batch_storage(itp::LinearInterpolant) = (itp.x, itp.y)
-_gpu_batch_storage(itp::LinearInterpolantND) = (itp.grids..., itp.data)
-_gpu_batch_storage(itp::Union{AbstractInterpolant1D, AbstractInterpolantND}) =
+# A family that declares its storage is admitted; the grids and values its evaluation reads
+# must be on the device. Any other family is rejected at its loop seam, before any query is
+# read or any kernel launched.
+_check_gpu_batch(itp) = _check_gpu_storage(itp, _storage(itp))
+_check_gpu_storage(itp, ::Nothing) =
     throw(ArgumentError("GPU batch evaluation is not supported for $(nameof(typeof(itp))) yet"))
-
-# Usable inside a kernel: device storage, or plain isbits data (e.g. `_CachedRange`).
-_on_device(a) = a isa _DeviceArray || FastInterpolations._is_device_storage(a) || isbits(a)
-_on_device(g::Union{_ExclusivePeriodicAxis, _ExclusivePeriodicData}) = _on_device(g.inner)
-
-function _check_gpu_batch(itp)
-    all(_on_device, _gpu_batch_storage(itp)) || throw(
+function _check_gpu_storage(_, s::NamedTuple)
+    (all(_on_device, s.grids) && all(_on_device, s.values)) || throw(
         ArgumentError(
-            "the interpolant's data is on the host; move it to the device first, e.g. `adapt(CuArray, itp)`"
+            "GPU batch evaluation needs the grid and the data on the device: build from device arrays, or move the interpolant first, e.g. `adapt(CuArray, itp)`"
         )
     )
     return nothing
 end
+
+# Usable inside a kernel: device storage, or plain isbits data (e.g. `_CachedRange`).
+_on_device(a) = FastInterpolations._is_device_storage(a) || isbits(a)
+_on_device(g::Union{_ExclusivePeriodicAxis, _ExclusivePeriodicData}) = _on_device(g.inner)
 
 @noinline _throw_mixed_storage() =
     throw(ArgumentError("GPU batch evaluation needs both the output and the queries on the device"))
@@ -156,8 +156,8 @@ Adapt.adapt_structure(to, f::_DeviceEval{S}) where {S} = _DeviceEval{S}(Adapt.ad
 # ── One-shot ──
 # One-shot calls on GPU queries take the core one-shot route (`linear_interp` /
 # `linear_interp!` are the core methods): the storage leaves and the planning/execution
-# seams below it are the only GPU methods. No interpolant is built and nothing is copied
-# unless an eltype conversion asks for it.
+# seams below it are the only GPU methods. Nothing is copied unless an eltype conversion
+# asks for it.
 FastInterpolations._resolve_axis(x::AnyGPUVector, ::_PlainAxisBC, ::Type{Tg}) where {Tg} = _DeviceArray(_device_convert(x, Tg))
 
 # `:exclusive`: the shared lazy wrapper around a device leaf; its seam point `x[1] + period`
@@ -166,7 +166,7 @@ function FastInterpolations._resolve_axis(x::AnyGPUVector, bc::PeriodicBC{:exclu
     inner = _DeviceArray(_device_convert(x, Tg))
     period = _resolve_bc_period(inner, bc).period
     Te = promote_type(Tg, typeof(period))
-    inner_e = Te === Tg ? inner : _DeviceArray(Te.(parent(inner)))
+    inner_e = _device_eltype(inner, Te)
     x1, xn = _host_endpoints(inner_e)
     x_max = x1 + Te(period)
     xn < x_max || _throw_excl_axis_period_too_small(period, x_max, xn)
@@ -184,38 +184,16 @@ FastInterpolations._resolve_data(y::AnyGPUArray, ::PeriodicBC{:exclusive}) = _Ex
 FastInterpolations._check_periodic_endpoints(bc::PeriodicBC{:inclusive}, y::_DeviceVector) =
     FastInterpolations._check_periodic_endpoints(bc, parent(y))
 
-@noinline _throw_host_oneshot() =
-    throw(ArgumentError("one-shot GPU queries need the grid and the data on the device too"))
+# The resolved storage, held by the raw interpolant (nothing is copied or checked), runs
+# the persistent batch loop: one-shot and persistent calls share the GPU evaluation.
+FastInterpolations._linear_interp_loop!(
+    output::AbstractArray, x::AbstractVector, y::AbstractVector, x_targets::AnyGPUArray,
+    extrap::AbstractExtrap, op::AbstractEvalOp, searcher::Searcher
+) = _gpu_batch_loop!(output, LinearInterpolant(_RawFields(), x, y, extrap, _policy(searcher)), x_targets, extrap, op, searcher)
+@inline _policy(::Searcher{P}) where {P} = P()      # search policies are singletons
 
-function FastInterpolations._linear_interp_loop!(
-        output::AbstractArray,
-        x::AbstractVector,
-        y::AbstractVector,
-        x_targets::AnyGPUArray,
-        extrap::AbstractExtrap,
-        op::AbstractEvalOp,
-        searcher::Searcher
-    )
-    (_on_device(x) && _on_device(y)) || _throw_host_oneshot()
-    FastInterpolations._is_device_storage(output) || _throw_mixed_storage()
-    isempty(x_targets) && return output
-    extrap_eff = _gpu_domain_check(x, x_targets, extrap)
-    output .= _OneShotEval{typeof(searcher)}(x, y, extrap_eff, op).(x_targets)
-    return output
-end
-
-# The CPU one-shot point evaluation, per thread. A searcher carries no shared state across
-# threads: each one starts fresh (a hint-carrying policy keeps a thread-local hint).
-struct _OneShotEval{S, X, Y, E, O}
-    x::X
-    y::Y
-    extrap::E
-    op::O
-end
-_OneShotEval{S}(x, y, extrap, op) where {S} = _OneShotEval{S, typeof(x), typeof(y), typeof(extrap), typeof(op)}(x, y, extrap, op)
-@inline (f::_OneShotEval{S})(q) where {S} = _linear_eval_at_point(f.x, f.y, q, f.extrap, f.op, _fresh_searcher(S))
-Adapt.adapt_structure(to, f::_OneShotEval{S}) where {S} = _OneShotEval{S}(Adapt.adapt(to, f.x), Adapt.adapt(to, f.y), f.extrap, f.op)
-
+# A searcher carries no shared state across threads: each one starts fresh (a hint-carrying
+# policy keeps a thread-local hint).
 @inline _fresh_searcher(::Type{Searcher{P, NoHint}}) where {P} = Searcher{P, NoHint}(NoHint())
 @inline _fresh_searcher(::Type{Searcher{P, RefHint}}) where {P} = Searcher{P, RefHint}(RefHint())
 

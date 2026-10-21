@@ -27,13 +27,13 @@ x = range(0.0f0, 1.0f0; length = 1001)
 y = sinpi.(2 .* x)
 
 itp  = linear_interp(x, y; extrap = ClampExtrap())
-ditp = cu(itp)                        # CUDA's converter (Float64 data becomes Float32)
+ditp = cu(itp)                        # CUDA's converter (Float64 becomes Float32)
 # or: using Adapt; ditp = adapt(CuArray, itp)  (keeps the precision)
 
 ditp2 = linear_interp(x, CuArray(y); extrap = ClampExtrap())   # built from device data
 ```
 
-A uniform grid (any `AbstractRange`) stays a few scalars and travels by value; a non-uniform grid and the data live in device memory. Building from device arrays never reads them on the host, and `adapt(Array, ditp)` brings an interpolant back.
+A uniform grid (any `AbstractRange`) stays a few scalars and travels by value; a non-uniform grid and the data live in device memory. A converter that changes precision (`cu`, `mtl`) converts a uniform grid as it would a vector grid, along with the data and the fill value. Building from device arrays moves no data to the host (a periodic boundary condition reads the two endpoint values once), and `adapt(Array, ditp)` brings an interpolant back.
 
 ## Evaluating
 

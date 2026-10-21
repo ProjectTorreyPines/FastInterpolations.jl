@@ -89,7 +89,7 @@ Device arrays hold any isbits element, and the same evaluation code compiles for
 - queries: real numbers, Unitful quantities, ForwardDiff duals;
 - grids: real numbers or Unitful quantities.
 
-Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all).
+Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all). The converters differ for static vectors: `mtl` converts `SVector{N, Float64}` elements to `Float32`, `cu` leaves them as they are; for `Float32` on CUDA, build the data as `SVector{N, Float32}`. A uniform grid converts as the converter converts a vector grid.
 
 ## Performance notes
 
@@ -104,3 +104,15 @@ Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all).
 - `integrate`, `Series` interpolants, `GriddedQuery`, ND one-shot calls, ND periodic boundary conditions.
 - `hessian` inside kernels (it returns a heap `Matrix`), and search hints (`hint = Ref(…)`).
 - Calling a device interpolant with host queries (`ditp(0.5)`, `ditp(xq_cpu)`).
+
+## Testing on your GPU
+
+CI has no GPU: it checks the GPU logic with JLArrays, which runs kernels on the CPU. The real-GPU tests (kernel compilation, device numerics, evaluation inside user kernels) are written against KernelAbstractions' backend interface and run on any supported device on request. Name the backend with `FI_GPU_BACKEND`: `cuda`, `metal`, `amdgpu` or `oneapi`.
+
+```bash
+FI_GPU_BACKEND=cuda julia --project -e 'using Pkg; Pkg.test(test_args = ["gpu/runtests.jl"])'
+# or, from a checkout:
+FI_GPU_BACKEND=cuda julia test/gpu/runtests.jl
+```
+
+The tests run in a fresh temporary environment that adds the backend package, so nothing needs to be installed first. `Float64` runs where the device supports it.

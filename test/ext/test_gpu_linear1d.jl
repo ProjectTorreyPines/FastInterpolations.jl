@@ -3,8 +3,8 @@
 # ========================================
 # JLArrays is a CPU-backed GPUArrays emulator: it checks the device storage leaf
 # (`_DeviceArray`), the Adapt rebuild contracts and the absence of host scalar indexing,
-# but runs kernels as plain Julia, so GPU *compilation* is covered by the local Metal test
-# test/gpu/metal_linear1d.jl.
+# but runs kernels as plain Julia, so GPU *compilation* is covered by the real-GPU tests in
+# test/gpu (any backend, opt-in).
 
 using Test
 using FastInterpolations

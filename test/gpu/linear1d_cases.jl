@@ -1,6 +1,6 @@
 # Shared case builder for the GPU `LinearInterpolant` tests: included by the JLArrays
-# extension test (test/ext/test_gpu_linear1d.jl, CI) and the local Metal test
-# (test/gpu/metal_linear1d.jl). Deterministic data, no Random dependency.
+# extension test (test/ext/test_gpu_linear1d.jl, CI) and the real-GPU test
+# (test/gpu/linear1d.jl). Deterministic data, no Random dependency.
 
 gpu_fy(x) = sin(2 * oftype(x, π) * x) + x
 

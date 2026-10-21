@@ -3,7 +3,7 @@
 # ========================================
 # Same contracts as the 1D file (device leaves, Adapt rebuilds, batch runner, GPU-native
 # construction) for tensor-product linear ND, with SoA (tuple of vectors) and AoS (vector of
-# points) GPU queries. Real kernel compilation: test/gpu/metal_linear_nd.jl.
+# points) GPU queries. Real kernel compilation: test/gpu (opt-in).
 
 using Test
 using FastInterpolations

@@ -1,6 +1,6 @@
 # Shared case builder for the GPU `LinearInterpolantND` tests: included by the JLArrays
-# extension test (test/ext/test_gpu_linear_nd.jl, CI) and the local Metal test
-# (test/gpu/metal_linear_nd.jl). Deterministic data, no Random dependency.
+# extension test (test/ext/test_gpu_linear_nd.jl, CI) and the real-GPU test
+# (test/gpu/linear_nd.jl). Deterministic data, no Random dependency.
 
 # gpu_close, gpu_fy; the ext runner has already included it for the 1D file.
 isdefined(@__MODULE__, :gpu_close) || include(joinpath(@__DIR__, "linear1d_cases.jl"))

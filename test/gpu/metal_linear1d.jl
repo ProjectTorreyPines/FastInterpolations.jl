@@ -8,7 +8,7 @@
 
 using Test
 using FastInterpolations
-using Adapt, GPUArrays, Metal
+using Adapt, GPUArrays, Metal, ForwardDiff, StaticArrays, Unitful
 const FI = FastInterpolations
 
 include(joinpath(@__DIR__, "linear1d_cases.jl"))
@@ -52,6 +52,30 @@ end
         @test gpu_close(rm, itp(qm), 2.0f0)
         dm = itp(qm; deriv = DerivOp(1))
         @test gpu_close(ditp(MtlArray(qm); deriv = DerivOp(1)), dm, maximum(abs, dm))
+    end
+
+    # Any isbits element compiles: the same evaluation code, specialized per element type.
+    @testset "element types: SVector / Complex values, Dual / Unitful queries" begin
+        x = range(zero(T), one(T); length = 65)
+        q = gpu_queries(T, 4097)[2]
+        for y in ([SVector(sin(3t), cos(2t)) for t in x], [cis(3t) for t in x])
+            itp = linear_interp(x, y; extrap = ClampExtrap())
+            ditp = adapt(MtlArray, itp)
+            @test Array(ditp(MtlArray(q))) ≈ itp.(q)
+            @test Array(ditp.(MtlArray(q))) ≈ itp.(q)
+            @test Array(ditp(MtlArray(q); deriv = DerivOp(1))) ≈ deriv1(itp).(q)
+        end
+        itp = linear_interp(x, gpu_fy.(x); extrap = ClampExtrap())
+        r = Array(adapt(MtlArray, itp)(MtlArray(ForwardDiff.Dual.(q, one(T)))))
+        @test ForwardDiff.value.(r) ≈ itp.(q)
+        @test ForwardDiff.partials.(r, 1) ≈ deriv1(itp).(q)
+        xu, yu, qu = collect(x) .* u"m", gpu_fy.(collect(x)) .* u"T", gpu_queries(T, 4097)[1] .* u"m"
+        itpu = linear_interp(xu, yu; extrap = ClampExtrap())
+        ref = itpu.(qu)
+        @test Array(adapt(MtlArray, itpu)(MtlArray(qu))) ≈ ref
+        @test Array(linear_interp(MtlArray(xu), MtlArray(yu); extrap = ClampExtrap())(MtlArray(qu))) ≈ ref
+        @test Array(linear_interp(MtlArray(xu), MtlArray(yu), MtlArray(qu); extrap = ClampExtrap())) ≈ ref
+        @test Array(adapt(MtlArray, linear_interp(xu, yu))(MtlArray(qu))) ≈ ref
     end
 
     # Uniform grids: the isbits `_CachedRange` stays a range inside Metal kernels, with

@@ -8,7 +8,7 @@
 
 using Test
 using FastInterpolations
-using Adapt, GPUArrays, JLArrays
+using Adapt, GPUArrays, JLArrays, ForwardDiff, StaticArrays, Unitful
 const FI = FastInterpolations
 
 include(joinpath(@__DIR__, "..", "gpu", "linear1d_cases.jl"))
@@ -424,6 +424,30 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         # Built from device data (range grid): already device-resident, evaluated in place.
         bitp = linear_interp(x, JLArray(y))
         @test gpu_close(bitp(qd), itp(q), maximum(abs, y))
+    end
+
+    # Device arrays hold any isbits element: values and queries keep the CPU element types
+    # (the same evaluation code compiles for each). References are the CPU scalar path.
+    @testset "element types: SVector / Complex values, Dual / Unitful queries" begin
+        x = range(0.0f0, 1.0f0; length = 33)
+        q = gpu_queries(Float32, 64)[2]
+        for y in ([SVector(sin(3t), cos(2t)) for t in x], [cis(3t) for t in x])
+            itp = linear_interp(x, y; extrap = ClampExtrap())
+            ditp = adapt(JLArray, itp)
+            @test Array(ditp(JLArray(q))) ≈ itp.(q)
+            @test Array(ditp(JLArray(q); deriv = DerivOp(1))) ≈ deriv1(itp).(q)
+        end
+        itp = linear_interp(x, gpu_fy.(x); extrap = ClampExtrap())
+        r = Array(adapt(JLArray, itp)(JLArray(ForwardDiff.Dual.(q, 1.0f0))))
+        @test ForwardDiff.value.(r) ≈ itp.(q)
+        @test ForwardDiff.partials.(r, 1) ≈ deriv1(itp).(q)
+        xu, yu, qu = collect(x) .* u"m", gpu_fy.(collect(x)) .* u"T", gpu_queries(Float32, 64)[1] .* u"m"
+        itpu = linear_interp(xu, yu; extrap = ClampExtrap())
+        ref = itpu.(qu)
+        @test Array(adapt(JLArray, itpu)(JLArray(qu))) ≈ ref
+        @test Array(linear_interp(JLArray(xu), JLArray(yu); extrap = ClampExtrap())(JLArray(qu))) ≈ ref
+        @test Array(linear_interp(JLArray(xu), JLArray(yu), JLArray(qu); extrap = ClampExtrap())) ≈ ref
+        @test Array(adapt(JLArray, linear_interp(xu, yu))(JLArray(qu))) ≈ ref    # NoExtrap: device check in units
     end
 
     @testset "no method ambiguities from the extensions" begin

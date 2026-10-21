@@ -9,9 +9,27 @@
 using Test
 using FastInterpolations
 using Adapt, GPUArrays, Metal, StaticArrays
+using KernelAbstractions: @kernel, @index, @Const, get_backend
 const FI = FastInterpolations
 
 include(joinpath(@__DIR__, "linear_nd_cases.jl"))
+
+# A particle pusher's pattern: the interpolant is a kernel argument of the user's own kernel
+# and is evaluated point by point (positions as the columns of a 3×n matrix).
+@kernel function _field_at!(out, @Const(pos), itp)
+    i = @index(Global, Linear)
+    @inbounds out[i] = itp((pos[1, i], pos[2, i], pos[3, i]))
+end
+@kernel function _jacobian_at!(out, @Const(pos), itp)
+    i = @index(Global, Linear)
+    @inbounds out[i] = jacobian(itp, (pos[1, i], pos[2, i], pos[3, i]))
+end
+@kernel function _gradient_laplacian_at!(g, l, @Const(pos), itp)
+    i = @index(Global, Linear)
+    p = @inbounds (pos[1, i], pos[2, i], pos[3, i])
+    @inbounds g[i] = SVector(gradient(itp, p))
+    @inbounds l[i] = laplacian(itp, p)
+end
 
 @testset "Metal: LinearInterpolantND (Float32)" begin
     GPUArrays.allowscalar(false)
@@ -80,6 +98,29 @@ include(joinpath(@__DIR__, "linear_nd_cases.jl"))
         @test gpu_close(rm, itp(q), maximum(abs, data))
         pm = reshape(nd_points(map(vec, q)), 64, 64)
         @test gpu_close(ditp(MtlArray(pm)), itp(pm), maximum(abs, data))
+    end
+
+    @testset "evaluated inside a user KernelAbstractions kernel" begin
+        grids = (range(0.0f0, 1.0f0; length = 17), nonuniform(T, 13), range(-1.0f0, 1.0f0; length = 9))
+        field = linear_interp(grids, [SVector(sin(3a) + c, cos(2b) * a, a * b + c) for a in grids[1], b in grids[2], c in grids[3]]; extrap = ClampExtrap())
+        scalar = linear_interp(grids, [sin(3a) * cos(2b) + a * c for a in grids[1], b in grids[2], c in grids[3]]; extrap = ClampExtrap())
+        n = 4096
+        pos = vcat(T(1.2) .* rand(T, 1, n) .- T(0.1), rand(T, 1, n), 2 .* rand(T, 1, n) .- 1)
+        pts = [Tuple(pos[:, k]) for k in 1:n]
+        posd = MtlArray(pos)
+        be = get_backend(posd)
+        for moved in (adapt(MtlArray, field), adapt(be, field))                  # the backend adaptor too
+            out = MtlArray{SVector{3, T}}(undef, n)
+            _field_at!(be, 256)(out, posd, moved; ndrange = n)
+            @test Array(out) ≈ field.(pts)
+        end
+        jac = MtlArray{SMatrix{3, 3, T, 9}}(undef, n)
+        _jacobian_at!(be, 256)(jac, posd, adapt(MtlArray, field); ndrange = n)
+        @test Array(jac) ≈ [jacobian(field, p) for p in pts]
+        g, l = MtlArray{SVector{3, T}}(undef, n), MtlArray{T}(undef, n)
+        _gradient_laplacian_at!(be, 256)(g, l, posd, adapt(MtlArray, scalar); ndrange = n)
+        @test Array(g) ≈ [SVector(gradient(scalar, p)) for p in pts]
+        @test Array(l) ≈ [laplacian(scalar, p) for p in pts]
     end
 
     @testset "SVector-valued 3D field, AoS particle positions" begin

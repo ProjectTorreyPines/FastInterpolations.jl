@@ -29,9 +29,10 @@ using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtr
     _eval_nd_scalar_query, _check_domain, _query_validate, _query_length,
     _ExclusivePeriodicAxis, _ExclusivePeriodicData, _RawFields, _resolve_bc_period,
     _throw_excl_axis_period_too_small, _storage, _device_eltype, Searcher, NoHint, RefHint,
-    AbstractEvalOp
+    AbstractEvalOp, DerivativeView
 import Adapt
-using GPUArrays: AnyGPUArray, AnyGPUVector
+using Base.Broadcast: Broadcasted
+using GPUArrays: AnyGPUArray, AnyGPUVector, AbstractGPUArrayStyle
 
 FastInterpolations._is_device_storage(::AnyGPUArray) = true
 
@@ -136,10 +137,21 @@ function _gpu_batch_loop!(output, itp, xq, extrap, op, searcher)
     _check_gpu_batch(itp)
     FastInterpolations._is_device_storage(output) || _throw_mixed_storage()
     isempty(xq) && return output
-    extrap_eff = _gpu_domain_check(_itp_grid(itp), xq, extrap)
-    # Broadcast, not `map!`: the backend's native broadcast kernel is leaner than the
-    # generic KernelAbstractions kernel behind GPUArrays' `map!`.
-    output .= _DeviceEval{typeof(searcher)}(itp, extrap_eff, op).(xq)
+    _gpu_eval!(output, itp, xq, extrap, op, searcher)
+    return output
+end
+
+# Broadcast, not `map!`: the backend's native broadcast kernel is leaner than the generic
+# KernelAbstractions kernel behind GPUArrays' `map!`.
+_gpu_eval!(output, itp, xq, extrap, op, ::S) where {S} = (output .= _DeviceEval{S}(itp, extrap, op).(xq))
+
+# NoExtrap: the evaluation kernel checks the domain itself (see "Domain check" below); the
+# host reads the flag once afterwards and throws the CPU's error if it is raised.
+function _gpu_eval!(output, itp, xq, ::NoExtrap, op, ::S) where {S}
+    _noextrap_notice()
+    flag = _device_flag(xq)
+    output .= _CheckedEval{S}(itp, op, flag).(xq)
+    _flag_raised(flag) && _throw_gpu_batch_oob(_itp_grid(itp), xq)
     return output
 end
 
@@ -152,6 +164,44 @@ end
 _DeviceEval{S}(itp, extrap, op) where {S} = _DeviceEval{S, typeof(itp), typeof(extrap), typeof(op)}(itp, extrap, op)
 @inline (f::_DeviceEval{S})(q) where {S} = _itp_eval_scalar(f.itp, q, f.extrap, f.op, _fresh_searcher(S))
 Adapt.adapt_structure(to, f::_DeviceEval{S}) where {S} = _DeviceEval{S}(Adapt.adapt(to, f.itp), f.extrap, f.op)
+
+# NoExtrap's evaluation, per thread: an in-domain query as with `InBounds`, any other one
+# raises the flag (see `_guarded`).
+struct _CheckedEval{S, I, O, F}
+    itp::I
+    op::O
+    flag::F
+end
+_CheckedEval{S}(itp, op, flag) where {S} = _CheckedEval{S, typeof(itp), typeof(op), typeof(flag)}(itp, op, flag)
+@inline function (f::_CheckedEval{S})(q) where {S}
+    ok, qe = _guarded(_itp_grid(f.itp), q, NoExtrap())
+    ok || (@inbounds f.flag[1] = true)
+    return _itp_eval_scalar(f.itp, qe, InBounds(), f.op, _fresh_searcher(S))
+end
+Adapt.adapt_structure(to, f::_CheckedEval{S}) where {S} = _CheckedEval{S}(Adapt.adapt(to, f.itp), f.op, Adapt.adapt(to, f.flag))
+
+# ── Broadcasts ──
+# A broadcast over device arrays evaluates the interpolant inside a kernel, where NoExtrap's
+# out-of-domain error cannot be built. A NoExtrap interpolant broadcast over device queries
+# therefore takes the batch call (device domain check, the CPU's DomainError): the same
+# values, materialized instead of fused into the surrounding broadcast. ND SoA broadcasts
+# `f.(xs, ys)` over equal-shaped device arrays are the SoA batch call.
+const _Evaluable = Union{AbstractInterpolant1D, AbstractInterpolantND, DerivativeView}
+
+function Base.Broadcast.broadcasted(style::AbstractGPUArrayStyle, f::_Evaluable, q::AnyGPUArray, qs::AnyGPUArray...)
+    batch = _raises_in_kernel(f) ? _batch_form(f, q, qs) : nothing
+    return batch === nothing ? Broadcasted{typeof(style)}(f, (q, qs...)) : f(batch)
+end
+
+_raises_in_kernel(d::DerivativeView) = _raises_in_kernel(d.parent)
+_raises_in_kernel(itp) = _any_noextrap(_storage(itp))
+_any_noextrap(::Nothing) = false
+_any_noextrap(s::NamedTuple) = any(e -> e isa NoExtrap, s.extraps)
+
+# The batch query for a broadcast's arguments (`nothing`: not a batch call).
+_batch_form(_, q, ::Tuple{}) = q
+_batch_form(::AbstractInterpolantND, q, qs::Tuple{Any, Vararg}) = all(a -> axes(a) == axes(q), qs) ? (q, qs...) : nothing
+_batch_form(_, _, ::Tuple{Any, Vararg}) = nothing
 
 # ── One-shot ──
 # One-shot calls on GPU queries take the core one-shot route (`linear_interp` /
@@ -197,17 +247,29 @@ FastInterpolations._linear_interp_loop!(
 @inline _fresh_searcher(::Type{Searcher{P, NoHint}}) where {P} = Searcher{P, NoHint}(NoHint())
 @inline _fresh_searcher(::Type{Searcher{P, RefHint}}) where {P} = Searcher{P, RefHint}(RefHint())
 
-# ── Domain check ──
-# Only NoExtrap needs a batch check; the kernel then runs with `InBounds`. The CPU's
-# `InBounds` promotion for Clamp/Fill would cost a device reduction plus a sync per call,
-# while the per-element boundary branch it removes is nearly free in a kernel. The domain
-# bounds come from `_domain_bounds` inside the reduction kernel — the same code every axis
-# type uses on the CPU — so no endpoint is read on the host unless the check fails.
-function _gpu_domain_check(x, xq, ::NoExtrap)
-    mapreduce(q -> _in_domain(x, q), &, xq) || _throw_gpu_batch_oob(x, xq)
-    return InBounds()
+# ── Domain check (NoExtrap) ──
+# The evaluation kernel checks the domain as it goes: an out-of-domain (or NaN) query raises
+# a one-element device flag and is evaluated at the domain's lower end instead, in bounds
+# (its value is discarded). The host reads the flag once, after the kernel; a raised flag
+# throws the CPU's `DomainError` (same bounds, same message), computed on this failure path
+# only. Unlike on the CPU, the output may then hold partial results. The bounds come from
+# `_domain_bounds`, the code every axis type uses on the CPU. Other extraps need no check:
+# the per-element boundary branch they take is nearly free in a kernel.
+@inline function _guarded(x, q, ::NoExtrap)
+    ok = _in_domain(x, q)
+    return ok, ifelse(ok, q, convert(typeof(q), first(_domain_bounds(x))))
 end
-@inline _gpu_domain_check(_, _, e::AbstractExtrap) = e
+@inline _guarded(_, q, ::AbstractExtrap) = (true, q)
+
+_device_flag(like) = fill!(similar(like, Bool, 1), false)
+_flag_raised(flag) = _host_element(flag, 1)
+
+@noinline _noextrap_notice() = @warn """
+NoExtrap() on GPU arrays (the default extrapolation): each batch call waits for the device once \
+to check the domain, and an out-of-domain query throws after the kernel has run, so an in-place \
+output may hold partial results. For queries known to lie in the domain, `extrap = InBounds()` \
+skips the check and the wait; `ClampExtrap()` and `FillExtrap(v)` never throw. Inside your own \
+kernels, NoExtrap does not compile.""" maxlog = 1
 
 @inline function _in_domain(x, q)
     lo, hi = _domain_bounds(x)
@@ -226,8 +288,8 @@ _host_element(a, i) = only(Array(view(a, i:i)))
 # ── ND batch loop seam ──
 # SoA queries (a tuple of GPU coordinate arrays) and AoS queries (a GPU array of points:
 # N-tuples or static vectors) reach the point-wise batch core every ND family shares, with
-# the per-axis ops and the override-resolved extraps. As in 1D: device-side NoExtrap check,
-# then one broadcast of the family's scalar ND evaluation.
+# the per-axis ops and the override-resolved extraps. As in 1D: one broadcast of the family's
+# scalar ND evaluation, NoExtrap axes checked in the kernel.
 const _GPUPoints = AnyGPUArray{<:Union{Tuple, AbstractVector}}
 const _GPUQueriesND = Union{Tuple{AnyGPUArray, Vararg{AnyGPUArray}}, _GPUPoints}
 
@@ -249,44 +311,41 @@ function _gpu_nd_batch!(output, itp, queries, ops, extraps, search, hint)
     hint === nothing || _throw_gpu_hint()
     _query_validate(queries)
     _query_length(queries) == 0 && return output
-    f = _DeviceEvalND(itp, ops, _gpu_domain_check_nd(itp.grids, queries, extraps), search)
-    if queries isa Tuple
-        output .= f.(tuple.(queries...))
+    overrides = map(_kernel_override, extraps)
+    if any(e -> e isa NoExtrap, extraps)
+        _noextrap_notice()
+        flag = _device_flag(queries isa Tuple ? first(queries) : queries)
+        _nd_broadcast!(output, _CheckedEvalND(itp, ops, overrides, extraps, search, flag), queries)
+        _flag_raised(flag) && _throw_nd_oob(itp.grids, queries, extraps)
     else
-        output .= f.(queries)
+        _nd_broadcast!(output, _DeviceEvalND(itp, ops, overrides, search), queries)
     end
     return output
 end
+_nd_broadcast!(output, f, queries::Tuple) = (output .= f.(tuple.(queries...)))
+_nd_broadcast!(output, f, queries) = (output .= f.(queries))
 
-# Per-axis call-time overrides for the kernel: `InBounds()` on NoExtrap axes once the device
-# check passed and on call-time `InBounds` axes, `nothing` (stored extrap) elsewhere.
+# Per-axis call-time overrides for the kernel: `InBounds()` on NoExtrap axes (checked in the
+# kernel) and on call-time `InBounds` axes, `nothing` (stored extrap) elsewhere.
 @inline _kernel_override(::Union{NoExtrap, InBounds}) = InBounds()
 @inline _kernel_override(::AbstractExtrap) = nothing
 
-# SoA vectors: per-axis checks, as the CPU's per-axis batch validation (its error names the
-# axis and that axis's batch extreme).
-function _gpu_domain_check_nd(grids::NTuple{N, Any}, queries::Tuple{AnyGPUVector, Vararg{AnyGPUVector}}, extraps) where {N}
+# Failure path only (the kernel raised the flag): the CPU's error. SoA vectors: per axis, as
+# the CPU's per-axis batch validation (its error names the axis and that axis's batch
+# extreme).
+@noinline function _throw_nd_oob(grids::NTuple{N, Any}, queries::Tuple{AnyGPUVector, Vararg{AnyGPUVector}}, extraps) where {N}
     map(_check_axis_domain, grids, queries, extraps, ntuple(identity, Val(N)))
-    return map(_kernel_override, extraps)
+    return nothing
 end
 _check_axis_domain(_, _, ::AbstractExtrap, _) = nothing
 function _check_axis_domain(g, q, ::NoExtrap, d)
-    _axis_in_domain_all(g, q, NoExtrap()) || _throw_batch_oob(_host_endpoints(g), q, d)
+    mapreduce(v -> _in_domain(g, v), &, q) || _throw_batch_oob(_host_endpoints(g), q, d)
     return nothing
 end
-_axis_in_domain_all(g, q, ::NoExtrap) = mapreduce(v -> _in_domain(g, v), &, q)
-_axis_in_domain_all(_, _, ::AbstractExtrap) = true
 
-# Shaped SoA and AoS: the CPU validates point by point, so a failure names the first
-# out-of-domain point. Shaped SoA is checked one axis at a time (every axis in domain ⇔ every
-# point in domain); AoS by one reduction over the points.
-function _gpu_domain_check_nd(grids::NTuple{N, Any}, queries, extraps) where {N}
-    any(e -> e isa NoExtrap, extraps) &&
-        (_points_in_domain(grids, queries, extraps) || _throw_point_oob(grids, queries, extraps))
-    return map(_kernel_override, extraps)
-end
-_points_in_domain(grids, queries::Tuple, extraps) = all(map(_axis_in_domain_all, grids, queries, extraps))
-_points_in_domain(grids, queries, extraps) = mapreduce(q -> _point_in_domain(grids, q, extraps), &, queries)
+# Shaped SoA and AoS: the CPU validates point by point, so the error names the first
+# out-of-domain point.
+@noinline _throw_nd_oob(grids, queries, extraps) = _throw_point_oob(grids, queries, extraps)
 
 @inline _point_in_domain(grids::NTuple{N, Any}, q, extraps) where {N} =
     reduce(&, map((g, e, d) -> _axis_in_domain(g, @inbounds(q[d]), e), grids, extraps, ntuple(identity, Val(N))))
@@ -325,5 +384,29 @@ _DeviceEvalND(itp::AbstractInterpolantND{Tg, Tv, N}, ops, extrap, search) where 
     _eval_nd_scalar_query(f.itp, ntuple(d -> @inbounds(q[d]), Val(N)), f.ops, f.extrap, f.search, nothing)
 
 Adapt.adapt_structure(to, f::_DeviceEvalND) = _DeviceEvalND(Adapt.adapt(to, f.itp), f.ops, f.extrap, f.search)
+
+# With NoExtrap axes: each one checked in the kernel (see `_guarded`), an out-of-domain
+# coordinate raising the flag.
+struct _CheckedEvalND{N, I, O, E, X, P, F}
+    itp::I
+    ops::O
+    extrap::E
+    extraps::X
+    search::P
+    flag::F
+end
+_CheckedEvalND(itp::AbstractInterpolantND{Tg, Tv, N}, ops, extrap, extraps, search, flag) where {Tg, Tv, N} =
+    _CheckedEvalND{N, typeof(itp), typeof(ops), typeof(extrap), typeof(extraps), typeof(search), typeof(flag)}(
+    itp, ops, extrap, extraps, search, flag
+)
+
+@inline function (f::_CheckedEvalND{N})(q) where {N}
+    checked = map(_guarded, f.itp.grids, ntuple(d -> @inbounds(q[d]), Val(N)), f.extraps)
+    all(first, checked) || (@inbounds f.flag[1] = true)
+    return _eval_nd_scalar_query(f.itp, map(last, checked), f.ops, f.extrap, f.search, nothing)
+end
+
+Adapt.adapt_structure(to, f::_CheckedEvalND) =
+    _CheckedEvalND(Adapt.adapt(to, f.itp), f.ops, f.extrap, f.extraps, f.search, Adapt.adapt(to, f.flag))
 
 end # module

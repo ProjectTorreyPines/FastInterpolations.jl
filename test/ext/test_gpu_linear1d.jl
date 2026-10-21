@@ -541,6 +541,50 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
         @test Array(adapt(JLArray, linear_interp(xu, yu))(JLArray(qu))) ≈ ref    # NoExtrap: device check in units
     end
 
+    # NoExtrap is checked inside the evaluation kernel (a device flag, read once afterwards):
+    # NaN queries are rejected as on the CPU, and the first call explains the GPU cost once.
+    @testset "NoExtrap batch calls check the domain in the kernel" begin
+        x = gpu_grids(Float32, 33)[2][2]
+        y = gpu_fy.(x)
+        cpu = linear_interp(x, y)
+        ditp = linear_interp(JLArray(x), JLArray(y))
+        errmsg(f) = try
+            f()
+            ""
+        catch err
+            sprint(showerror, err)
+        end
+        for bad in (Float32[0.5, NaN], Float32[0.5, 1.3, -0.2], Float32[NaN])
+            @test errmsg(() -> ditp(JLArray(bad))) == errmsg(() -> cpu(bad))
+        end
+        q = gpu_queries(Float32, 64)[1]
+        @test gpu_close(ditp(JLArray(q)), cpu(q), maximum(abs, y))         # in-domain: the InBounds path
+        @test_logs (:warn, r"NoExtrap\(\) on GPU arrays") ditp(JLArray(q))
+    end
+
+    # NoExtrap's error cannot be built inside a kernel: a NoExtrap broadcast over device
+    # queries is the batch call (same values, the CPU's error); other extraps stay fused.
+    @testset "NoExtrap broadcasts take the batch call" begin
+        x = gpu_grids(Float32, 33)[2][2]
+        y = gpu_fy.(x)
+        ditp = linear_interp(JLArray(x), JLArray(y))
+        q_in, q_oob = gpu_queries(Float32, 64)
+        qd = JLArray(q_in)
+        @test !(Base.Broadcast.broadcasted(ditp, qd) isa Base.Broadcast.Broadcasted)
+        @test Array(ditp.(qd)) == Array(ditp(qd))
+        @test Array(2 .* ditp.(qd)) ≈ 2 .* Array(ditp(qd))                # inside a larger broadcast
+        @test Array(deriv1(ditp).(qd)) == Array(ditp(qd; deriv = DerivOp(1)))
+        errmsg(f) = try
+            f()
+            ""
+        catch err
+            sprint(showerror, err)
+        end
+        @test errmsg(() -> ditp.(JLArray(q_oob))) == errmsg(() -> linear_interp(x, y)(q_oob))
+        citp = linear_interp(JLArray(x), JLArray(y); extrap = ClampExtrap())
+        @test Base.Broadcast.broadcasted(citp, qd) isa Base.Broadcast.Broadcasted
+    end
+
     # Among the extensions and against the core (Aqua loads neither extension).
     @testset "no method ambiguities from the extensions" begin
         exts = (adapt_ext, gpu_ext)

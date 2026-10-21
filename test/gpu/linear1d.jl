@@ -9,10 +9,16 @@ using Test
 using FastInterpolations
 using Adapt, GPUArrays, ForwardDiff, StaticArrays, Unitful
 using InteractiveUtils: code_llvm
+using KernelAbstractions: @kernel, @index
 
 include(joinpath(@__DIR__, "linear1d_cases.jl"))
 
 is_invalid_ir(err) = nameof(typeof(err)) === :InvalidIRError
+
+@kernel function _eval_each!(out, f, q)
+    i = @index(Global, Linear)
+    @inbounds out[i] = f(q[i])
+end
 
 @testset "$GPU_NAME: LinearInterpolant 1D ($T)" for T in GPU_ELTYPES
     GPUArrays.allowscalar(false)
@@ -134,6 +140,15 @@ is_invalid_ir(err) = nameof(typeof(err)) === :InvalidIRError
             end
             @test gpu_err isa DomainError
             @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
+            # NaN queries are rejected by the in-kernel check as on the CPU
+            qn = T[q_in[1], T(NaN)]
+            nan_err(f) = try
+                f()
+                ""
+            catch err
+                sprint(showerror, err)
+            end
+            @test nan_err(() -> adapt(GPUArrayType, itp_n)(dev(qn))) == nan_err(() -> itp_n(qn))
         end
 
         @testset "$gname: strided GPU view queries" begin
@@ -233,11 +248,27 @@ is_invalid_ir(err) = nameof(typeof(err)) === :InvalidIRError
         end
 
         # The NoExtrap OOB message is built with String interpolation, which GPU compilers
-        # reject; the batch call (domain check outside the evaluation kernel) is the route.
-        @testset "$gname: NoExtrap broadcast is a known GPU compile failure" begin
+        # reject: a NoExtrap broadcast over device queries is the batch call (domain check
+        # outside the evaluation kernel); inside a user kernel it fails to compile.
+        @testset "$gname: NoExtrap broadcast takes the batch call" begin
+            itp_n = linear_interp(x, y)
+            ditp = adapt(GPUArrayType, itp_n)
+            @test gpu_close(ditp.(dev(q_in)), itp_n.(q_in), ymax)
+            @test gpu_close(2 .* ditp.(dev(q_in)), 2 .* itp_n.(q_in), 2 * ymax)
+            errmsg(f) = try
+                f()
+                ""
+            catch err
+                sprint(showerror, err)
+            end
+            @test errmsg(() -> ditp.(dev(q_oob))) == errmsg(() -> itp_n(q_oob))   # the batch call's error
+        end
+
+        @testset "$gname: NoExtrap inside a user kernel is a known GPU compile failure" begin
             ditp = adapt(GPUArrayType, linear_interp(x, y))
+            qd = dev(q_in)
             err = try
-                ditp.(dev(q_in))
+                _eval_each!(BACKEND)(similar(qd), ditp, qd; ndrange = length(qd))
                 nothing
             catch e
                 e

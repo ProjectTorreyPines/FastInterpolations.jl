@@ -49,7 +49,7 @@ end
             q = qk === :in ? q_in : q_oob
             pts = nd_points(q)
             ref = itp_e(q)
-            e isa NoExtrap || @test gpu_close(ditp.(dev(pts)), ref, dmax)
+            @test gpu_close(ditp.(dev(pts)), ref, dmax)                     # NoExtrap: the batch call
             @test gpu_close(ditp(map(dev, q)), ref, dmax)
             @test gpu_close(ditp(dev(pts)), ref, dmax)
             ops = ntuple(d -> d == 1 ? DerivOp(1) : EvalValue(), N)

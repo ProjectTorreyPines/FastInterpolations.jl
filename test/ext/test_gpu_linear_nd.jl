@@ -115,6 +115,31 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
         end
     end
 
+    # As in 1D: a NoExtrap broadcast over device queries is the batch call, AoS points
+    # `f.(pts)` and SoA coordinates `f.(xs, ys)` alike.
+    @testset "NoExtrap broadcasts take the batch call" begin
+        grids = (range(0.0f0, 1.0f0; length = 9), nonuniform(Float32, 7))
+        data = nd_values(Float32, grids)
+        ditp = linear_interp(map(g -> g isa AbstractRange ? g : JLArray(collect(g)), grids), JLArray(data))
+        q_in, q_oob = nd_queries(Float32, 2, 64)
+        qd = map(JLArray, q_in)
+        @test Array(ditp.(qd...)) == Array(ditp(qd))
+        pts = JLArray(nd_points(q_in))
+        @test Array(ditp.(pts)) == Array(ditp(pts))
+        errmsg(f) = try
+            f()
+            ""
+        catch err
+            sprint(showerror, err)
+        end
+        @test errmsg(() -> ditp.(map(JLArray, q_oob)...)) == errmsg(() -> linear_interp(grids, data)(q_oob))
+        # NaN coordinates are rejected in the kernel, with the CPU's error (SoA per axis, AoS per point)
+        cpu = linear_interp(grids, data)
+        qn = (Float32[0.5, 0.2], Float32[0.1, NaN])
+        @test errmsg(() -> ditp(map(JLArray, qn))) == errmsg(() -> cpu(qn))
+        @test errmsg(() -> ditp(JLArray(nd_points(qn)))) == errmsg(() -> cpu(nd_points(qn)))
+    end
+
     @testset "SVector-valued 3D field (AoS particles)" begin
         grids = (range(0.0f0, 1.0f0; length = 17), Float32[(i / 16)^1.5 for i in 0:16], range(0.0f0, 2.0f0; length = 9))
         data = [SVector(sin(3a) + c, cos(2b) * a, a * b + c) for a in grids[1], b in grids[2], c in grids[3]]

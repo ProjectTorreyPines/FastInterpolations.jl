@@ -1,55 +1,75 @@
 # [GPU Arrays](@id gpu_arrays)
 
-Linear interpolants (1D and ND) evaluate on GPUs through the GPUArrays interface, with no backend-specific code: the same code serves every GPUArrays backend (CUDA.jl, Metal.jl, AMDGPU.jl, oneAPI.jl; tested on CUDA and Metal). Loading a GPU package is enough: it loads Adapt.jl and GPUArrays.jl, which activate the GPU support.
+Linear interpolants (1D and ND) run on GPUs through the GPUArrays interface, with no backend-specific code: the same code serves every GPUArrays backend (CUDA.jl, Metal.jl, AMDGPU.jl, oneAPI.jl; tested on CUDA and Metal). Loading a GPU package is enough: it loads Adapt.jl and GPUArrays.jl, which activate the GPU support.
 
-The idea is simple: a GPU array is just another storage. Put the grid and the data on the device, pass GPU queries, and the usual API runs there — the same calls, keywords and results as on the CPU.
+The idea is simple: a GPU array is just another storage. Build an interpolant from arrays already on the device, pass device queries, and the usual API runs there — the same calls, keywords and results as on the CPU, with no data passing through the host.
 
 ## Supported
 
 | | 1D `linear_interp(x, y)` | ND `linear_interp((x1, x2, …), data)` |
 |---|---|---|
-| Move a CPU interpolant (`adapt`, `cu`, `mtl`) | ✓ | ✓ |
-| Build from device data | ✓ | ✓ |
+| Build from device arrays (scenario 1) | ✓ | ✓ |
+| Move a CPU interpolant with `Adapt.adapt` (scenario 2) | ✓ | ✓ |
 | Batch calls (allocating, in-place, any query shape) | ✓ | ✓ SoA (tuple of arrays) and AoS (array of points) |
 | Broadcasts and calls inside your own kernels | ✓ | ✓ |
 | Derivatives | `deriv = DerivOp(n)`, `deriv1`/`deriv2`/`deriv3` | per-axis `deriv`; `gradient`, `value_gradient`, `laplacian`, `jacobian` inside kernels |
 | One-shot `linear_interp(x, y, xq)` | ✓ | — |
 | Periodic boundary conditions | ✓ | — |
 
-## Getting an interpolant onto the device
+## Getting an interpolant on the device
 
-Build on the CPU and move it once, or build directly from device arrays:
+### Scenario 1: the data is already on the device
+
+The main case: the grid and the data live on the device (computed there, or loaded once), so the interpolant is built there. Pass device arrays where you would pass `Vector`s and `Array`s:
 
 ```julia
-using FastInterpolations, CUDA        # or Metal (MtlArray, mtl), AMDGPU (ROCArray), …
+using FastInterpolations, CUDA        # or Metal (MtlArray), AMDGPU (ROCArray), oneAPI (oneArray)
 
-x = range(0.0f0, 1.0f0; length = 1001)
-y = sinpi.(2 .* x)
+x   = CuArray(Float32[(i / 1000)^1.5 for i in 0:1000])   # a non-uniform grid on the device
+y   = sin.(6 .* x)                                        # data computed on the device
+itp = linear_interp(x, y; extrap = ClampExtrap())
 
-itp  = linear_interp(x, y; extrap = ClampExtrap())
-ditp = cu(itp)                        # CUDA's converter (Float64 becomes Float32)
-# or: using Adapt; ditp = adapt(CuArray, itp)  (keeps the precision)
+xr    = range(0.0f0, 1.0f0; length = 1001)                # a uniform grid stays a range
+itp_r = linear_interp(xr, sin.(6 .* CuArray(collect(xr))); extrap = ClampExtrap())
 
-ditp2 = linear_interp(x, CuArray(y); extrap = ClampExtrap())   # built from device data
+# ND: grids are ranges or device vectors, the data a device array
+yg = CuArray(Float32[(i / 256)^1.5 for i in 0:256])
+f  = linear_interp((xr, yg), CUDA.rand(Float32, 1001, 257); extrap = ClampExtrap())
 ```
 
-A uniform grid (any `AbstractRange`) stays a few scalars and travels by value; a non-uniform grid and the data live in device memory. A converter that changes precision (`cu`, `mtl`) converts a uniform grid as it would a vector grid, along with the data and the fill value. Building from device arrays moves no data to the host (a periodic boundary condition reads the two endpoint values once), and `adapt(Array, ditp)` brings an interpolant back.
+A uniform grid (any `AbstractRange`) is a few scalars and travels by value; a non-uniform grid and the data stay in device memory. Construction copies them on the device by default, so later changes to `x` or `y` do not reach the interpolant (`store = StorePolicy(copy = false)` references them instead, as on the CPU). No data passes through the host; a periodic boundary condition reads the two endpoint values once.
+
+### Scenario 2: an interpolant built on the CPU
+
+An interpolant built on the CPU moves to the device once with Adapt.jl, the standard way to move a structure between storages (Adapt comes with every GPU package; add it to your environment to call it):
+
+```julia
+using Adapt
+itp_cpu = linear_interp(x_cpu, y_cpu; extrap = ClampExtrap())
+
+ditp = adapt(CuArray, itp_cpu)          # to the device, same precision
+adapt(Array, ditp)                      # back to the host
+
+using KernelAbstractions: get_backend
+ditp = adapt(get_backend(x), itp_cpu)   # backend-agnostic: the backend of any device array
+```
+
+The backend packages also have converters that change the precision on the way: `cu` (CUDA) and `mtl` (Metal) turn `Float64` into `Float32`. A uniform grid converts as the converter would convert a vector grid, together with the data and the fill value.
 
 ## Evaluating
 
-Pass GPU queries to the usual calls:
+Pass device queries to the usual calls:
 
 ```julia
 xq  = CUDA.rand(Float32, 10^7)
-out = ditp(xq)                        # CuArray{Float32}
-ditp(out, xq)                         # in-place, no allocation
-ditp(xq; deriv = DerivOp(1))          # derivative
-ditp(reshape(xq, 1000, :))            # shaped queries keep their shape
+out = itp(xq)                         # CuArray{Float32}
+itp(out, xq)                          # in-place, no allocation
+itp(xq; deriv = DerivOp(1))           # derivative
+itp(reshape(xq, 1000, :))             # shaped queries keep their shape
 
-linear_interp(x, CuArray(y), xq; extrap = ClampExtrap())   # one-shot, no interpolant built
+linear_interp(x, y, xq; extrap = ClampExtrap())   # one-shot on device arrays: nothing kept, nothing copied
 
 # ND: SoA (a tuple of coordinate arrays) or AoS (an array of points)
-f   = cu(linear_interp((x, x), [sin(a) * cos(b) for a in x, b in x]; extrap = ClampExtrap()))
 v   = f((CUDA.rand(Float32, 10^6), CUDA.rand(Float32, 10^6)))
 pts = CuArray([(rand(Float32), rand(Float32)) for _ in 1:10^6])
 v2  = f(pts)
@@ -62,8 +82,8 @@ An interpolant on the device is also an ordinary kernel argument. It works in br
 ```julia
 using KernelAbstractions, StaticArrays
 
-# E: a 3D array of SVector{3,Float32} field values on the device; pos, vel: CuArray{SVector{3,Float32}}
-Ef = linear_interp((xg, yg, zg), E; extrap = ClampExtrap())
+# E: a 3D CuArray of SVector{3,Float32} field values; pos, vel: CuArray{SVector{3,Float32}}
+Ef = linear_interp((xg, yg, zg), E; extrap = FillExtrap(zero(SVector{3, Float32})))   # zero field outside the box
 
 @kernel function advance!(pos, vel, Ef, dt)           # a simplified particle step
     i = @index(Global, Linear)
@@ -89,7 +109,7 @@ Device arrays hold any isbits element, and the same evaluation code compiles for
 - queries: real numbers, Unitful quantities, ForwardDiff duals;
 - grids: real numbers or Unitful quantities.
 
-Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all). The converters differ for static vectors: `mtl` converts `SVector{N, Float64}` elements to `Float32`, `cu` leaves them as they are; for `Float32` on CUDA, build the data as `SVector{N, Float32}`. A uniform grid converts as the converter converts a vector grid.
+Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all). The converters differ for static vectors: `mtl` converts `SVector{N, Float64}` elements to `Float32`, `cu` leaves them as they are; for `Float32` on CUDA, build the data as `SVector{N, Float32}`.
 
 ## Performance notes
 

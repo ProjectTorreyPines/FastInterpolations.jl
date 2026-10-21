@@ -16,68 +16,90 @@ The idea is simple: a GPU array is just another storage. Build an interpolant fr
 | One-shot `linear_interp(x, y, xq)` | ✓ | — |
 | Periodic boundary conditions | ✓ | — |
 
-## Getting an interpolant on the device
+## Usage
 
 ### Scenario 1: the data is already on the device
 
-The main case: the grid and the data live on the device (computed there, or loaded once), so the interpolant is built there. Pass device arrays where you would pass `Vector`s and `Array`s:
+The main case: the grid, the data and the queries live on the device (computed there, or loaded once). Pass device arrays where you would pass `Vector`s; results come back as device arrays.
 
 ```julia
-using FastInterpolations, CUDA        # or Metal (MtlArray), AMDGPU (ROCArray), oneAPI (oneArray)
+using FastInterpolations, CUDA     # or Metal (MtlArray), AMDGPU (ROCArray), oneAPI (oneArray)
 
-x   = CuArray(Float32[(i / 1000)^1.5 for i in 0:1000])   # a non-uniform grid on the device
-y   = sin.(6 .* x)                                        # data computed on the device
-itp = linear_interp(x, y; extrap = ClampExtrap())
+# x, y: vectors you already have on the device
+x  = CuArray(range(0.0f0, 1.0f0, 1001) .^ 1.5f0)   # 1001-element CuArray{Float32}: the grid (here non-uniform)
+y  = sin.(6 .* x)                                   # 1001-element CuArray{Float32}: its values
+xq = CUDA.rand(Float32, 10^6)                       # 10^6 queries on the device
 
-xr    = range(0.0f0, 1.0f0; length = 1001)                # a uniform grid stays a range
-itp_r = linear_interp(xr, sin.(6 .* CuArray(collect(xr))); extrap = ClampExtrap())
+# One-shot evaluation
+linear_interp(x, y, xq)            # → 1000000-element CuArray{Float32}
 
-# ND: grids are ranges or device vectors, the data a device array
-yg = CuArray(Float32[(i / 256)^1.5 for i in 0:256])
-f  = linear_interp((xr, yg), CUDA.rand(Float32, 1001, 257); extrap = ClampExtrap())
+# In-place evaluation (no allocation)
+out = similar(xq)
+linear_interp!(out, x, y, xq)
+
+# Create reusable interpolant
+itp = linear_interp(x, y)
+itp(xq)                            # → 1000000-element CuArray{Float32}
+itp(out, xq)                       # in-place
+itp.(xq)                           # broadcast
+itp(xq; deriv = DerivOp(1))        # slopes
+itp(reshape(xq, 1000, :))          # any query shape → 1000×1000 CuArray{Float32}
+Array(out)                         # copy results to the host when needed
+
+# A uniform grid can stay a range: a few scalars, no search per query
+itp_r = linear_interp(range(0.0f0, 1.0f0, 1001), CUDA.rand(Float32, 1001))
 ```
 
-A uniform grid (any `AbstractRange`) is a few scalars and travels by value; a non-uniform grid and the data stay in device memory. Construction copies them on the device by default, so later changes to `x` or `y` do not reach the interpolant (`store = StorePolicy(copy = false)` references them instead, as on the CPU). No data passes through the host; a periodic boundary condition reads the two endpoint values once.
+ND grids are ranges or device vectors, the data a device array; queries are SoA (a tuple of coordinate arrays) or AoS (an array of points):
+
+```julia
+xg = range(0.0f0, 1.0f0, 513)                     # a range axis
+yg = CuArray(range(0.0f0, 1.0f0, 257) .^ 1.5f0)   # a vector axis on the device
+f  = linear_interp((xg, yg), CUDA.rand(Float32, 513, 257))   # data on the device
+
+xs, ys = CUDA.rand(Float32, 10^6), CUDA.rand(Float32, 10^6)
+f((xs, ys))                        # SoA → 1000000-element CuArray{Float32}
+f(tuple.(xs, ys))                  # AoS: the same points as an array of tuples → the same values
+f.(xs, ys)                         # broadcast
+```
+
+A uniform grid (any `AbstractRange`) is a few scalars and travels by value; a non-uniform grid and the data stay in device memory. Construction copies them on the device by default, so later changes to the caller's arrays do not reach the interpolant (`store = StorePolicy(copy = false)` references them instead, as on the CPU). No data passes through the host; a periodic boundary condition reads the two endpoint values once. Output and queries must both be on the device; a mix is an `ArgumentError`.
 
 ### Scenario 2: an interpolant built on the CPU
 
-An interpolant built on the CPU moves to the device once with Adapt.jl, the standard way to move a structure between storages (Adapt comes with every GPU package; add it to your environment to call it):
+An interpolant built on the CPU moves to the device once with Adapt.jl, the standard way to move a structure between storages (Adapt comes with every GPU package; add it to your environment to call it). Afterwards the same calls as in scenario 1 apply:
 
 ```julia
 using Adapt
-itp_cpu = linear_interp(x_cpu, y_cpu; extrap = ClampExtrap())
+x_cpu   = range(0.0f0, 1.0f0, 1001) .^ 1.5f0     # a Vector{Float32} on the host
+itp_cpu = linear_interp(x_cpu, sin.(6 .* x_cpu))
 
 ditp = adapt(CuArray, itp_cpu)          # to the device, same precision
+ditp(xq)                                # → 1000000-element CuArray{Float32}
+Array(ditp(xq)) ≈ itp_cpu(Array(xq))    # true: the CPU's values
 adapt(Array, ditp)                      # back to the host
 
 using KernelAbstractions: get_backend
-ditp = adapt(get_backend(x), itp_cpu)   # backend-agnostic: the backend of any device array
+ditp = adapt(get_backend(xq), itp_cpu)  # backend-agnostic: the backend of any device array
 ```
 
 The backend packages also have converters that change the precision on the way: `cu` (CUDA) and `mtl` (Metal) turn `Float64` into `Float32`. A uniform grid converts as the converter would convert a vector grid, together with the data and the fill value.
 
-## Evaluating
+### A single point
 
-Pass device queries to the usual calls:
+A host scalar, `itp(0.5f0)`, would read the device storage element by element, and GPUArrays disallows that by default (`Scalar indexing is disallowed`): in a host loop it would be orders of magnitude slower than the CPU. When one value is all you need:
 
-```julia
-xq  = CUDA.rand(Float32, 10^7)
-out = itp(xq)                         # CuArray{Float32}
-itp(out, xq)                          # in-place, no allocation
-itp(xq; deriv = DerivOp(1))           # derivative
-itp(reshape(xq, 1000, :))             # shaped queries keep their shape
+| | one value, measured on an M1 Pro (Metal), n = 1001 |
+|---|---|
+| `only(Array(itp(CuArray([0.5f0]))))` | one kernel launch (≈ 160 µs on the M1 Pro) |
+| `CUDA.@allowscalar itp(0.5f0)` | one transfer per element read: ≈ 0.2 ms (range grid) to 2.3 ms (vector grid, binary search) |
+| `itp_host = adapt(Array, itp)`, then `itp_host(0.5f0)` | one copy of the storage to the host, then CPU speed (≈ 0.01 µs per value) |
 
-linear_interp(x, y, xq; extrap = ClampExtrap())   # one-shot on device arrays: nothing kept, nothing copied
+`@allowscalar` comes with every backend package (`CUDA.@allowscalar`, `Metal.@allowscalar`, …); nothing else needs to be installed. For many points, pass them as one device array.
 
-# ND: SoA (a tuple of coordinate arrays) or AoS (an array of points)
-v   = f((CUDA.rand(Float32, 10^6), CUDA.rand(Float32, 10^6)))
-pts = CuArray([(rand(Float32), rand(Float32)) for _ in 1:10^6])
-v2  = f(pts)
-```
+### Inside your own kernels
 
-Output and queries must both be on the device; a mix is an `ArgumentError`.
-
-An interpolant on the device is also an ordinary kernel argument. It works in broadcasts, which fuse with the surrounding computation into one kernel, and inside your own kernels:
+An interpolant on the device is also an ordinary kernel argument. It works in broadcasts, which fuse with the surrounding computation into one kernel (see [Extrapolation on the device](#Extrapolation-on-the-device) for `NoExtrap()`), and inside your own kernels:
 
 ```julia
 using KernelAbstractions, StaticArrays
@@ -97,9 +119,11 @@ advance!(get_backend(pos))(pos, vel, Ef, 1.0f-3; ndrange = length(pos))
 
 ## Extrapolation on the device
 
-A kernel cannot throw an error with a message. Batch calls handle `NoExtrap()` (the default) for you: one device reduction checks the domain before the kernel runs, and an out-of-domain query throws the same `DomainError` as on the CPU, before any output is written. This check costs one extra pass over the queries and a host synchronization.
+A kernel cannot throw an error with a message. Batch calls handle `NoExtrap()` (the default) for you: the evaluation kernel checks the domain as it goes, the host reads the result once afterwards, and an out-of-domain (or `NaN`) query throws the same `DomainError` as on the CPU. Unlike on the CPU, an in-place output may then already hold partial results. The check costs one wait for the device per call; the first such call says so once in a warning.
 
-Broadcasts and your own kernels evaluate one point at a time and need a non-throwing extrapolation: `ClampExtrap()`, `FillExtrap(v)`, `ExtendExtrap()`, `WrapExtrap()` or, for queries known to be in the domain, `InBounds()`. A `NoExtrap()` interpolant there fails to compile.
+A broadcast of a `NoExtrap()` interpolant over device arrays, `itp.(xq)` (ND: `f.(pts)` or `f.(xs, ys)`), runs as that batch call: the same values and the same error, computed on its own rather than fused with the rest of the broadcast. Interpolants with any other extrapolation broadcast as usual, fused into one kernel.
+
+Your own kernels evaluate one point at a time and need a non-throwing extrapolation: `ClampExtrap()`, `FillExtrap(v)`, `ExtendExtrap()`, `WrapExtrap()` or, for queries known to be in the domain, `InBounds()`. A `NoExtrap()` interpolant there fails to compile.
 
 ## Element types
 
@@ -116,14 +140,14 @@ Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all). Th
 - **Keep data on the device.** Grids and data move once; afterwards only queries and results cross the host–device link, at the PCIe bandwidth. When queries start and end on the CPU, those transfers usually dominate.
 - **Batch size.** Each call launches at least one kernel (measured: about 10–20 µs on a datacenter CUDA GPU, 100–200 µs on an Apple M1 Pro): against one CPU thread, the GPU paid off from about 10⁴ queries on CUDA and 10⁵–10⁶ on the M1 Pro.
 - **Uniform grids are cheapest**: the cell index is computed directly. A non-uniform grid adds a binary search per query.
-- **`NoExtrap()` costs a domain check per batch call**: use `ClampExtrap()` or `InBounds()` when the queries are known to be valid.
+- **`NoExtrap()` costs one wait for the device per batch call** (its domain check): with queries known to lie in the domain, `InBounds()` skips it; `ClampExtrap()` and `FillExtrap(v)` never throw and never wait.
 
 ## Not supported yet
 
 - Other interpolation families (cubic, quadratic, constant, Hermite) — a batch call on GPU queries throws an `ArgumentError`.
 - `integrate`, `Series` interpolants, `GriddedQuery`, ND one-shot calls, ND periodic boundary conditions.
 - `hessian` inside kernels (it returns a heap `Matrix`), and search hints (`hint = Ref(…)`).
-- Calling a device interpolant with host queries (`ditp(0.5)`, `ditp(xq_cpu)`).
+- Host queries on a device interpolant (`itp(xq_cpu)`); for a single point, see [A single point](#A-single-point).
 
 ## Testing on your GPU
 

@@ -162,6 +162,13 @@ end
             @test typeof(bitp) === typeof(adapt(MtlArray, itp))
             @test gpu_close(bitp(MtlArray(q_oob)), itp(q_oob), ymax)
             @test gpu_close(bitp.(MtlArray(q_oob)), itp.(q_oob), ymax)
+            # the default store owns copies: in-place changes to the caller's arrays stay out
+            xo, yo = gname == "Range" ? x : MtlArray(collect(x)), MtlArray(y)
+            oitp = linear_interp(xo, yo; extrap = ClampExtrap())
+            before = Array(oitp(MtlArray(q_oob)))
+            yo .*= 10
+            gname == "Range" || (xo .*= T(0.5))
+            @test Array(oitp(MtlArray(q_oob))) == before
             iitp = linear_interp(xd, MtlArray(Int32.(1:length(x))); extrap = ClampExtrap())
             @test iitp.y isa FI._DeviceVector{T, <:MtlArray}               # promoted on the device
             @test gpu_close(iitp(MtlArray(q_oob)), linear_interp(x, Int32.(1:length(x)); extrap = ClampExtrap())(q_oob), T(length(x)))
@@ -213,6 +220,21 @@ end
             @test eltype(ditp.y) === Float32
             ref = linear_interp(gname == "Range" ? range(0.0f0, 1.0f0; length = length(x)) : x, y; extrap = e)
             @test gpu_close(ditp.(MtlArray(q_oob)), ref.(q_oob), ymax)
+        end
+
+        # Complex and static vector values (`mtl` narrows their elements too): the grid
+        # narrows as the adaptor narrows a vector grid, the fill value as it narrows scalars.
+        @testset "$gname: mtl(Float64 interpolant), $vname values" for (vname, fv, fill) in (
+                ("Complex", t -> cis(3t), 0.0im),
+                ("SVector", t -> SVector(sin(3t), cos(2t)), SVector(0.0, 0.0)),
+            )
+            x64 = gname == "Range" ? range(0.0, 1.0; length = length(x)) : Float64.(x)
+            itp64 = linear_interp(x64, fv.(x64); extrap = FillExtrap(fill))
+            ditp = mtl(itp64)
+            @test eltype(ditp.x) === Float32
+            @test typeof(ditp.extrap.fill_value) === eltype(ditp.y)
+            @test Array(ditp.(MtlArray(q_oob))) ≈ itp64.(q_oob)
+            @test Array(ditp(MtlArray(q_oob))) ≈ itp64.(q_oob)
         end
 
         # Endpoint reads in the Clamp/Fill OOB branches are unchecked through the device

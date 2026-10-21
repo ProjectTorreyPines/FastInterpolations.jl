@@ -18,9 +18,14 @@ include(joinpath(@__DIR__, "..", "gpu", "linear1d_cases.jl"))
 struct _CopyAdaptor end
 Adapt.adapt_storage(::_CopyAdaptor, x::Array) = copy(x)
 
-# Host precision-changing adaptor, as `Metal.mtl` / `CUDA.cu` do on their way to the device.
+# Host precision-changing adaptor, as `Metal.mtl` does on its way to the device: Float64 →
+# Float32 for arrays and scalars, inside Complex and static vector elements too.
 struct _Float32Adaptor end
 Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
+Adapt.adapt_storage(::_Float32Adaptor, x::Array{ComplexF64}) = ComplexF32.(x)
+Adapt.adapt_storage(to::_Float32Adaptor, x::Array{<:SVector}) = map(v -> adapt(to, v), x)
+Adapt.adapt_storage(::_Float32Adaptor, x::Float64) = Float32(x)
+Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
 
 @testset "GPU storage: LinearInterpolant 1D (JLArrays)" begin
     GPUArrays.allowscalar(false)
@@ -29,8 +34,22 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
     @test adapt_ext !== nothing
     @test gpu_ext !== nothing
 
-    # The raw constructor and the Adapt rule enumerate these fields.
+    # The raw constructor and the storage declaration enumerate these fields.
     @test fieldnames(FI.LinearInterpolant) == (:x, :y, :extrap, :search_policy)
+
+    # The declaration lists every stored array by role; a rebuild around the same storage is
+    # the same interpolant. A family without one is left as it is by moves.
+    @testset "storage declaration" begin
+        itp = linear_interp(range(0.0, 1.0; length = 9), sin.(1:9); extrap = FillExtrap(0.0))
+        s = FI._storage(itp)
+        @test s.grids === (itp.x,)
+        @test s.values === (itp.y,)
+        @test s.extraps === (itp.extrap,)
+        @test FI._rebuild(itp, s) === itp
+        citp = cubic_interp(collect(range(0.0, 1.0; length = 9)), sin.(1:9))
+        @test FI._storage(citp) === nothing
+        @test adapt(JLArray, citp) === citp
+    end
 
     @testset "_DeviceArray leaf" begin
         a = JLArray(Float32[1, 2, 3])
@@ -42,6 +61,18 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         @test FI._DeviceArray(JLArray(zeros(Float32, 2, 3))) isa AbstractMatrix{Float32}
         @test occursin("_DeviceArray", sprint(show, d))                       # no element reads
         @test occursin("_DeviceArray", sprint(show, MIME"text/plain"(), d))
+        @test FI._is_device_storage(d)
+        # Allocation, copies and broadcasts follow the wrapped array (allowscalar(false)
+        # rejects any host element loop).
+        @test similar(d) isa JLArray{Float32, 1}
+        @test similar(d, Float64, (2, 3)) isa JLArray{Float64, 2}
+        c = copy(d)
+        @test c isa FI._DeviceVector{Float32}
+        @test parent(c) !== a
+        @test Array(parent(c)) == Float32[1, 2, 3]
+        @test d .* 2.0f0 isa JLArray{Float32, 1}
+        @test Array(Float64.(d)) == Float64[1, 2, 3]
+        @test Base.mightalias(a, d)
     end
 
     for T in (Float32, Float64), (gname, x) in gpu_grids(T, 33)
@@ -202,6 +233,21 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         end
     end
 
+    # The adaptor decides the precision whatever the value type: a range grid takes the
+    # eltype the adaptor gives a vector grid, and a fill value moves as it moves scalars.
+    @testset "precision-changing adaptor, $vname values ($gname)" for (vname, fv, fill) in (
+                ("Complex", t -> complex(gpu_fy(t), t), 0.0im),
+                ("SVector", t -> SVector(gpu_fy(t), t), SVector(0.0, 0.0)),
+            ), (gname, x) in gpu_grids(Float64, 33)
+        itp = linear_interp(x, fv.(x); extrap = FillExtrap(fill))
+        itp32 = adapt(_Float32Adaptor(), itp)
+        @test eltype(itp32.x) === Float32
+        @test eltype(itp32.y) === typeof(adapt(_Float32Adaptor(), fill))    # ComplexF32, SVector{2, Float32}
+        @test typeof(itp32.extrap.fill_value) === eltype(itp32.y)
+        q = gpu_queries(Float32, 257)[2]
+        @test all(isapprox.(itp32.(q), itp.(q); rtol = 1.0e-5, atol = 1.0e-6))
+    end
+
     # Every range tag narrows and keeps its tag. `_WidenedDomain` (what x86_64 makes of a
     # Float64 `range`) is built directly so that every architecture runs it.
     @testset "precision-changing adaptor keeps the range tag ($(nameof(Tag)))" for (Tag, x) in (
@@ -243,6 +289,51 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         uitp = linear_interp(xd, yd; extrap = ClampExtrap(), store = StorePolicy(cache_axis = false))
         @test uitp.x isa (gname == "Range" ? FI._CachedRange : FI._DeviceVector{T})
         @test gpu_close(uitp(JLArray(q_oob)), ref(q_oob), ymax)
+    end
+
+    # Ownership as on the CPU: an interpolant built from device arrays owns copies by default,
+    # so later in-place changes to the caller's arrays never reach it; each `copy*=false`
+    # flag aliases exactly its own array (the caller's lifetime contract).
+    @testset "device-built storage ownership ($sname)" for (sname, store, grid_aliased, values_aliased) in (
+            ("default", StorePolicy(), false, false),
+            ("copy = false", StorePolicy(copy = false), true, true),
+            ("copy_grid = false", StorePolicy(copy_grid = false), true, false),
+            ("copy_values = false", StorePolicy(copy_values = false), false, true),
+        )
+        x = gpu_grids(Float32, 33)[2][2]
+        q = JLArray(gpu_queries(Float32, 64)[1])
+        # Whether an in-place change to the caller's arrays after the build shows in the results.
+        function seen(build, mutate!)
+            xd, yd = JLArray(copy(x)), JLArray(gpu_fy.(x))
+            itp = build(xd, yd)
+            before = Array(itp(q))
+            mutate!(xd, yd)
+            return Array(itp(q)) != before
+        end
+        shrink_grid!(xd, _) = (xd .*= 0.5f0; nothing)
+        scale_values!(_, yd) = (yd .*= 10; nothing)
+        vector_grid(xd, yd) = linear_interp(xd, yd; extrap = ClampExtrap(), store)
+        range_grid(_, yd) = linear_interp(range(0.0f0, 1.0f0; length = 33), yd; extrap = ClampExtrap(), store)
+        periodic(xd, yd) = (yd .= sinpi.(2 .* xd); linear_interp(xd, yd; bc = PeriodicBC(), store))
+        @test seen(vector_grid, shrink_grid!) == grid_aliased
+        @test seen(vector_grid, scale_values!) == values_aliased
+        @test seen(range_grid, scale_values!) == values_aliased
+        @test seen(periodic, scale_values!) == values_aliased
+    end
+
+    # Moving a host interpolant copies its storage to the device: later host changes, even to
+    # arrays a `copy = false` host interpolant aliases, never reach the device copy.
+    @testset "a moved interpolant owns its device storage" begin
+        x = gpu_grids(Float32, 33)[2][2]
+        xh, yh = copy(x), gpu_fy.(x)
+        hitp = linear_interp(xh, yh; extrap = ClampExtrap(), store = StorePolicy(copy = false))
+        ditp = adapt(JLArray, hitp)
+        q = gpu_queries(Float32, 64)[1]
+        before = Array(ditp(JLArray(q)))
+        xh .*= 0.5f0
+        yh .*= 10
+        @test Array(ditp(JLArray(q))) == before
+        @test hitp(q) != before                                           # the host one aliases them
     end
 
     # One-shot calls on device data: the same device paths as a persistent build.
@@ -450,7 +541,10 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         @test Array(adapt(JLArray, linear_interp(xu, yu))(JLArray(qu))) ≈ ref    # NoExtrap: device check in units
     end
 
+    # Among the extensions and against the core (Aqua loads neither extension).
     @testset "no method ambiguities from the extensions" begin
-        @test isempty(Test.detect_ambiguities(adapt_ext, gpu_ext))
+        exts = (adapt_ext, gpu_ext)
+        ambiguities = Test.detect_ambiguities(FastInterpolations, exts...)
+        @test isempty(filter(p -> any(m -> m.module in exts, p), ambiguities))
     end
 end

@@ -12,9 +12,12 @@ const FI = FastInterpolations
 
 include(joinpath(@__DIR__, "..", "gpu", "linear_nd_cases.jl"))
 
-# Host precision-changing adaptor, as `Metal.mtl` / `CUDA.cu` do on their way to the device.
+# Host precision-changing adaptor, as `Metal.mtl` does on its way to the device: Float64 →
+# Float32 for arrays and scalars, inside Complex elements too.
 struct _NDFloat32Adaptor end
 Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
+Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{ComplexF64}) = ComplexF32.(x)
+Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
 
 @testset "GPU storage: LinearInterpolantND (JLArrays)" begin
     GPUArrays.allowscalar(false)
@@ -35,6 +38,7 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
                 @test g isa FI._CachedRange ? gd === g : gd isa FI._DeviceVector{T}
             end
             @test adapt(Array, itp) === itp
+            @test FI._rebuild(itp, FI._storage(itp)) === itp
             back = adapt(Array, ditp)
             @test typeof(back) === typeof(itp)
             k = JLArrays.jlconvert(ditp)
@@ -93,6 +97,24 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
         end
     end
 
+    # Ownership as on the CPU: the default store copies the device grids and data, so later
+    # in-place changes to the caller's arrays never reach the interpolant; `copy = false`
+    # aliases both (the caller's lifetime contract).
+    @testset "device-built storage ownership ($sname)" for (sname, store, aliased) in (
+            ("default", StorePolicy(), false), ("copy = false", StorePolicy(copy = false), true),
+        )
+        gv = nonuniform(Float32, 17)
+        data = nd_values(Float32, (range(0.0f0, 1.0f0; length = 9), gv))
+        q = map(JLArray, nd_queries(Float32, 2, 64)[1])
+        for mutate! in ((g, _) -> (g .*= 0.5f0), (_, d) -> (d .*= 10))
+            gd, dd = JLArray(copy(gv)), JLArray(copy(data))
+            itp = linear_interp((range(0.0f0, 1.0f0; length = 9), gd), dd; extrap = ClampExtrap(), store)
+            before = Array(itp(q))
+            mutate!(gd, dd)
+            @test (Array(itp(q)) != before) == aliased
+        end
+    end
+
     @testset "SVector-valued 3D field (AoS particles)" begin
         grids = (range(0.0f0, 1.0f0; length = 17), Float32[(i / 16)^1.5 for i in 0:16], range(0.0f0, 2.0f0; length = 9))
         data = [SVector(sin(3a) + c, cos(2b) * a, a * b + c) for a in grids[1], b in grids[2], c in grids[3]]
@@ -120,6 +142,20 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
         ref = linear_interp(map(g -> Float32.(collect(g)), grids), Float32.(data); extrap = ClampExtrap())
         q = (Float32[0.5, 4.2, 9.5], Float32[1.0, 3.3, 7.5], Float32[-0.1, 0.4, 1.2])
         @test gpu_close(itp32(q), ref(q), 2.0f0)
+    end
+
+    # Complex values: every grid narrows as the adaptor narrows a vector grid, not by the
+    # value type; fill values follow the values.
+    @testset "precision-changing adaptor, Complex values" begin
+        grids = (range(0.0, 1.0; length = 9), nonuniform(Float64, 7))
+        itp = linear_interp(grids, complex.(nd_values(Float64, grids), 1.0); extrap = FillExtrap(0.0im))
+        itp32 = adapt(_NDFloat32Adaptor(), itp)
+        @test map(eltype, itp32.grids) === (Float32, Float32)
+        @test itp32.grids[1] isa FI._CachedRange
+        @test eltype(itp32.data) === ComplexF32
+        @test all(e -> e.fill_value isa ComplexF32, itp32.extraps)
+        q = (Float32[0.1, 0.5, 1.2], Float32[0.0, 0.7, -0.1])
+        @test all(isapprox.(itp32(q), itp(q); rtol = 1.0e-5))
     end
 
     # Batch calls take the core ND batch route: the point-wise batch core is the GPU seam.

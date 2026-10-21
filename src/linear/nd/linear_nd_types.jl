@@ -103,7 +103,7 @@ struct LinearInterpolantND{
     end
 
     # Raw: fields stored as-is (already normalized by a previous construction) —
-    # the Adapt extension's rebuild around moved arrays.
+    # `_rebuild` around moved storage.
     function LinearInterpolantND(
             ::_RawFields,
             grids::Tuple{Vararg{AbstractVector, N}},
@@ -117,6 +117,11 @@ struct LinearInterpolantND{
         )
     end
 end
+
+# Storage protocol (core/device_support.jl).
+_storage(itp::LinearInterpolantND) = (grids = itp.grids, values = (itp.data,), extraps = itp.extraps)
+_rebuild(itp::LinearInterpolantND, s) =
+    LinearInterpolantND(_RawFields(), s.grids, only(s.values), s.extraps, itp.searches)
 
 # ========================================
 # Type Introspection

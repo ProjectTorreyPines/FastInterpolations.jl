@@ -43,6 +43,17 @@ end
         @test_throws ArgumentError cubic_interp(x, gpu_fy.(x))(q)        # family not admitted
     end
 
+    @testset "persistent shaped queries keep their shape ($gname)" for (gname, x) in gpu_grids(T, 33)
+        itp = linear_interp(x, gpu_fy.(x); extrap = ClampExtrap())
+        ditp = adapt(MtlArray, itp)
+        qm = reshape(gpu_queries(T, 4096)[2], 64, 64)
+        rm = ditp(MtlArray(qm))
+        @test rm isa MtlArray{T, 2}
+        @test gpu_close(rm, itp(qm), 2.0f0)
+        dm = itp(qm; deriv = DerivOp(1))
+        @test gpu_close(ditp(MtlArray(qm); deriv = DerivOp(1)), dm, maximum(abs, dm))
+    end
+
     # Uniform grids: the isbits `_CachedRange` stays a range inside Metal kernels, with
     # Float32-only fields even for Base `range` input (Float64 internals) and Int `1:n`.
     @testset "range grid ($rname) stays a range on the device" for (rname, x) in gpu_range_grids(T, 65)

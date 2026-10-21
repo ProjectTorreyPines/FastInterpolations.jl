@@ -69,6 +69,19 @@ include(joinpath(@__DIR__, "linear_nd_cases.jl"))
         end
     end
 
+    @testset "shaped SoA and AoS queries keep their shape" begin
+        grids = (range(0.0f0, 1.0f0; length = 33), nonuniform(T, 17))
+        data = nd_values(T, grids)
+        itp = linear_interp(grids, data; extrap = ClampExtrap())
+        ditp = adapt(MtlArray, itp)
+        q = map(v -> reshape(v, 64, 64), nd_queries(T, 2, 4096)[2])
+        rm = ditp(map(MtlArray, q))
+        @test rm isa MtlArray{T, 2}
+        @test gpu_close(rm, itp(q), maximum(abs, data))
+        pm = reshape(nd_points(map(vec, q)), 64, 64)
+        @test gpu_close(ditp(MtlArray(pm)), itp(pm), maximum(abs, data))
+    end
+
     @testset "SVector-valued 3D field, AoS particle positions" begin
         grids = (range(0.0f0, 1.0f0; length = 17), Float32[(i / 16)^1.5 for i in 0:16], range(0.0f0, 2.0f0; length = 9))
         data = [SVector(sin(3a) + c, cos(2b) * a, a * b + c) for a in grids[1], b in grids[2], c in grids[3]]

@@ -144,7 +144,17 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
             @test_throws ArgumentError itp_n(q_oob; extrap = ClampExtrap())        # override contract:
             @test_throws ArgumentError ditp(JLArray(q_oob); extrap = ClampExtrap()) # InBounds only, as on the CPU
             @test_throws ArgumentError ditp(JLArray(q_in); hint = Ref(1))
-            @test_throws DimensionMismatch ditp(JLArray(zeros(T, 3)), JLArray(q_in))
+            cpu_err = try
+                itp_n(zeros(T, 3), q_in)
+            catch err
+                err
+            end
+            gpu_err = try
+                ditp(JLArray(zeros(T, 3)), JLArray(q_in))
+            catch err
+                err
+            end
+            @test typeof(gpu_err) === typeof(cpu_err)                         # output length: the CPU's error
             @test length(ditp(JLArray(T[]))) == 0
         end
 
@@ -302,6 +312,48 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         xd, yd, qd = JLArray(collect(range(0.0f0, 1.0f0; length = 9))), JLArray(rand(Float32, 9)), JLArray(rand(Float32, 4))
         @test which(linear_interp, typeof.((xd, yd, qd))).module === FastInterpolations
         @test which(linear_interp!, typeof.((similar(qd), xd, yd, qd))).module === FastInterpolations
+    end
+
+    # Persistent batch calls take the core batch route as well: the family loop is the seam.
+    @testset "persistent batch uses the core API route" begin
+        x = collect(range(0.0f0, 1.0f0; length = 33))
+        itp = linear_interp(x, gpu_fy.(x); extrap = ClampExtrap())
+        ditp = adapt(JLArray, itp)
+        q = gpu_queries(Float32, 64)[2]
+        qd = JLArray(q)
+        @test which(ditp, Tuple{typeof(qd)}).module === FastInterpolations
+        @test which(ditp, Tuple{typeof(similar(qd)), typeof(qd)}).module === FastInterpolations
+        # shaped GPU queries keep their shape, allocating and in place
+        qm = reshape(q, 8, 8)
+        rm = ditp(JLArray(qm))
+        @test rm isa JLArray{Float32, 2}
+        @test gpu_close(rm, itp(qm), 2.0f0)
+        om = JLArray(zeros(Float32, 8, 8))
+        @test ditp(om, JLArray(qm)) === om
+        @test gpu_close(om, itp(qm), 2.0f0)
+        cpu_err = try
+            itp(zeros(Float32, 4, 16), qm)
+        catch err
+            err
+        end
+        gpu_err = try
+            ditp(JLArray(zeros(Float32, 4, 16)), JLArray(qm))
+        catch err
+            err
+        end
+        @test typeof(gpu_err) === typeof(cpu_err)                             # exact shape, as on the CPU
+        itp_n = linear_interp(x, gpu_fy.(x))                                  # NoExtrap: the CPU's error
+        cpu_err = try
+            itp_n(qm)
+        catch err
+            err
+        end
+        gpu_err = try
+            adapt(JLArray, itp_n)(JLArray(qm))
+        catch err
+            err
+        end
+        @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
     end
 
     # Periodic boundary conditions: queries span several periods (WrapExtrap in the kernel).

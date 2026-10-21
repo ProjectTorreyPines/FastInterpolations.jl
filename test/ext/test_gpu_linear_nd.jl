@@ -122,6 +122,41 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
         @test gpu_close(itp32(q), ref(q), 2.0f0)
     end
 
+    # Batch calls take the core ND batch route: the point-wise batch core is the GPU seam.
+    @testset "ND batch uses the core API route" begin
+        grids = (range(0.0f0, 1.0f0; length = 9), nonuniform(Float32, 7))
+        data = nd_values(Float32, grids)
+        dmax = maximum(abs, data)
+        itp = linear_interp(grids, data; extrap = ClampExtrap())
+        ditp = adapt(JLArray, itp)
+        q = nd_queries(Float32, 2, 64)[2]
+        qd, pd = map(JLArray, q), JLArray(nd_points(q))
+        @test which(ditp, Tuple{typeof(qd)}).module === FastInterpolations
+        @test which(ditp, Tuple{typeof(pd)}).module === FastInterpolations
+        @test which(ditp, Tuple{typeof(similar(pd, Float32)), typeof(qd)}).module === FastInterpolations
+        # shaped SoA and AoS queries keep their shape
+        qm = map(v -> reshape(v, 8, 8), q)
+        rm = ditp(map(JLArray, qm))
+        @test rm isa JLArray{Float32, 2}
+        @test gpu_close(rm, itp(qm), dmax)
+        pm = reshape(nd_points(q), 8, 8)
+        @test gpu_close(ditp(JLArray(pm)), itp(pm), dmax)
+        itp_n = linear_interp(grids, data)                                    # NoExtrap: the CPU's error
+        for (qcpu, qgpu) in ((qm, map(JLArray, qm)), (pm, JLArray(pm)))
+            cpu_err = try
+                itp_n(qcpu)
+            catch err
+                err
+            end
+            gpu_err = try
+                adapt(JLArray, itp_n)(qgpu)
+            catch err
+                err
+            end
+            @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
+        end
+    end
+
     @testset "ND batch admission" begin
         grids = (range(0.0f0, 1.0f0; length = 9), range(0.0f0, 1.0f0; length = 7))
         data = rand(Float32, 9, 7)

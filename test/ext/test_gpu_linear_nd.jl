@@ -12,6 +12,10 @@ const FI = FastInterpolations
 
 include(joinpath(@__DIR__, "..", "gpu", "linear_nd_cases.jl"))
 
+# Host precision-changing adaptor, as `Metal.mtl` / `CUDA.cu` do on their way to the device.
+struct _NDFloat32Adaptor end
+Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
+
 @testset "GPU storage: LinearInterpolantND (JLArrays)" begin
     GPUArrays.allowscalar(false)
     @test fieldnames(FI.LinearInterpolantND) == (:grids, :data, :extraps, :searches)
@@ -99,6 +103,23 @@ include(joinpath(@__DIR__, "..", "gpu", "linear_nd_cases.jl"))
         ref = itp.(Tuple.(pts))
         res = Array(ditp(JLArray(pts)))
         @test maximum(i -> maximum(abs, res[i] - ref[i]), eachindex(ref)) <= 4 * eps(Float32) * 4
+    end
+
+    # A precision-changing move narrows every grid with the data and keeps each range tag
+    # (`_WidenedDomain` built directly so that every architecture runs it).
+    @testset "precision-changing adaptor (mixed range tags)" begin
+        wid = FI._cached_range(FI._WidenedDomain(), 0.0, 1.0, 1 / 8, 8.0, 9)
+        grids = (1:9, Base.OneTo(7), wid)
+        data = [sin(a / 3) + cos(b / 2) * c for a in 1:9, b in 1:7, c in collect(wid)]
+        itp = linear_interp(grids, data; extrap = ClampExtrap())
+        itp32 = adapt(_NDFloat32Adaptor(), itp)
+        @test eltype(itp32.data) === Float32
+        @test itp32.grids[1] isa FI._CachedRange{Float32, Float32, FI._UnitStep}
+        @test itp32.grids[2] isa FI._CachedRange{Float32, Float32, FI._OneTo}
+        @test itp32.grids[3] isa FI._CachedRange{Float32, Float32, FI._WidenedDomain}
+        ref = linear_interp(map(g -> Float32.(collect(g)), grids), Float32.(data); extrap = ClampExtrap())
+        q = (Float32[0.5, 4.2, 9.5], Float32[1.0, 3.3, 7.5], Float32[-0.1, 0.4, 1.2])
+        @test gpu_close(itp32(q), ref(q), 2.0f0)
     end
 
     @testset "ND batch admission" begin

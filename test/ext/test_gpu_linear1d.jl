@@ -192,6 +192,24 @@ Adapt.adapt_storage(::_Float32Adaptor, x::Array{Float64}) = Float32.(x)
         end
     end
 
+    # Every range tag narrows and keeps its tag. `_WidenedDomain` (what x86_64 makes of a
+    # Float64 `range`) is built directly so that every architecture runs it.
+    @testset "precision-changing adaptor keeps the range tag ($(nameof(Tag)))" for (Tag, x) in (
+            (FI._UnitStep, 1:33),
+            (FI._OneTo, Base.OneTo(33)),
+            (FI._WidenedDomain, FI._cached_range(FI._WidenedDomain(), 0.0, 1.0, 1 / 32, 32.0, 33)),
+        )
+        y = gpu_values(Float64, x)
+        itp = linear_interp(x, y; extrap = ClampExtrap())
+        @test itp.x isa FI._CachedRange{Float64, Float64, Tag}
+        itp32 = adapt(_Float32Adaptor(), itp)
+        @test itp32.x isa FI._CachedRange{Float32, Float32, Tag}
+        @test eltype(itp32.y) === Float32
+        ref = linear_interp(Float32.(collect(x)), Float32.(y); extrap = ClampExtrap())
+        q = gpu_queries_on(Float32, x, 257)[2]
+        @test gpu_close(itp32.(q), ref.(q), 2.0f0)
+    end
+
     # Built straight from device data: the same storage as a CPU build moved with `adapt`,
     # no host round trip (allowscalar(false) would reject any element read).
     @testset "$T $gname: built from device data" for T in (Float32, Float64), (gname, x) in gpu_grids(T, 33)

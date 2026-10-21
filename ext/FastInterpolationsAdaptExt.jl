@@ -19,7 +19,7 @@ module FastInterpolationsAdaptExt
 
 using FastInterpolations
 using FastInterpolations: LinearInterpolant, LinearInterpolantND, DerivativeView, _CachedRange, _CachedVector,
-    _DeviceArray, _DeviceVector, _Generic, _RawFields, _is_device_storage, _to_float,
+    _DeviceArray, _DeviceVector, _RawFields, _is_device_storage, _to_float,
     _promote_extrap, _ExclusivePeriodicAxis, _ExclusivePeriodicData
 import Adapt
 
@@ -53,9 +53,10 @@ _wrap_device(a) = _is_device_storage(a) ? _DeviceArray(a) : a
 # ── Grids ──
 # A uniform grid is plain scalars: it travels by value. When the move changes the data's
 # float precision (e.g. `Metal.mtl`: Float64 → Float32), a grid of that same precision is
-# rebuilt in the new one, as a fresh range would be.
+# rebuilt in the new one, as a fresh range would be. Every tag converts: `_to_float` keeps
+# the tag and re-derives a `_WidenedDomain` bracket in the new precision.
 _adapt_axis(_, x::_CachedRange, _, _) = x
-_adapt_axis(_, x::_CachedRange{T, Tinv, _Generic}, ::Type{T}, ::Type{Tv2}) where {T <: AbstractFloat, Tinv, Tv2 <: AbstractFloat} =
+_adapt_axis(_, x::_CachedRange{T}, ::Type{T}, ::Type{Tv2}) where {T <: AbstractFloat, Tv2 <: AbstractFloat} =
     T === Tv2 ? x : _to_float(x, Tv2)
 
 function _adapt_axis(to, x::_CachedVector, _, _)

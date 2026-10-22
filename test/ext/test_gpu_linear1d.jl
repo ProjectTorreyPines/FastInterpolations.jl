@@ -578,6 +578,18 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
         q = gpu_queries(Float32, 64)[1]
         @test gpu_close(ditp(JLArray(q)), cpu(q), maximum(abs, y))         # in-domain: the InBounds path
         @test_logs (:warn, r"NoExtrap\(\) on GPU arrays") ditp(JLArray(q))
+        # an output sharing memory with the queries: the error still names the original query
+        bad = Float32[0.5, 1.3, -0.2]
+        qa = JLArray(bad)
+        @test errmsg(() -> ditp(qa, qa)) == errmsg(() -> cpu(copy(bad), bad))
+        qv = JLArray(bad)                                                  # (qa now holds partial results)
+        @test errmsg(() -> ditp(view(qv, 1:2), view(qv, 1:2))) == errmsg(() -> cpu(bad[1:2]))
+        # integer queries are promoted as on the CPU (a fractional domain end stays representable)
+        xi = Float32[0.5, 1.5, 2.5]
+        cpu_i = linear_interp(xi, Float32[0, 1, 4])
+        ditp_i = adapt(JLArray, cpu_i)
+        @test gpu_close(ditp_i(JLArray([1, 2])), cpu_i([1, 2]), 4.0f0)
+        @test errmsg(() -> ditp_i(JLArray([1, 3]))) == errmsg(() -> cpu_i([1, 3]))
     end
 
     # NoExtrap's error cannot be built inside a kernel: a NoExtrap broadcast over device
@@ -599,8 +611,13 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
             sprint(showerror, err)
         end
         @test errmsg(() -> ditp.(JLArray(q_oob))) == errmsg(() -> linear_interp(x, y)(q_oob))
+        # a nested broadcast is the batch call on its queries, materialized on the device
+        @test !(Base.Broadcast.broadcasted(ditp, Base.Broadcast.broadcasted(*, 0.5f0, qd)) isa Base.Broadcast.Broadcasted)
+        @test Array(ditp.(0.5f0 .* qd)) == Array(ditp(0.5f0 .* qd))
+        @test errmsg(() -> ditp.(qd .+ 2.0f0)) == errmsg(() -> linear_interp(x, y)(q_in .+ 2.0f0))
         citp = linear_interp(JLArray(x), JLArray(y); extrap = ClampExtrap())
         @test Base.Broadcast.broadcasted(citp, qd) isa Base.Broadcast.Broadcasted
+        @test Base.Broadcast.broadcasted(citp, Base.Broadcast.broadcasted(*, 0.5f0, qd)) isa Base.Broadcast.Broadcasted
     end
 
     # Among the extensions and against the core (Aqua loads neither extension).

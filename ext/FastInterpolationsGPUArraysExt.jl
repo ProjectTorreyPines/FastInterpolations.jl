@@ -26,7 +26,7 @@ using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtr
     StorePolicy, PeriodicBC, periodic_check, _PlainAxisBC, _resolve_exclusive_period,
     _throw_excl_endpoint_too_small, AbstractInterpolantND,
     _eval_nd_scalar_query, _check_domain, _query_validate, _query_length,
-    _ExclusivePeriodicAxis, _ExclusivePeriodicData, _RawFields, _resolve_bc_period,
+    _ExclusivePeriodicAxis, _ExclusivePeriodicData, _RawFields, _resolve_bc_period, _promote_coord,
     _throw_excl_axis_period_too_small, _storage, _device_eltype, Searcher, _resolve_search_nd,
     AbstractEvalOp, DerivativeView
 using Base.Broadcast: Broadcasted
@@ -155,33 +155,44 @@ function _gpu_batch_loop!(output, itp, xq, extrap, op, searcher)
     isempty(xq) && return output
     flag = _domain_flag(extrap, xq)
     extrap_k = _kernel_extrap(extrap)
-    output .= (q -> _itp_eval_scalar(itp, _admit(flag, _itp_grid(itp), q), extrap_k, op, searcher)).(xq)
-    _raised(flag) && _throw_gpu_batch_oob(_itp_grid(itp), xq)
+    qk = _kernel_queries(flag, output, xq)
+    output .= (q -> _itp_eval_scalar(itp, _admit(flag, _itp_grid(itp), q), extrap_k, op, searcher)).(qk)
+    _raised(flag) && _throw_gpu_batch_oob(_itp_grid(itp), qk)
     return output
 end
 
 # ── Broadcasts ──
 # A broadcast over device arrays evaluates the interpolant inside a kernel, where NoExtrap's
-# out-of-domain error cannot be built. A NoExtrap interpolant broadcast over device queries
-# therefore takes the batch call (device domain check, the CPU's DomainError): the same
-# values, materialized instead of fused into the surrounding broadcast. ND SoA broadcasts
-# `f.(xs, ys)` over equal-shaped device arrays are the SoA batch call.
+# out-of-domain error cannot be built. A NoExtrap interpolant (or a derivative view of one)
+# broadcast over device data therefore takes the batch call (device domain check, the CPU's
+# DomainError): the same values, materialized instead of fused into the surrounding
+# broadcast. Its arguments become the batch query: a device array as it is (ND: equal-shaped
+# coordinate arrays are the SoA batch); anything else, such as a nested broadcast, a scalar
+# coordinate or a shape to broadcast, is materialized on the device first (ND: as points).
 const _Evaluable = Union{AbstractInterpolant1D, AbstractInterpolantND, DerivativeView}
 
-function Base.Broadcast.broadcasted(style::AbstractGPUArrayStyle, f::_Evaluable, q::AnyGPUArray, qs::AnyGPUArray...)
-    batch = _raises_in_kernel(f) ? _batch_form(f, q, qs) : nothing
+function Base.Broadcast.broadcasted(style::AbstractGPUArrayStyle, f::_Evaluable, q, qs...)
+    itp = _underlying(f)
+    batch = _raises_in_kernel(itp) ? _batch_form(itp, q, qs) : nothing
     return batch === nothing ? Broadcasted{typeof(style)}(f, (q, qs...)) : f(batch)
 end
 
-_raises_in_kernel(d::DerivativeView) = _raises_in_kernel(d.parent)
+_underlying(d::DerivativeView) = _underlying(d.parent)
+_underlying(itp) = itp
 _raises_in_kernel(itp) = _any_noextrap(_storage(itp))
 _any_noextrap(::Nothing) = false
 _any_noextrap(s::NamedTuple) = any(e -> e isa NoExtrap, s.extraps)
 
 # The batch query for a broadcast's arguments (`nothing`: not a batch call).
-_batch_form(_, q, ::Tuple{}) = q
-_batch_form(::AbstractInterpolantND, q, qs::Tuple{Any, Vararg}) = all(a -> axes(a) == axes(q), qs) ? (q, qs...) : nothing
+_batch_form(_, q, ::Tuple{}) = _device_query(q)
+_batch_form(::AbstractInterpolantND, q, qs::Tuple{Any, Vararg}) = _soa_or_points(q, qs)
 _batch_form(_, _, ::Tuple{Any, Vararg}) = nothing
+
+_device_query(q::AnyGPUArray) = q
+_device_query(q) = Base.materialize(Base.Broadcast.broadcasted(identity, q))
+_soa_or_points(q, qs) = _is_soa(q, qs) ? (q, qs...) : Base.materialize(Base.Broadcast.broadcasted(tuple, q, qs...))
+_is_soa(q::AnyGPUArray, qs) = all(a -> a isa AnyGPUArray && axes(a) == axes(q), qs)
+_is_soa(_, _) = false
 
 # ── One-shot ──
 # One-shot calls on GPU queries take the core one-shot route (`linear_interp` /
@@ -253,15 +264,25 @@ end
 end
 @inline _point(::NTuple{N, Any}, q) where {N} = ntuple(d -> @inbounds(q[d]), Val(N))
 
+# The query takes the grid's coordinate type first (an `Int` query on a `Float32` grid), so
+# the substitute lower end is representable; the evaluation promotes it the same way.
 @inline function _guarded(x, q, ::NoExtrap)
-    ok = _in_domain(x, q)
-    return ok, ifelse(ok, q, convert(typeof(q), first(_domain_bounds(x))))
+    qc = _promote_coord(q, eltype(x))
+    ok = _in_domain(x, qc)
+    return ok, ifelse(ok, qc, oftype(qc, first(_domain_bounds(x))))
 end
 @inline _guarded(_, q, ::AbstractExtrap) = (true, q)
 
 _device_flag(like) = fill!(similar(like, Bool, 1), false)
 _raised(::Nothing) = false
 _raised(flag) = _host_element(flag, 1)
+
+# The failure path rereads the queries after the kernel; an output sharing memory with them
+# would have overwritten them by then, so the kernel reads a copy instead.
+_kernel_queries(::Nothing, _, queries) = queries
+_kernel_queries(_, output, queries) = _unaliased(output, queries)
+_unaliased(output, queries::Tuple) = map(q -> _unaliased(output, q), queries)
+_unaliased(output, q) = Base.mightalias(output, q) ? copy(q) : q
 
 @noinline _noextrap_notice() = @warn """
 NoExtrap() on GPU arrays (the default extrapolation): each batch call waits for the device once \
@@ -314,8 +335,9 @@ function _gpu_nd_batch!(output, itp::AbstractInterpolantND{Tg, Tv, N}, queries, 
     flag = _domain_flag(extraps, _flag_like(queries))
     overrides = map(_kernel_override, extraps)
     policies = map(_device_policy, itp.grids, _resolve_search_nd(search, Val(N)))
-    _nd_broadcast!(output, q -> _eval_nd_scalar_query(itp, _admit_point(flag, itp.grids, extraps, q), ops, overrides, policies, nothing), queries)
-    _raised(flag) && _throw_nd_oob(itp.grids, queries, extraps)
+    qk = _kernel_queries(flag, output, queries)
+    _nd_broadcast!(output, q -> _eval_nd_scalar_query(itp, _admit_point(flag, itp.grids, extraps, q), ops, overrides, policies, nothing), qk)
+    _raised(flag) && _throw_nd_oob(itp.grids, qk, extraps)
     return output
 end
 _nd_broadcast!(output, f, queries::Tuple) = (output .= f.(tuple.(queries...)))

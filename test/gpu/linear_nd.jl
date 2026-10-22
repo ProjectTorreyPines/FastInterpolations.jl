@@ -50,6 +50,7 @@ end
             pts = nd_points(q)
             ref = itp_e(q)
             @test gpu_close(ditp.(dev(pts)), ref, dmax)                     # NoExtrap: the batch call
+            @test gpu_close(ditp.(one(T) .* dev(q[1]), map(dev, Base.tail(q))...), ref, dmax)   # nested coordinate
             @test gpu_close(ditp(map(dev, q)), ref, dmax)
             @test gpu_close(ditp(dev(pts)), ref, dmax)
             ops = ntuple(d -> d == 1 ? DerivOp(1) : EvalValue(), N)

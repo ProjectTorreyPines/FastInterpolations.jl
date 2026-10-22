@@ -255,6 +255,7 @@ end
             ditp = adapt(GPUArrayType, itp_n)
             @test gpu_close(ditp.(dev(q_in)), itp_n.(q_in), ymax)
             @test gpu_close(2 .* ditp.(dev(q_in)), 2 .* itp_n.(q_in), 2 * ymax)
+            @test gpu_close(ditp.(T(0.5) .* dev(q_in)), itp_n.(T(0.5) .* q_in), ymax)   # nested: materialized first
             errmsg(f) = try
                 f()
                 ""

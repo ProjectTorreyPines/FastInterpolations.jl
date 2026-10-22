@@ -148,6 +148,25 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
         qn = (Float32[0.5, 0.2], Float32[0.1, NaN])
         @test errmsg(() -> ditp(map(JLArray, qn))) == errmsg(() -> cpu(qn))
         @test errmsg(() -> ditp(JLArray(nd_points(qn)))) == errmsg(() -> cpu(nd_points(qn)))
+        # nested broadcasts, a scalar coordinate and a derivative view take the batch call too
+        @test Array(ditp.(0.5f0 .* qd[1], qd[2])) == Array(ditp((0.5f0 .* qd[1], qd[2])))
+        @test Array(ditp.(qd[1], 0.25f0)) == Array(ditp(JLArray(tuple.(q_in[1], 0.25f0))))
+        @test errmsg(() -> ditp.(qd[1], 2.0f0)) == errmsg(() -> cpu(tuple.(q_in[1], 2.0f0)))
+        dv = deriv_view(ditp, (1, 0))
+        @test !(Base.Broadcast.broadcasted(dv, qd...) isa Base.Broadcast.Broadcasted)
+        @test Array(dv.(qd...)) == Array(ditp(qd; deriv = (DerivOp(1), EvalValue())))
+        # an output sharing memory with a coordinate array: the CPU's error, not a silent result
+        r = 0.0f0:1.0f0:1.0f0
+        cpu2 = linear_interp((r, r), Float32[0 0; 1 1])
+        qx = JLArray(Float32[2])
+        @test errmsg(() -> adapt(JLArray, cpu2)(qx, (qx, JLArray(Float32[0.5])))) ==
+            errmsg(() -> cpu2(zeros(Float32, 1), (Float32[2], Float32[0.5])))
+        # integer coordinates are promoted as on the CPU (fractional domain ends)
+        h = Float32[0.5, 1.5, 2.5]
+        cpu_i = linear_interp((h, h), Float32[i + 2j for i in 1:3, j in 1:3])
+        ditp_i = adapt(JLArray, cpu_i)
+        @test gpu_close(ditp_i((JLArray([1, 2]), JLArray([2, 1]))), cpu_i(([1, 2], [2, 1])), 9.0f0)
+        @test errmsg(() -> ditp_i((JLArray([1, 3]), JLArray([2, 1])))) == errmsg(() -> cpu_i(([1, 3], [2, 1])))
     end
 
     @testset "SVector-valued 3D field (AoS particles)" begin

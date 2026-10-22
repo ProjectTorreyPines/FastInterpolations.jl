@@ -58,10 +58,6 @@ function _show_axis_detail(io::IO, g::_DeviceVector)
     return print(io, ", $(length(g)) points")
 end
 
-# Search on a device grid: threads share no hint, so AutoSearch is a per-query binary search
-# (the policy counterpart of `AbstractRange → DirectSearch`); query order is never probed.
-@inline _resolve_search_policy(::_DeviceVector, xq, ::AutoSearch, hint) = BinarySearch()
-
 # Whether (adapted) storage lives on a device. The GPUArrays extension answers `true` for
 # GPU arrays; everything else but the leaf is host storage.
 _is_device_storage(::Any) = false

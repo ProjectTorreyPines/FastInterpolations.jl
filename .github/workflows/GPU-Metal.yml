@@ -1,0 +1,61 @@
+# Real-GPU tests on Apple silicon (Metal.jl) on GitHub's arm64 macOS runner: the opt-in suite
+# test/gpu/runtests.jl with FI_GPU_BACKEND=metal. The runner's GPU is paravirtualized (Apple's
+# Virtualization framework; GitHub documents MPS as unsupported there), so a probe first checks
+# that Metal.jl finds a device and runs a kernel. Without a usable device the job warns and
+# passes: runner hardware never fails a PR, while a test failure on a working device does.
+name: GPU (Metal)
+
+on:
+  pull_request:
+    paths:
+      - "ext/FastInterpolationsGPUArraysExt.jl"
+      - "ext/FastInterpolationsAdaptExt.jl"
+      - "src/core/**"
+      - "src/linear/**"
+      - "test/gpu/**"
+      - "Project.toml"
+      - ".github/workflows/GPU-Metal.yml"
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  metal:
+    name: Metal - Julia 1.x - macos-latest
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.x"
+      - uses: julia-actions/cache@v2
+      - name: Probe the Metal device
+        id: probe
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.activate(temp = true)
+          Pkg.add("Metal")
+          using Metal
+          ok = try
+              Metal.functional() && Array(MtlArray(Float32[1, 2]) .+ 1.0f0) == Float32[2, 3]
+          catch err
+              @warn "Metal probe failed" exception = err
+              false
+          end
+          ok && Metal.versioninfo()
+          open(io -> println(io, "usable=", ok), ENV["GITHUB_OUTPUT"], "a")
+      - name: Real-GPU tests (Metal)
+        if: steps.probe.outputs.usable == 'true'
+        run: julia --color=yes test/gpu/runtests.jl
+        env:
+          FI_GPU_BACKEND: metal
+      - name: No usable Metal device on this runner
+        if: steps.probe.outputs.usable != 'true'
+        run: echo "::warning title=GPU (Metal)::Metal.jl found no usable device on this runner; the real-GPU tests were skipped"

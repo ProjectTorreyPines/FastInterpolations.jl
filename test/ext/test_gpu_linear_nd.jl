@@ -169,6 +169,42 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
         @test errmsg(() -> ditp_i((JLArray([1, 3]), JLArray([2, 1])))) == errmsg(() -> cpu_i(([1, 3], [2, 1])))
     end
 
+    @testset "device grids with cache_axis = false; an interpolant's device grids reused" begin
+        r, gv = range(0.0f0, 1.0f0; length = 9), nonuniform(Float32, 17)
+        data = nd_values(Float32, (r, gv))
+        cpu = linear_interp((r, gv), data; extrap = ClampExtrap())
+        q = nd_queries(Float32, 2, 64)[1]
+        qd = map(JLArray, q)
+        for store in (StorePolicy(cache_axis = false), StorePolicy())
+            a = linear_interp((r, JLArray(gv)), JLArray(data); extrap = ClampExtrap(), store)
+            @test gpu_close(a(qd), cpu(q), maximum(abs, data))
+            b = linear_interp(a.grids, JLArray(data); extrap = ClampExtrap(), store)
+            @test b.grids[2] isa FI._DeviceVector{Float32}
+            @test gpu_close(b(qd), cpu(q), maximum(abs, data))
+        end
+    end
+
+    # NoExtrap on some axes only: the other axes take their own extrapolation in the kernel and
+    # are skipped when the CPU's error is rebuilt (the NoExtrap axis comes second on purpose).
+    @testset "NoExtrap on some axes only" begin
+        grids = (range(0.0f0, 1.0f0; length = 9), nonuniform(Float32, 7))
+        data = nd_values(Float32, grids)
+        cpu = linear_interp(grids, data; extrap = (ClampExtrap(), NoExtrap()))
+        ditp = adapt(JLArray, cpu)
+        q_in = nd_queries(Float32, 2, 64)[1]
+        q_ok = (q_in[1] .+ 0.5f0, q_in[2])                        # out of domain on the Clamp axis only
+        @test gpu_close(ditp(map(JLArray, q_ok)), cpu(q_ok), maximum(abs, data))
+        q_bad = (q_in[1] .+ 0.5f0, q_in[2] .+ 2.0f0)              # and on the NoExtrap axis
+        errmsg(f) = try
+            f()
+            ""
+        catch err
+            sprint(showerror, err)
+        end
+        @test errmsg(() -> ditp(map(JLArray, q_bad))) == errmsg(() -> cpu(q_bad))                    # SoA: per axis
+        @test errmsg(() -> ditp(JLArray(nd_points(q_bad)))) == errmsg(() -> cpu(nd_points(q_bad)))   # AoS: per point
+    end
+
     @testset "SVector-valued 3D field (AoS particles)" begin
         grids = (range(0.0f0, 1.0f0; length = 17), Float32[(i / 16)^1.5 for i in 0:16], range(0.0f0, 2.0f0; length = 9))
         data = [SVector(sin(3a) + c, cos(2b) * a, a * b + c) for a in grids[1], b in grids[2], c in grids[3]]
@@ -253,5 +289,7 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
         q = (JLArray(rand(Float32, 8)), JLArray(rand(Float32, 8)))
         @test_throws ArgumentError linear_interp(grids, data)(q)                   # data on the host
         @test_throws ArgumentError cubic_interp(grids, data)(q)                    # family not admitted
+        @test_throws ArgumentError adapt(JLArray, linear_interp(grids, data))(JLArray(zeros(Float32, 8)), map(Array, q))  # host queries
+        @test_throws ArgumentError adapt(JLArray, linear_interp(grids, data))(zeros(Float32, 8), q)  # host output
     end
 end

@@ -219,7 +219,6 @@ function FastInterpolations._resolve_data(y::AnyGPUArray, bc::PeriodicBC{:inclus
     periodic_check(bc) && FastInterpolations._check_periodic_endpoints(bc, y)
     return _DeviceArray(y)
 end
-FastInterpolations._resolve_data(y::AnyGPUArray, ::PeriodicBC{:extended}) = _DeviceArray(y)
 FastInterpolations._resolve_data(y::AnyGPUArray, ::PeriodicBC{:exclusive}) = _ExclusivePeriodicData(_DeviceArray(y))
 
 FastInterpolations._check_periodic_endpoints(bc::PeriodicBC{:inclusive}, y::_DeviceVector) =
@@ -353,10 +352,8 @@ _flag_like(queries) = queries
 # Failure path only (the kernel raised the flag): the CPU's error. SoA vectors: per axis, as
 # the CPU's per-axis batch validation (its error names the axis and that axis's batch
 # extreme).
-@noinline function _throw_nd_oob(grids::NTuple{N, Any}, queries::Tuple{AnyGPUVector, Vararg{AnyGPUVector}}, extraps) where {N}
-    map(_check_axis_domain, grids, queries, extraps, ntuple(identity, Val(N)))
-    return nothing
-end
+@noinline _throw_nd_oob(grids::NTuple{N, Any}, queries::Tuple{AnyGPUVector, Vararg{AnyGPUVector}}, extraps) where {N} =
+    foreach(_check_axis_domain, grids, queries, extraps, ntuple(identity, Val(N)))
 _check_axis_domain(_, _, ::AbstractExtrap, _) = nothing
 function _check_axis_domain(g, q, ::NoExtrap, d)
     mapreduce(v -> _in_domain(g, v), &, q) || _throw_batch_oob(_host_endpoints(g), q, d)
@@ -379,11 +376,9 @@ end
     points = _points(queries)
     i = findfirst(q -> !_point_in_domain(grids, q, extraps), points)
     q = _host_element(points, i)
-    map(grids, extraps, ntuple(identity, Val(N))) do g, e, d
+    return foreach(grids, extraps, ntuple(identity, Val(N))) do g, e, d
         e isa NoExtrap && _check_domain(_host_endpoints(g), q[d], NoExtrap(), d)
-        nothing
     end
-    return nothing
 end
 # The points as one device vector in linear index order (SoA: materialized, failure path only).
 _points(queries::Tuple) = tuple.(map(vec, queries)...)

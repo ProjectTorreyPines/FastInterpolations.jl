@@ -513,6 +513,25 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
         @test itp.y isa FI._DeviceVector{Float32}
         @test parent(itp.y) isa JLArray
         @test Array(itp(JLArray(Float32[0.0625, 0.5]))) ≈ Float32[0.5, 4.0]
+        # `copy = false` cannot alias data of another eltype: converted on the device, as on the CPU
+        itp_ref = linear_interp(x, y; extrap = ClampExtrap(), store = StorePolicy(copy = false))
+        @test itp_ref.y isa FI._DeviceVector{Float32} && parent(itp_ref.y) !== y
+        @test Array(itp_ref(JLArray(Float32[0.0625, 0.5]))) ≈ Float32[0.5, 4.0]
+    end
+
+    # An interpolant's own device leaves passed back in (e.g. reusing a grid): promoted to
+    # the new grid/value type on the device, as plain device arrays are.
+    @testset "rebuilt from device leaves of another eltype" begin
+        x = collect(range(0.0f0, 1.0f0; length = 9))
+        y = gpu_fy.(x)
+        d32 = linear_interp(JLArray(x), JLArray(y))
+        q = Float64[0.1, 0.45, 0.8]
+        from_grid = linear_interp(d32.x, JLArray(Float64.(y)))             # Float32 leaf grid, Float64 data
+        @test from_grid.x isa FI._DeviceVector{Float64}
+        @test gpu_close(from_grid(JLArray(q)), linear_interp(Float64.(x), Float64.(y))(q), 1.0)
+        from_values = linear_interp(JLArray(Float64.(x)), d32.y)          # Float64 grid, Float32 leaf data
+        @test from_values.y isa FI._DeviceVector{Float64}
+        @test gpu_close(from_values(JLArray(q)), linear_interp(Float64.(x), Float64.(y))(q), 1.0)
     end
 
     @testset "batch admission and storage checks" begin
@@ -618,6 +637,9 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
         citp = linear_interp(JLArray(x), JLArray(y); extrap = ClampExtrap())
         @test Base.Broadcast.broadcasted(citp, qd) isa Base.Broadcast.Broadcasted
         @test Base.Broadcast.broadcasted(citp, Base.Broadcast.broadcasted(*, 0.5f0, qd)) isa Base.Broadcast.Broadcasted
+        # not a batch call: two coordinates on a 1D interpolant, or a family without declared storage
+        @test Base.Broadcast.broadcasted(ditp, qd, qd) isa Base.Broadcast.Broadcasted
+        @test Base.Broadcast.broadcasted(cubic_interp(x, y), qd) isa Base.Broadcast.Broadcasted
     end
 
     # Among the extensions and against the core (Aqua loads neither extension).

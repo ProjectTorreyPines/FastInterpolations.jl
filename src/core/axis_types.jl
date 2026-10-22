@@ -20,6 +20,16 @@
 #                                            → cached_vector.jl
 #                                            → ... → periodic_axis.jl
 
+"""
+    _RawFields
+
+Sentinel selecting a raw inner constructor: fields are stored as given, already normalized
+or validated by an earlier construction. Rebuilds a type around moved arrays (Adapt) or
+around device storage, where the normalizing constructor would copy, normalize or read
+elements on the host.
+"""
+struct _RawFields end
+
 # ─────────────────────────────────────────────────────────────────────────────
 # _CachedRange — normalized AbstractRange
 # ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +143,12 @@ struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector
         x_max = @inbounds inner[1] + Tg(period)
         @inbounds inner[end] < x_max || _throw_excl_axis_period_too_small(period, x_max, inner[end])
         _validate_exclusive_period(inner, period)
+        return new{Tg, X, Tp}(inner, period, x_max)
+    end
+
+    # Raw: `x_max` and the validation come from the caller (device inners, whose endpoints
+    # the host reads once; kernel-argument rebuilds).
+    function _ExclusivePeriodicAxis{Tg, X, Tp}(::_RawFields, inner::X, period::Tp, x_max::Tg) where {Tg, X <: AbstractVector{Tg}, Tp}
         return new{Tg, X, Tp}(inner, period, x_max)
     end
 end

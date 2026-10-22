@@ -10,13 +10,19 @@ using Test
 # @testset extension runner without invoking the @testitem dispatcher
 # (no testitem matches that path, so the filter would otherwise leave
 # the run silently empty).
+# ── Real-GPU tests (opt-in) ──────────────────────────────────────────
+# `FI_GPU_BACKEND=cuda|metal|amdgpu|oneapi` with `test_args=["gpu/runtests.jl"]`
+# runs the backend-agnostic GPU suite on that device (test/gpu/runtests.jl);
+# never part of a default or CI run.
 # ── Parallel opt-in (ReTestItems) ────────────────────────────────────
 # RETESTITEMS_NWORKERS=N (N>0) routes the @testitem suite through ReTestItems across
 # N worker processes — same ARGS filters, driven by the usual Pkg.test entry points
 # (`RETESTITEMS_NWORKERS=4 cc-julia-test-runner .`). See test/runtests_parallel.jl:
 # it runs a transient shadow copy of the suite; nothing under test/ changes and the
 # TestItemRunner/VS Code path below is untouched. Extension tests keep their own path.
-if parse(Int, get(ENV, "RETESTITEMS_NWORKERS", "0")) > 0 && !("ext/runtests.jl" in ARGS)
+if "gpu/runtests.jl" in ARGS
+    include("gpu/runtests.jl")
+elseif parse(Int, get(ENV, "RETESTITEMS_NWORKERS", "0")) > 0 && !("ext/runtests.jl" in ARGS)
     include("runtests_parallel.jl")
 elseif "ext/runtests.jl" in ARGS
     include("ext/runtests.jl")

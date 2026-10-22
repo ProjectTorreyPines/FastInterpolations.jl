@@ -156,7 +156,7 @@ function _gpu_batch_loop!(output, itp, xq, extrap, op, searcher)
     flag = _domain_flag(extrap, xq)
     extrap_k = _kernel_extrap(extrap)
     qk = _kernel_queries(flag, output, xq)
-    output .= (q -> _itp_eval_scalar(itp, _admit(flag, _itp_grid(itp), q), extrap_k, op, searcher)).(qk)
+    output .= (@inline q -> _itp_eval_scalar(itp, _admit(flag, _itp_grid(itp), q), extrap_k, op, searcher)).(qk)
     _raised(flag) && _throw_gpu_batch_oob(_itp_grid(itp), qk)
     return output
 end
@@ -336,7 +336,7 @@ function _gpu_nd_batch!(output, itp::AbstractInterpolantND{Tg, Tv, N}, queries, 
     overrides = map(_kernel_override, extraps)
     policies = map(_device_policy, itp.grids, _resolve_search_nd(search, Val(N)))
     qk = _kernel_queries(flag, output, queries)
-    _nd_broadcast!(output, q -> _eval_nd_scalar_query(itp, _admit_point(flag, itp.grids, extraps, q), ops, overrides, policies, nothing), qk)
+    _nd_broadcast!(output, @inline(q -> _eval_nd_scalar_query(itp, _admit_point(flag, itp.grids, extraps, q), ops, overrides, policies, nothing)), qk)
     _raised(flag) && _throw_nd_oob(itp.grids, qk, extraps)
     return output
 end

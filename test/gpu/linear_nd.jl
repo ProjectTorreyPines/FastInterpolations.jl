@@ -58,6 +58,13 @@ end
             @test gpu_close(ditp(map(dev, q); deriv = ops), dref, 4 * maximum(abs, filter(!isnan, dref)))
         end
 
+        @testset "$cname: batch kernels inline the point evaluation ($ename)" for (ename, e) in (("Clamp", ClampExtrap()), ("NoExtrap", NoExtrap()))
+            ditp = adapt(GPUArrayType, linear_interp(grids, data; extrap = e))
+            out = dev(zeros(T, length(q_in[1])))
+            @test !calls_ext_function(device_typed(() -> ditp(out, map(dev, q_in))))
+            @test !calls_ext_function(device_typed(() -> ditp(out, dev(nd_points(q_in)))))
+        end
+
         @testset "$cname: NoExtrap OOB throws the CPU error" begin
             itp_n = linear_interp(grids, data)
             ditp = adapt(GPUArrayType, itp_n)

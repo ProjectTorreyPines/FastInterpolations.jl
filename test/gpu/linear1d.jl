@@ -247,6 +247,13 @@ end
             @test checks_bounds(first, parent(leaf)) == (forced != 2)
         end
 
+        @testset "$gname: batch kernel inlines the point evaluation ($ename)" for (ename, e) in (("Clamp", ClampExtrap()), ("NoExtrap", NoExtrap()))
+            ditp = adapt(GPUArrayType, linear_interp(x, y; extrap = e))
+            q = dev(q_in)
+            @test !calls_ext_function(device_typed(() -> ditp(similar(q), q)))
+            @test !calls_ext_function(device_typed(() -> linear_interp!(similar(q), dev(collect(x)), dev(y), q; extrap = e)))
+        end
+
         # The NoExtrap OOB message is built with String interpolation, which GPU compilers
         # reject: a NoExtrap broadcast over device queries is the batch call (domain check
         # outside the evaluation kernel); inside a user kernel it fails to compile.

@@ -50,6 +50,20 @@ const GPUArrayType = Base.typename(typeof(dev(Float32[0]))).wrapper  # CuArray, 
 @kernel function _argconvert_probe!(a) end
 kernel_arg(x) = KA.argconvert(_argconvert_probe!(BACKEND), x)  # what a kernel receives
 on_device(a) = get_backend(a) == BACKEND
+# Typed device code of the kernels `f()` launches: compiler job => [CodeInfo => return type]
+# (the backend's `@device_code_typed`, which recompiles cached kernels while it is active).
+device_typed(f) = @eval $(GPU_PKG).@device_code_typed $f()
+# Whether a kernel calls, rather than inlines, a function of the GPU extension (its per-point
+# evaluation): on CUDA such a call per element cost ~15× the kernel time. `:invoke` targets a
+# MethodInstance (a CodeInstance on newer Julia), unwrapped to its Method.
+const GPU_EXT = Base.get_extension(FastInterpolations, :FastInterpolationsGPUArraysExt)
+_method_of(m::Method) = m
+_method_of(x) = hasproperty(x, :def) ? _method_of(getproperty(x, :def)) : nothing
+_calls_ext(st) = st isa Expr && st.head === :invoke && (m = _method_of(st.args[1]); m isa Method && m.module === GPU_EXT)
+function calls_ext_function(codes)
+    isempty(codes) && error("no kernel was compiled")
+    return any(rs -> any(((ci, _),) -> any(_calls_ext, ci.code), rs), values(codes))
+end
 const GPU_ELTYPES = KA.supports_float64(BACKEND) ? (Float32, Float64) : (Float32,)
 const NARROW = GPU_SPEC.narrow === nothing ? nothing : getfield(GPU_PKG, GPU_SPEC.narrow)
 const FLUSHES_SUBNORMALS = iszero(Array(dev([nextfloat(0.0f0)]) .* 1.0f0)[1])

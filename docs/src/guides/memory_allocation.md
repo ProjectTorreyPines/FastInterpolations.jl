@@ -42,6 +42,9 @@ linear_interp!(out, x, y, xq)
 
 Use this pattern in hot loops to eliminate garbage collection overhead.
 
+!!! note "Output aliasing"
+    The output must not share memory with the grid or the data, as in `linear_interp!(y, x, y, xq)` or an interpolant built with `store = StorePolicy(copy = false)` writing into its own `y`: the evaluation reads them while it writes. The queries themselves may serve as the output (`itp(xq, xq)`, element for element), but a shifted or reversed view of them may not. As with `map!`, this is not checked.
+
 ## 3. Grid Selection: Range vs Vector
 
 For uniform grids, always use `Range` instead of `Vector`:

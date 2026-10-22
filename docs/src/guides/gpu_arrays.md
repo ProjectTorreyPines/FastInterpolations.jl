@@ -150,6 +150,7 @@ Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all). Th
 - `hessian` inside kernels (it returns a heap `Matrix`).
 - `hint = Ref(…)` on batch calls over GPU queries. Inside your own kernels, a `Ref` created in the kernel works as a per-thread hint.
 - Host queries on a device interpolant (`itp(xq_cpu)`); for a single point, see [A single point](#A-single-point).
+- An in-place output that shares memory with the interpolant's grid or data (see [Output aliasing](@ref memory_allocation)). It is not checked, as on the CPU; on the GPU it is a data race, with wrong values that change from run to run.
 
 ## Testing on your GPU
 

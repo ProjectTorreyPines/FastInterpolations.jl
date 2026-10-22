@@ -207,7 +207,7 @@ makedocs(
             "Series Interpolant" => "guides/series_interpolant.md",
             "Memory & Allocation" => "guides/memory_allocation.md",
             "Custom Value Types (Duck Typing)" => "guides/custom_value_types.md",
-            "GPU Arrays" => "guides/gpu_arrays.md",
+            "GPU Arrays (experimental)" => "guides/gpu_arrays.md",
         ],
         "Architecture" => [
             "Overview" => "architecture/overview.md",

@@ -1,5 +1,8 @@
 # [GPU Arrays](@id gpu_arrays)
 
+!!! warning "Experimental"
+    GPU use of the existing API (construction from device arrays, `adapt`, batch and in-place calls, broadcasts, evaluation inside your own kernels) is experimental: it may change, or be removed, in any release without deprecation. This covers the supported families, backends and element types; `NoExtrap()` on the device (when its error is raised, and the output after a failure); broadcast handling; search-policy and hint handling; and the `adapt`, storage and precision rules. CPU behaviour is unaffected. GPU support activates when a GPU package is loaded; `using FastInterpolations.Experimental` is not needed.
+
 Linear interpolants (1D and ND) run on GPUs through the GPUArrays interface, with no backend-specific code: the same code serves every GPUArrays backend (CUDA.jl, Metal.jl, AMDGPU.jl, oneAPI.jl; tested on CUDA and Metal). Loading a GPU package is enough: it loads Adapt.jl and GPUArrays.jl, which activate the GPU support.
 
 The idea is simple: a GPU array is just another storage. Build an interpolant from arrays already on the device, pass device queries, and the usual API runs there — the same calls, keywords and results as on the CPU, with no data passing through the host.

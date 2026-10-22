@@ -189,6 +189,23 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
             @test length(ditp(JLArray(T[]))) == 0
         end
 
+        # Search is planned without a hint: binary search on a vector grid (AutoSearch, and a
+        # hint-carrying policy with a one-time notice), the direct lookup on a range grid
+        # whatever the policy (no notice), as on the CPU.
+        @testset "$T $gname: search planning" begin
+            ditp = adapt(JLArray, linear_interp(x, y))
+            dq = JLArray(q_in)
+            grid = FastInterpolations._itp_grid(ditp)
+            P = gname == "Range" ? FastInterpolations.DirectSearch : BinarySearch
+            @test FastInterpolations._resolve_search(grid, dq, AutoSearch(), nothing) isa FastInterpolations.Searcher{P, FastInterpolations.NoHint}
+            noticed(f) = gname == "Range" ? (@test_logs f()) : (@test_logs (:warn, r"runs as BinarySearch\(\)") f())
+            for s in (LinearBinarySearch(), LinearGallopSearch(), LinearSearch())
+                @test gpu_close(noticed(() -> ditp(dq; extrap = InBounds(), search = s)), linear_interp(x, y)(q_in), ymax)
+                @test noticed(() -> FastInterpolations._resolve_search(grid, dq, s, nothing)) isa FastInterpolations.Searcher{P, FastInterpolations.NoHint}
+            end
+            @test_logs ditp(dq; extrap = InBounds(), search = BinarySearch())     # honoured, no notice
+        end
+
         @testset "$T $gname: strided GPU views" begin
             ditp = adapt(JLArray, itp)
             qd = JLArray(q_oob)
@@ -388,8 +405,9 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
         @test sprint(showerror, gpu_err) == sprint(showerror, cpu_err)
         v = view(JLArray(q_oob), 1:2:64)
         @test gpu_close(linear_interp(xd, yd, v; extrap = ClampExtrap()), linear_interp(x, y, q_oob[1:2:end]; extrap = ClampExtrap()), 2.0f0)
-        # a hint-carrying search policy runs with a fresh per-thread searcher
-        @test gpu_close(linear_interp(xd, yd, JLArray(q_oob); extrap = ClampExtrap(), search = LinearBinarySearch()), linear_interp(x, y, q_oob; extrap = ClampExtrap()), 2.0f0)
+        # a hint-carrying search policy runs as BinarySearch, with a one-time notice
+        r = @test_logs (:warn, r"runs as BinarySearch\(\)") linear_interp(xd, yd, JLArray(q_oob); extrap = ClampExtrap(), search = LinearBinarySearch())
+        @test gpu_close(r, linear_interp(x, y, q_oob; extrap = ClampExtrap()), 2.0f0)
         # shaped GPU queries keep their shape
         qm = reshape(q_in, 8, 8)
         rm = linear_interp(xd, yd, JLArray(qm))

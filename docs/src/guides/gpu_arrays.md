@@ -140,13 +140,15 @@ Use `Float32` on GPUs without fast `Float64` (Metal has no `Float64` at all). Th
 - **Keep data on the device.** Grids and data move once; afterwards only queries and results cross the host–device link, at the PCIe bandwidth. When queries start and end on the CPU, those transfers usually dominate.
 - **Batch size.** Each call launches at least one kernel (measured: about 10–20 µs on a datacenter CUDA GPU, 100–200 µs on an Apple M1 Pro): against one CPU thread, the GPU paid off from about 10⁴ queries on CUDA and 10⁵–10⁶ on the M1 Pro.
 - **Uniform grids are cheapest**: the cell index is computed directly. A non-uniform grid adds a binary search per query.
+- **Search policies.** Each query runs on its own thread, so no search hint carries from one query to the next: on a non-uniform grid the default `AutoSearch()` runs as `BinarySearch()`, and so do `LinearBinarySearch()`, `LinearGallopSearch()` and `LinearSearch()` (with a one-time warning). Sorted queries still run faster on large grids, through memory locality. Uniform grids take the direct lookup whatever the policy.
 - **`NoExtrap()` costs one wait for the device per batch call** (its domain check): with queries known to lie in the domain, `InBounds()` skips it; `ClampExtrap()` and `FillExtrap(v)` never throw and never wait.
 
 ## Not supported yet
 
 - Other interpolation families (cubic, quadratic, constant, Hermite) — a batch call on GPU queries throws an `ArgumentError`.
 - `integrate`, `Series` interpolants, `GriddedQuery`, ND one-shot calls, ND periodic boundary conditions.
-- `hessian` inside kernels (it returns a heap `Matrix`), and search hints (`hint = Ref(…)`).
+- `hessian` inside kernels (it returns a heap `Matrix`).
+- `hint = Ref(…)` on batch calls over GPU queries. Inside your own kernels, a `Ref` created in the kernel works as a per-thread hint.
 - Host queries on a device interpolant (`itp(xq_cpu)`); for a single point, see [A single point](#A-single-point).
 
 ## Testing on your GPU

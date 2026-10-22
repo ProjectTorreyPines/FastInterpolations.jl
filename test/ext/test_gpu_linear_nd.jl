@@ -85,6 +85,16 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
             @test gpu_close(ditp(map(JLArray, q_in); extrap = InBounds()), itp_n(q_in), dmax)
             @test_throws ArgumentError ditp(map(JLArray, q_in); hint = ntuple(_ -> Ref(1), N))
             @test length(ditp(map(_ -> JLArray(T[]), q_in))) == 0
+            # per-axis search planned without a hint: a hint-carrying policy runs as
+            # BinarySearch on vector axes (one-time notice), range axes take the direct lookup
+            dq = map(JLArray, q_in)
+            r = if all(g -> g isa AbstractRange, ditp.grids)
+                @test_logs ditp(dq; extrap = InBounds(), search = LinearBinarySearch())
+            else
+                @test_logs (:warn, r"runs as BinarySearch\(\)") ditp(dq; extrap = InBounds(), search = LinearBinarySearch())
+            end
+            @test gpu_close(r, itp_n(q_in), dmax)
+            @test_logs ditp(dq; extrap = InBounds())                                  # AutoSearch: no notice
         end
 
         @testset "$T $cname: built from device data" begin

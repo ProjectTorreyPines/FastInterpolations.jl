@@ -13,11 +13,10 @@
 # Batch calls on GPU queries (persistent and one-shot, any query shape) take the core API
 # routes; the GPU methods sit at the seams below them: output allocation, search planning
 # and the batch loop. Planning reads no query and keeps the CPU batch contracts (call-time
-# extrap override, NoExtrap throws before any output is written), while the work runs on
-# the device: the NoExtrap domain check is one reduction whose bounds are computed in the
-# kernel, and the loop is one broadcast of the family's point evaluation. A family is
-# admitted by declaring its storage (`_storage` / `_rebuild`), once its point evaluation is
-# verified to compile in GPU kernels.
+# extrap override, the CPU's errors); the loop is the CPU loop's body broadcast over the
+# queries, with NoExtrap's domain check folded into it. A family is admitted by declaring
+# its storage (`_storage` / `_rebuild`), once its point evaluation is verified to compile in
+# GPU kernels.
 
 module FastInterpolationsGPUArraysExt
 
@@ -28,9 +27,8 @@ using FastInterpolations: AbstractInterpolant1D, LinearInterpolant, AbstractExtr
     _throw_excl_endpoint_too_small, AbstractInterpolantND,
     _eval_nd_scalar_query, _check_domain, _query_validate, _query_length,
     _ExclusivePeriodicAxis, _ExclusivePeriodicData, _RawFields, _resolve_bc_period,
-    _throw_excl_axis_period_too_small, _storage, _device_eltype, Searcher, NoHint, RefHint,
+    _throw_excl_axis_period_too_small, _storage, _device_eltype, Searcher, _resolve_search_nd,
     AbstractEvalOp, DerivativeView
-import Adapt
 using Base.Broadcast: Broadcasted
 using GPUArrays: AnyGPUArray, AnyGPUVector, AbstractGPUArrayStyle
 
@@ -114,14 +112,28 @@ FastInterpolations._alloc_query_output(::Type{T}, q::AnyGPUArray) where {T} = si
 FastInterpolations._alloc_query_output(::Type{T}, q::Tuple{AnyGPUArray, Vararg{AnyGPUArray}}) where {T} =
     similar(first(q), T)
 
-# Search is planned without reading a query: device threads share no hint, and a host
-# grid's query-order probe would read the queries. A host grid is rejected by the loop seam,
-# which knows the family.
+# Search is planned without reading a query and without a hint: device threads evaluate
+# queries independently, so no hint carries from one query to the next. A vector grid takes
+# `BinarySearch` (AutoSearch's choice here); a policy built on a carried hint runs as
+# `BinarySearch` too, with a one-time notice. A range grid takes the direct lookup whatever
+# the policy, as on the CPU. A host grid's query-order probe would read the queries; a host
+# grid is rejected by the loop seam, which knows the family.
 function FastInterpolations._resolve_search(grid, q::AnyGPUArray, search, ::Nothing)
-    policy = _on_device(grid) ? FastInterpolations._resolve_search_policy(grid, q, search, nothing) : BinarySearch()
+    policy = _on_device(grid) ? FastInterpolations._resolve_search_policy(grid, q, _device_policy(grid, search), nothing) : BinarySearch()
     return FastInterpolations._to_searcher(policy, nothing)
 end
 FastInterpolations._resolve_search(_, ::AnyGPUArray, _, ::Base.RefValue{Int}) = _throw_gpu_hint()
+
+_device_policy(::AbstractRange, search) = search
+_device_policy(_, search) = _hint_free(search)
+_hint_free(::AutoSearch) = BinarySearch()
+_hint_free(search::Union{LinearSearch, LinearBinarySearch, LinearGallopSearch}) = (_hint_notice(search); BinarySearch())
+_hint_free(search::AbstractSearchPolicy) = search
+
+@noinline _hint_notice(search) = @warn """
+$search on GPU arrays: it carries a search hint from one query to the next, but device \
+threads evaluate queries independently, so it runs as BinarySearch(). Omit `search`, or pass \
+BinarySearch(), to silence this.""" maxlog = 1
 
 # ── 1D batch loop seam ──
 # Persistent batch calls reach the family-agnostic loop entry with the planned extrap and
@@ -133,52 +145,20 @@ FastInterpolations._itp_batch_loop!(::AnyGPUArray, ::AbstractInterpolant1D, ::Ab
 FastInterpolations._itp_batch_loop!(output::AnyGPUArray, itp::AbstractInterpolant1D, xq::AnyGPUArray, extrap, op, searcher) =
     _gpu_batch_loop!(output, itp, xq, extrap, op, searcher)
 
+# The CPU loop's body (the family's point evaluation with the planned extrap and searcher),
+# broadcast over the queries; NoExtrap's domain check rides along (see "Domain check").
+# Broadcast, not `map!`: the backend's native broadcast kernel is leaner than the generic
+# KernelAbstractions kernel behind GPUArrays' `map!`.
 function _gpu_batch_loop!(output, itp, xq, extrap, op, searcher)
     _check_gpu_batch(itp)
     FastInterpolations._is_device_storage(output) || _throw_mixed_storage()
     isempty(xq) && return output
-    _gpu_eval!(output, itp, xq, extrap, op, searcher)
+    flag = _domain_flag(extrap, xq)
+    extrap_k = _kernel_extrap(extrap)
+    output .= (q -> _itp_eval_scalar(itp, _admit(flag, _itp_grid(itp), q), extrap_k, op, searcher)).(xq)
+    _raised(flag) && _throw_gpu_batch_oob(_itp_grid(itp), xq)
     return output
 end
-
-# Broadcast, not `map!`: the backend's native broadcast kernel is leaner than the generic
-# KernelAbstractions kernel behind GPUArrays' `map!`.
-_gpu_eval!(output, itp, xq, extrap, op, ::S) where {S} = (output .= _DeviceEval{S}(itp, extrap, op).(xq))
-
-# NoExtrap: the evaluation kernel checks the domain itself (see "Domain check" below); the
-# host reads the flag once afterwards and throws the CPU's error if it is raised.
-function _gpu_eval!(output, itp, xq, ::NoExtrap, op, ::S) where {S}
-    _noextrap_notice()
-    flag = _device_flag(xq)
-    output .= _CheckedEval{S}(itp, op, flag).(xq)
-    _flag_raised(flag) && _throw_gpu_batch_oob(_itp_grid(itp), xq)
-    return output
-end
-
-# The family's scalar evaluation, per thread, with the planned searcher started fresh.
-struct _DeviceEval{S, I, E, O}
-    itp::I
-    extrap::E
-    op::O
-end
-_DeviceEval{S}(itp, extrap, op) where {S} = _DeviceEval{S, typeof(itp), typeof(extrap), typeof(op)}(itp, extrap, op)
-@inline (f::_DeviceEval{S})(q) where {S} = _itp_eval_scalar(f.itp, q, f.extrap, f.op, _fresh_searcher(S))
-Adapt.adapt_structure(to, f::_DeviceEval{S}) where {S} = _DeviceEval{S}(Adapt.adapt(to, f.itp), f.extrap, f.op)
-
-# NoExtrap's evaluation, per thread: an in-domain query as with `InBounds`, any other one
-# raises the flag (see `_guarded`).
-struct _CheckedEval{S, I, O, F}
-    itp::I
-    op::O
-    flag::F
-end
-_CheckedEval{S}(itp, op, flag) where {S} = _CheckedEval{S, typeof(itp), typeof(op), typeof(flag)}(itp, op, flag)
-@inline function (f::_CheckedEval{S})(q) where {S}
-    ok, qe = _guarded(_itp_grid(f.itp), q, NoExtrap())
-    ok || (@inbounds f.flag[1] = true)
-    return _itp_eval_scalar(f.itp, qe, InBounds(), f.op, _fresh_searcher(S))
-end
-Adapt.adapt_structure(to, f::_CheckedEval{S}) where {S} = _CheckedEval{S}(Adapt.adapt(to, f.itp), f.op, Adapt.adapt(to, f.flag))
 
 # ── Broadcasts ──
 # A broadcast over device arrays evaluates the interpolant inside a kernel, where NoExtrap's
@@ -242,19 +222,37 @@ FastInterpolations._linear_interp_loop!(
 ) = _gpu_batch_loop!(output, LinearInterpolant(_RawFields(), x, y, extrap, _policy(searcher)), x_targets, extrap, op, searcher)
 @inline _policy(::Searcher{P}) where {P} = P()      # search policies are singletons
 
-# A searcher carries no shared state across threads: each one starts fresh (a hint-carrying
-# policy keeps a thread-local hint).
-@inline _fresh_searcher(::Type{Searcher{P, NoHint}}) where {P} = Searcher{P, NoHint}(NoHint())
-@inline _fresh_searcher(::Type{Searcher{P, RefHint}}) where {P} = Searcher{P, RefHint}(RefHint())
-
 # ── Domain check (NoExtrap) ──
-# The evaluation kernel checks the domain as it goes: an out-of-domain (or NaN) query raises
+# The batch loop checks the domain as it evaluates: an out-of-domain (or NaN) query raises
 # a one-element device flag and is evaluated at the domain's lower end instead, in bounds
-# (its value is discarded). The host reads the flag once, after the kernel; a raised flag
-# throws the CPU's `DomainError` (same bounds, same message), computed on this failure path
-# only. Unlike on the CPU, the output may then hold partial results. The bounds come from
-# `_domain_bounds`, the code every axis type uses on the CPU. Other extraps need no check:
-# the per-element boundary branch they take is nearly free in a kernel.
+# (its value is discarded), the evaluation itself taking `InBounds`. The host reads the flag
+# once, after the kernel; a raised flag throws the CPU's `DomainError` (same bounds, same
+# message), computed on this failure path only. Unlike on the CPU, the output may then hold
+# partial results. The bounds come from `_domain_bounds`, the code every axis type uses on
+# the CPU. Other extraps take no flag and no check: the per-element boundary branch they
+# take is nearly free in a kernel.
+_domain_flag(::NoExtrap, like) = (_noextrap_notice(); _device_flag(like))
+_domain_flag(::AbstractExtrap, _) = nothing
+_domain_flag(extraps::Tuple, like) = any(e -> e isa NoExtrap, extraps) ? _domain_flag(NoExtrap(), like) : nothing
+_kernel_extrap(::NoExtrap) = InBounds()
+_kernel_extrap(extrap::AbstractExtrap) = extrap
+
+@inline _admit(::Nothing, _, q) = q
+@inline function _admit(flag, x, q)
+    ok, qe = _guarded(x, q, NoExtrap())
+    ok || (@inbounds flag[1] = true)
+    return qe
+end
+
+# ND: the point as an N-tuple, each NoExtrap axis checked.
+@inline _admit_point(::Nothing, grids, _, q) = _point(grids, q)
+@inline function _admit_point(flag, grids, extraps, q)
+    checked = map(_guarded, grids, _point(grids, q), extraps)
+    all(first, checked) || (@inbounds flag[1] = true)
+    return map(last, checked)
+end
+@inline _point(::NTuple{N, Any}, q) where {N} = ntuple(d -> @inbounds(q[d]), Val(N))
+
 @inline function _guarded(x, q, ::NoExtrap)
     ok = _in_domain(x, q)
     return ok, ifelse(ok, q, convert(typeof(q), first(_domain_bounds(x))))
@@ -262,7 +260,8 @@ end
 @inline _guarded(_, q, ::AbstractExtrap) = (true, q)
 
 _device_flag(like) = fill!(similar(like, Bool, 1), false)
-_flag_raised(flag) = _host_element(flag, 1)
+_raised(::Nothing) = false
+_raised(flag) = _host_element(flag, 1)
 
 @noinline _noextrap_notice() = @warn """
 NoExtrap() on GPU arrays (the default extrapolation): each batch call waits for the device once \
@@ -288,8 +287,9 @@ _host_element(a, i) = only(Array(view(a, i:i)))
 # ── ND batch loop seam ──
 # SoA queries (a tuple of GPU coordinate arrays) and AoS queries (a GPU array of points:
 # N-tuples or static vectors) reach the point-wise batch core every ND family shares, with
-# the per-axis ops and the override-resolved extraps. As in 1D: one broadcast of the family's
-# scalar ND evaluation, NoExtrap axes checked in the kernel.
+# the per-axis ops and the override-resolved extraps. As in 1D: the family's scalar ND
+# evaluation broadcast over the points, per-axis policies planned without a hint, NoExtrap
+# axes checked as they are evaluated.
 const _GPUPoints = AnyGPUArray{<:Union{Tuple, AbstractVector}}
 const _GPUQueriesND = Union{Tuple{AnyGPUArray, Vararg{AnyGPUArray}}, _GPUPoints}
 
@@ -305,25 +305,23 @@ FastInterpolations._nd_batch_pointwise!(
     ops::Tuple{Vararg{AbstractEvalOp, N}}, extraps, search, hint
 ) where {Tg, Tv, N} = _gpu_nd_batch!(output, itp, queries, ops, extraps, search, hint)
 
-function _gpu_nd_batch!(output, itp, queries, ops, extraps, search, hint)
+function _gpu_nd_batch!(output, itp::AbstractInterpolantND{Tg, Tv, N}, queries, ops, extraps, search, hint) where {Tg, Tv, N}
     _check_gpu_batch(itp)
     FastInterpolations._is_device_storage(output) || _throw_mixed_storage()
     hint === nothing || _throw_gpu_hint()
     _query_validate(queries)
     _query_length(queries) == 0 && return output
+    flag = _domain_flag(extraps, _flag_like(queries))
     overrides = map(_kernel_override, extraps)
-    if any(e -> e isa NoExtrap, extraps)
-        _noextrap_notice()
-        flag = _device_flag(queries isa Tuple ? first(queries) : queries)
-        _nd_broadcast!(output, _CheckedEvalND(itp, ops, overrides, extraps, search, flag), queries)
-        _flag_raised(flag) && _throw_nd_oob(itp.grids, queries, extraps)
-    else
-        _nd_broadcast!(output, _DeviceEvalND(itp, ops, overrides, search), queries)
-    end
+    policies = map(_device_policy, itp.grids, _resolve_search_nd(search, Val(N)))
+    _nd_broadcast!(output, q -> _eval_nd_scalar_query(itp, _admit_point(flag, itp.grids, extraps, q), ops, overrides, policies, nothing), queries)
+    _raised(flag) && _throw_nd_oob(itp.grids, queries, extraps)
     return output
 end
 _nd_broadcast!(output, f, queries::Tuple) = (output .= f.(tuple.(queries...)))
 _nd_broadcast!(output, f, queries) = (output .= f.(queries))
+_flag_like(queries::Tuple) = first(queries)
+_flag_like(queries) = queries
 
 # Per-axis call-time overrides for the kernel: `InBounds()` on NoExtrap axes (checked in the
 # kernel) and on call-time `InBounds` axes, `nothing` (stored extrap) elsewhere.
@@ -368,45 +366,5 @@ end
 # The points as one device vector in linear index order (SoA: materialized, failure path only).
 _points(queries::Tuple) = tuple.(map(vec, queries)...)
 _points(queries) = vec(queries)
-
-# The family's scalar ND evaluation, per thread: per-axis ops (resolved `DerivOp`s pass
-# through) and per-axis extrap overrides.
-struct _DeviceEvalND{N, I, O, E, P}
-    itp::I
-    ops::O
-    extrap::E
-    search::P
-end
-_DeviceEvalND(itp::AbstractInterpolantND{Tg, Tv, N}, ops, extrap, search) where {Tg, Tv, N} =
-    _DeviceEvalND{N, typeof(itp), typeof(ops), typeof(extrap), typeof(search)}(itp, ops, extrap, search)
-
-@inline (f::_DeviceEvalND{N})(q) where {N} =
-    _eval_nd_scalar_query(f.itp, ntuple(d -> @inbounds(q[d]), Val(N)), f.ops, f.extrap, f.search, nothing)
-
-Adapt.adapt_structure(to, f::_DeviceEvalND) = _DeviceEvalND(Adapt.adapt(to, f.itp), f.ops, f.extrap, f.search)
-
-# With NoExtrap axes: each one checked in the kernel (see `_guarded`), an out-of-domain
-# coordinate raising the flag.
-struct _CheckedEvalND{N, I, O, E, X, P, F}
-    itp::I
-    ops::O
-    extrap::E
-    extraps::X
-    search::P
-    flag::F
-end
-_CheckedEvalND(itp::AbstractInterpolantND{Tg, Tv, N}, ops, extrap, extraps, search, flag) where {Tg, Tv, N} =
-    _CheckedEvalND{N, typeof(itp), typeof(ops), typeof(extrap), typeof(extraps), typeof(search), typeof(flag)}(
-    itp, ops, extrap, extraps, search, flag
-)
-
-@inline function (f::_CheckedEvalND{N})(q) where {N}
-    checked = map(_guarded, f.itp.grids, ntuple(d -> @inbounds(q[d]), Val(N)), f.extraps)
-    all(first, checked) || (@inbounds f.flag[1] = true)
-    return _eval_nd_scalar_query(f.itp, map(last, checked), f.ops, f.extrap, f.search, nothing)
-end
-
-Adapt.adapt_structure(to, f::_CheckedEvalND) =
-    _CheckedEvalND(Adapt.adapt(to, f.itp), f.ops, f.extrap, f.extraps, f.search, Adapt.adapt(to, f.flag))
 
 end # module

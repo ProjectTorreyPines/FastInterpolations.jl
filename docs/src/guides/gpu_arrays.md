@@ -121,7 +121,7 @@ advance!(get_backend(pos))(pos, vel, Ef, 1.0f-3; ndrange = length(pos))
 
 A kernel cannot throw an error with a message. Batch calls handle `NoExtrap()` (the default) for you: the evaluation kernel checks the domain as it goes, the host reads the result once afterwards, and an out-of-domain (or `NaN`) query throws the same `DomainError` as on the CPU. Unlike on the CPU, an in-place output may then already hold partial results. The check costs one wait for the device per call; the first such call says so once in a warning.
 
-A broadcast of a `NoExtrap()` interpolant over device arrays, `itp.(xq)` (ND: `f.(pts)` or `f.(xs, ys)`), runs as that batch call: the same values and the same error, computed on its own rather than fused with the rest of the broadcast. Interpolants with any other extrapolation broadcast as usual, fused into one kernel.
+A broadcast of a `NoExtrap()` interpolant over device arrays, `itp.(xq)` (ND: `f.(pts)` or `f.(xs, ys)`; nested broadcasts such as `itp.(2 .* xq)` and scalar coordinates included), runs as that batch call: the same values and the same error, computed on its own rather than fused with the rest of the broadcast. Interpolants with any other extrapolation broadcast as usual, fused into one kernel.
 
 Your own kernels evaluate one point at a time and need a non-throwing extrapolation: `ClampExtrap()`, `FillExtrap(v)`, `ExtendExtrap()`, `WrapExtrap()` or, for queries known to be in the domain, `InBounds()`. A `NoExtrap()` interpolant there fails to compile.
 

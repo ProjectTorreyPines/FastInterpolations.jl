@@ -586,7 +586,9 @@ index-space method below.
     h = _get_h(x)
     lo = first(x)
     idx = _clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - lo, inv_h, 1))), 1, length(x) - 1)
-    xL = muladd(idx - 1, h, lo)
+    # left edge from the index converted to `_idx_type(T)` first (`% T`: unchecked integer
+    # conversion, exact here): Int32 on Float32 grids, so the int → float conversion is 32-bit
+    xL = muladd((idx - 1) % _idx_type(T), h, lo)
     xR = xL + h
     return idx, xL, xR
 end
@@ -600,12 +602,12 @@ end
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     if first(x) == one(T)
         idx = _clamp(unsafe_trunc(Int, _extract_primal(xq)), 1, length(x) - 1)
-        xL = T(idx)
+        xL = T(idx % _idx_type(T))
         return idx, xL, xL + one(T)
     end
     lo = first(x)
     idx = _clamp(unsafe_trunc(Int, _extract_primal(xq - lo + one(T))), 1, length(x) - 1)
-    xL = lo + (idx - 1)
+    xL = lo + (idx - 1) % _idx_type(T)
     return idx, xL, xL + one(T)
 end
 
@@ -624,7 +626,7 @@ in-bounds `xq`. Unit-step grids take the `<:_AbstractUnitStep` method below.
     h = _get_h(x)
     lo = first(x)
     idx = min(unsafe_trunc(Int, _extract_primal(muladd(xq - lo, inv_h, 1))), length(x) - 1)
-    xL = muladd(idx - 1, h, lo)
+    xL = muladd((idx - 1) % _idx_type(T), h, lo)
     xR = xL + h
     return idx, xL, xR
 end
@@ -644,12 +646,12 @@ end
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     if first(x) == one(T)
         idx = min(unsafe_trunc(Int, _extract_primal(xq)), length(x) - 1)
-        xL = T(idx)
+        xL = T(idx % _idx_type(T))
         return idx, xL, xL + one(T)
     end
     lo = first(x)
     idx = min(unsafe_trunc(Int, _extract_primal(xq - lo + one(T))), length(x) - 1)
-    xL = lo + (idx - 1)
+    xL = lo + (idx - 1) % _idx_type(T)
     return idx, xL, xL + one(T)
 end
 
@@ -689,12 +691,12 @@ end
     ) where {T, Tinv, First, Tag <: _AbstractUnitStep}
     if first(x) == one(T)
         idx = unsafe_trunc(Int, _extract_primal(xq))
-        xL = T(idx)
+        xL = T(idx % _idx_type(T))
         return idx, xL, xL + one(T)
     end
     lo = first(x)
     idx = unsafe_trunc(Int, _extract_primal(xq - lo + one(T)))
-    xL = lo + (idx - 1)
+    xL = lo + (idx - 1) % _idx_type(T)
     return idx, xL, xL + one(T)
 end
 

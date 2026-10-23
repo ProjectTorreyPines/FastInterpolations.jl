@@ -75,7 +75,27 @@ struct _CachedRange{T, Tinv, Tag <: _AbstractAxisTag} <: AbstractRange{T}
     len::Int
     domain_lo::T
     domain_hi::T
+    function _CachedRange{T, Tinv, Tag}(lo, hi, h, inv_h, len::Integer, domain_lo, domain_hi) where {T, Tinv, Tag <: _AbstractAxisTag}
+        # A narrower `_idx_type(T)` must hold every cell index with half its range to spare: past
+        # 2^24 points a Float32 grid cannot represent its own nodes, so the uncapped exclusive-end
+        # search can overshoot the last cell by rounding. `Int` grids skip the check at compile time.
+        Ti = _idx_type(T)
+        Ti === Int || len <= typemax(Ti) ÷ 2 || _throw_range_length(T, len)
+        return new{T, Tinv, Tag}(lo, hi, h, inv_h, len, domain_lo, domain_hi)
+    end
 end
+
+# Integer type a range search converts the cell index to before rebuilding the cell's left
+# edge `lo + (idx − 1)·h`. Int32 on a Float32/Float16 grid: GPUs emulate the Int64 → float
+# conversion, and a 32-bit coordinate cannot resolve more cells than Int32 counts. `Int`
+# (a no-op) otherwise.
+@inline _idx_type(::Type) = Int
+@inline _idx_type(::Type{<:Union{Float16, Float32}}) = Int32
+@noinline _throw_range_length(::Type{T}, len) where {T} = throw(
+    ArgumentError(
+        "a $T range grid holds at most $(typemax(_idx_type(T)) ÷ 2) points, got $len (a $T coordinate cannot resolve that many cells); use a Float64 grid"
+    )
+)
 
 # Construction factory — the single home of domain-bracket construction: build a
 # `_CachedRange` from raw geometry, deriving `domain_lo`/`domain_hi` from the tag

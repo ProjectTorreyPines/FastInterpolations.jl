@@ -27,6 +27,10 @@ Adapt.adapt_storage(to::_Float32Adaptor, x::Array{<:SVector}) = map(v -> adapt(t
 Adapt.adapt_storage(::_Float32Adaptor, x::Float64) = Float32(x)
 Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
 
+# Kernel adaptor that rejects host arrays, as `Metal.Adaptor` does (Metal.jl ≥ 1.12).
+struct _HostRejectingAdaptor end
+Adapt.adapt_storage(::_HostRejectingAdaptor, x::Array) = throw(ArgumentError("host array in a kernel"))
+
 @testset "GPU storage: LinearInterpolant 1D (JLArrays)" begin
     GPUArrays.allowscalar(false)
     adapt_ext = Base.get_extension(FastInterpolations, :FastInterpolationsAdaptExt)
@@ -117,6 +121,13 @@ Adapt.adapt_storage(::_Float32Adaptor, x::ComplexF64) = ComplexF32(x)
                 @test kitp.x isa FI._DeviceArray
                 @test !(parent(kitp.x) isa JLArray)
             end
+        end
+
+        # A device interpolant holds no host array, so such an adaptor passes it unchanged.
+        @testset "$T $gname: host-rejecting kernel adaptor" begin
+            ditp = adapt(JLArray, itp)
+            @test_throws ArgumentError adapt(_HostRejectingAdaptor(), itp)
+            @test @inferred(adapt(_HostRejectingAdaptor(), ditp)) === ditp
         end
 
         @testset "$T $gname: broadcast parity ($ename)" for (ename, e, qk) in gpu_extraps(T)

@@ -19,6 +19,10 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{Float64}) = Float32.(x)
 Adapt.adapt_storage(::_NDFloat32Adaptor, x::Array{ComplexF64}) = ComplexF32.(x)
 Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
 
+# Kernel adaptor that rejects host arrays, as `Metal.Adaptor` does (Metal.jl ≥ 1.12).
+struct _NDHostRejectingAdaptor end
+Adapt.adapt_storage(::_NDHostRejectingAdaptor, x::Array) = throw(ArgumentError("host array in a kernel"))
+
 @testset "GPU storage: LinearInterpolantND (JLArrays)" begin
     GPUArrays.allowscalar(false)
     @test fieldnames(FI.LinearInterpolantND) == (:grids, :data, :extraps, :searches)
@@ -43,6 +47,8 @@ Adapt.adapt_storage(::_NDFloat32Adaptor, x::ComplexF64) = ComplexF32(x)
             @test typeof(back) === typeof(itp)
             k = JLArrays.jlconvert(ditp)
             @test k.data isa FI._DeviceArray && !(parent(k.data) isa JLArray)
+            @test_throws ArgumentError adapt(_NDHostRejectingAdaptor(), itp)
+            @test @inferred(adapt(_NDHostRejectingAdaptor(), ditp)) === ditp
             @test occursin("LinearInterpolantND", sprint(show, MIME"text/plain"(), ditp))
         end
 

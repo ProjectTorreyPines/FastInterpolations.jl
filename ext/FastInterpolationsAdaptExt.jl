@@ -64,7 +64,14 @@ function _adapt_axis(to, x::_CachedRange{T}) where {T}
     T2 = _adapted_eltype(to, T)
     return T2 === T ? x : _to_float(x, T2)
 end
-_adapted_eltype(to, ::Type{T}) where {T} = eltype(Adapt.adapt(to, Vector{T}(undef, 0)))   # empty probe
+# Inferred, never run: a kernel adaptor that rejects host arrays (`Metal.Adaptor`) infers
+# `Union{}` and keeps `T`. A type adaptor (`MtlArray`) goes as `Type{A}`: its `typeof` is `UnionAll`.
+_adapted_eltype(::Type{A}, ::Type{T}) where {A, T} = _adapted_vector_eltype(Type{A}, T)
+_adapted_eltype(to, ::Type{T}) where {T} = _adapted_vector_eltype(typeof(to), T)
+function _adapted_vector_eltype(::Type{To}, ::Type{T}) where {To, T}
+    V = Base.promote_op(Adapt.adapt, To, Vector{T})
+    return (V !== Union{} && V <: AbstractArray && isconcretetype(eltype(V))) ? eltype(V) : T
+end
 
 function _adapt_axis(to, x::_CachedVector)
     inner = Adapt.adapt(to, x.inner)

@@ -12,6 +12,20 @@
             @test Search(:binary) isa BinarySearch
             @test Search(:linear) isa LinearSearch
             @test Search(:linear_binary) isa LinearBinarySearch{8}  # default window
+            @test Search(:linear_gallop) isa LinearGallopSearch{8}  # default window
+        end
+
+        @testset "LinearGallopSearch kwargs forwarding" begin
+            @test Search(:linear_gallop; linear_window = 4) isa LinearGallopSearch{4}
+            @test Search(:linear_gallop; linear_window = 0) isa LinearGallopSearch{0}
+            @test Search(:linear_gallop; linear_window = 128) isa LinearGallopSearch{128}
+            @test Search(LinearGallopSearch{4}()) === LinearGallopSearch{4}()
+            @test_throws ArgumentError Search(:linear_gallop; linear_window = 3)
+            try
+                Search(:bianry)
+            catch e
+                @test occursin(":linear_gallop", e.msg)
+            end
         end
 
         @testset "LinearBinarySearch kwargs forwarding" begin

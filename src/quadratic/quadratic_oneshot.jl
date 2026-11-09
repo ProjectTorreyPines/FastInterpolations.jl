@@ -170,9 +170,10 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    # Value-matched pooled wrap: Int/OneTo grid + Float32 data → Float32 axis
-    # (vector conversion lands in a pool buffer — warm one-shots stay zero-alloc).
-    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
+    # Value-matched pooled axis: Int/OneTo grid + Float32 data → Float32 axis (vector
+    # conversion lands in a pool buffer — warm one-shots stay zero-alloc). No h/inv_h
+    # cache: the one sweep computes each cell width in place.
+    x = _match_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
@@ -230,8 +231,8 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     _check_query_output_size(output, x_targets)
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    # Value-matched pooled wrap — keeps the batch interior consistent with scalar.
-    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
+    # Value-matched pooled axis, no h/inv_h cache — same as the scalar path.
+    x = _match_axis_pooled(pool, x, _promote_grid_float(Tg, Tv))
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)

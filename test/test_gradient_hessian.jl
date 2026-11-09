@@ -861,3 +861,92 @@ end
         @test iszero(laplacian(itp, q_oob))
     end
 end
+
+# The allocating `hessian` sizes its Matrix from the promoted output eltype. That
+# eltype must fold the QUERY in (a Dual query under ForwardDiff → Matrix{Dual}),
+# exactly as `gradient`/`laplacian`/batch `itp(queries; deriv)` already do.
+@testitem "Vector Calculus: hessian output eltype follows the query (ForwardDiff Dual)" begin
+    using ForwardDiff
+    using ForwardDiff: Dual, value
+
+    x = 1.0:5.0
+    y = 1.0:5.0
+    data = [sin(i) * cos(j) for i in x, j in y]
+    q = [2.5, 3.5]
+    D = Dual{Nothing, Float64, 1}
+    ctors = (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+
+    @testset "Dual query → Matrix{Dual}, primal == Float path ($(nameof(ctor)))" for ctor in ctors
+        itp = ctor((x, y), data)
+        qd = (Dual{Nothing}(2.5, 1.0), Dual{Nothing}(3.5, 0.0))
+        H = @inferred hessian(itp, qd)
+        @test H isa Matrix{D}
+        @test value.(H) ≈ hessian(itp, (2.5, 3.5))
+        @test (@inferred hessian(itp, collect(qd))) isa Matrix{D}       # Vector query
+        @test (@inferred hessian(itp, (qd[1], 3.5))) isa Matrix{D}      # Dual on one axis only
+    end
+
+    @testset "jacobian(vec ∘ hessian) == nested jacobian of gradient ($(nameof(ctor)))" for ctor in ctors
+        itp = ctor((x, y), data)
+        J = ForwardDiff.jacobian(p -> vec(hessian(itp, p)), q)
+        J_ref = ForwardDiff.jacobian(p -> vec(ForwardDiff.jacobian(r -> gradient(itp, r), p)), q)
+        @test size(J) == (4, 2)
+        @test J ≈ J_ref
+    end
+
+    @testset "3D cubic, Vector grid" begin
+        z = collect(range(0.0, 1.0, 7))
+        data3 = [sin(i) * cos(j) * exp(k) for i in x, j in y, k in z]
+        itp = cubic_interp((x, y, z), data3)
+        q3 = [2.5, 3.5, 0.4]
+        J = ForwardDiff.jacobian(p -> vec(hessian(itp, p)), q3)
+        J_ref = ForwardDiff.jacobian(p -> vec(ForwardDiff.jacobian(r -> gradient(itp, r), p)), q3)
+        @test size(J) == (9, 3)
+        @test J ≈ J_ref
+    end
+end
+
+# Duck-typed data through every vector-calculus function. Interpolation is linear in the
+# data, so for a value type made of real channels (Complex, colorant, SVector, Vector,
+# Quantity, a minimal custom type) each derivative must equal the scalar interpolant of
+# each channel — an oracle independent of the code under test.
+@testitem "Vector Calculus: duck-typed data matches the per-channel scalar oracle" setup = [DuckTypeSetup] begin
+    using StaticArrays
+    using Unitful
+    using ColorTypes, ColorVectorSpace
+    x = range(0.0, 1.0, 11)
+    y = range(0.0, 2.0, 21)
+    q = (0.37, 1.21)
+    f1(a, b) = sin(a) * b + a * b^2
+    f2(a, b) = cos(a + b)
+    f3(a, b) = a * b
+    # name => (build a value from three channels, channels of a value)
+    kinds = (
+        "MyDuck" => ((u, v, w) -> MyDuck(u), d -> (d.v,)),
+        "Quantity" => ((u, v, w) -> u * u"K", d -> (ustrip(u"K", d),)),
+        "ComplexF64" => ((u, v, w) -> complex(u, v), d -> (real(d), imag(d))),
+        "RGB" => ((u, v, w) -> RGB(u, v, w), d -> (red(d), green(d), blue(d))),
+        "SVector{3}" => ((u, v, w) -> SA[u, v, w], d -> Tuple(d)),
+        "SVector{MyDuck}" => ((u, v, w) -> SA[MyDuck(u), MyDuck(v)], d -> (d[1].v, d[2].v)),
+        "Vector" => ((u, v, w) -> [u, v, w], d -> Tuple(d)),
+    )
+    @testset "$name, $(nameof(fam))" for (name, (mk, chan)) in kinds,
+            fam in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+
+        itp = fam((x, y), [mk(f1(a, b), f2(a, b), f3(a, b)) for a in x, b in y])
+        k = length(chan(itp(q)))
+        refs = [fam((x, y), [fc(a, b) for a in x, b in y]) for fc in (f1, f2, f3)[1:k]]
+        ≈ₜ(a, b) = isapprox(a, b; rtol = 1.0e-12, atol = 1.0e-12)
+
+        g = gradient(itp, q)
+        @test all(chan(g[j])[c] ≈ₜ gradient(refs[c], q)[j] for j in 1:2, c in 1:k)
+        val, gv = value_gradient(itp, q)
+        @test all(chan(val)[c] ≈ₜ refs[c](q) && chan(gv[j])[c] ≈ₜ gradient(refs[c], q)[j] for j in 1:2, c in 1:k)
+        H = hessian(itp, q)
+        @test all(chan(H[i, j])[c] ≈ₜ hessian(refs[c], q)[i, j] for i in 1:2, j in 1:2, c in 1:k)
+        @test all(chan(laplacian(itp, q))[c] ≈ₜ laplacian(refs[c], q) for c in 1:k)
+        H2 = similar(H)
+        hessian!(H2, itp, q)
+        @test all(isequal(H2[i, j], H[i, j]) for i in 1:2, j in 1:2)
+    end
+end

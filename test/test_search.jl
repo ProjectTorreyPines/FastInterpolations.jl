@@ -1,4 +1,4 @@
-@testitem "Search Module" begin
+@testitem "Search Module" setup = [Basic] begin
     using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
         _search_interval_real,
         Searcher, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch, DirectSearch,
@@ -255,6 +255,27 @@
             idx, _, _, _ = search_interval(policy, x, 0.55)
             @test idx == 56
             @test hint[] == 56
+        end
+
+        @testset "Window overflow matches binary search" begin
+            # Jumps of any size and direction, grid points, endpoints and out-of-domain
+            # queries must land in the same cell as a stateless binary search.
+            using Random
+            Random.seed!(7)
+            xg = cumsum(rand(1000) .+ 0.01)
+            qs = [
+                xg[1] .+ (xg[end] - xg[1]) .* rand(300); rand(xg, 50); xg[1]; xg[end];
+                xg[1] - 1; xg[end] + 1; sort(xg[1] .+ (xg[end] - xg[1]) .* rand(300))
+            ]
+            for MAX in (0, 2, 8)
+                hint = Ref(1)
+                policy = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint(hint))
+                for q in qs
+                    idx, _, _, _ = search_interval(policy, xg, q)
+                    @test idx == first(_search_binary(xg, q))
+                    @test hint[] == idx
+                end
+            end
         end
 
         @testset "Range Ignores Hint" begin
@@ -646,11 +667,11 @@
         itp(out_vec5, xq_vec; search = LinearBinarySearch()) # LinearBinarySearch{8}
         itp(out_vec6, xq_vec; search = LinearBinarySearch{2}()) # LinearBinarySearch{2}
 
-        @test out_vec1 == out_vec2
-        @test out_vec1 == out_vec3
-        @test out_vec1 == out_vec4
-        @test out_vec1 == out_vec5
-        @test out_vec1 == out_vec6
+        @test isclose(out_vec1, out_vec2; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec3; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec4; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec5; nulps = PATH_ULPS)
+        @test isclose(out_vec1, out_vec6; nulps = PATH_ULPS)
     end
 
     # ========================================

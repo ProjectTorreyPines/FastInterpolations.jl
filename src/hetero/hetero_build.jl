@@ -40,12 +40,14 @@ end
 # Per-Axis Differentiation Dispatch
 # ========================================
 
-@inline function _differentiate_axis!(dst, src, grid, bc, d, ::CubicInterp)
-    return _differentiate_nd_along_dim_batch!(dst, src, grid, bc, d)
+# The axis arrives as `Val(D)` (the build recursion's static axis), so a solver that
+# needs a static dimension gets one without a runtime dispatch.
+@inline function _differentiate_axis!(dst, src, grid, bc, ::Val{D}, ::CubicInterp) where {D}
+    return _differentiate_nd_along_dim_batch!(dst, src, grid, bc, D)
 end
 
-@inline function _differentiate_axis!(dst, src, grid, bc, d, ::QuadraticInterp)
-    return _differentiate_nd_along_dim_quadratic!(dst, src, grid, bc, d)
+@inline function _differentiate_axis!(dst, src, grid, bc, ::Val{D}, ::QuadraticInterp) where {D}
+    return _differentiate_lines_quadratic!(dst, src, grid, bc, Val(D))
 end
 
 # LinearInterp / ConstantInterp: no differentiation (not called in compact build)
@@ -110,7 +112,7 @@ end
             effective_bc = _get_effective_bc_hetero(bc_d, p_src, grids[D], method_d)
             src_view = selectdim(partials, 1, p_src)
             dst_view = selectdim(partials, 1, p_dst)
-            _differentiate_axis!(dst_view, src_view, grids[D], effective_bc, D, method_d)
+            _differentiate_axis!(dst_view, src_view, grids[D], effective_bc, Val(D), method_d)
         end
     end
     # Non-derivative axis (sizes[D]=1): skip — no entries to compute

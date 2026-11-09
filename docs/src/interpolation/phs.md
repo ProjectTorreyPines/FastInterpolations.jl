@@ -1,5 +1,8 @@
 # Polyharmonic Splines (PHS)
 
+!!! warning "Experimental"
+    PHS lives in `FastInterpolations.Experimental` and is loaded with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
+
 ## Overview
 
 Polyharmonic splines (PHS) are **radial basis function (RBF) interpolants** optimized for smooth approximation of multidimensional gridded data. They are particularly effective for **smooth-on-log-scale data** and when combined with **custom reference functions**, enabling physics-informed interpolation in specialized domains like quantum chemistry.
@@ -10,7 +13,7 @@ Polyharmonic splines (PHS) are **radial basis function (RBF) interpolants** opti
 - **Analytical derivatives** through the standard `deriv` keyword
 - **Stencil-based evaluation** — cost independent of grid size
 - **Log-density transform** — accurate near singularities (e.g., nuclear cusps)
-- **Custom reference functions** — any callable ρ₀ with derivatives, or `ConstantRef`
+- **Log reference** (`log_reference`) — a constant, or a callable ρ₀ such as an analytic density or another interpolant
 
 See [Differences from the other methods and current limitations](@ref) for what PHS does not support yet.
 
@@ -42,13 +45,15 @@ $$f(x) = \ln\left(\frac{\rho(x)}{\rho_0(x)}\right)$$
 
 where $\rho_0(x)$ is a smooth **reference function** (e.g., promolecular density, empirical model, or physical constraint).
 
-The interpolant is built on $f(x)$, which is smooth by design. Evaluation recovers the original density and derivatives via the chain rule:
+The interpolant is built on $f(x)$, which is smooth by design. Each local stencil interpolant $f_i$ is exponentiated and blended, and the blend is multiplied by the reference:
 
-$$\tilde{\rho} = \rho_0 \exp(f)$$
+$$G(x) = \frac{\sum_i w_i(x)\, e^{f_i(x)}}{\sum_i w_i(x)}, \qquad \tilde{\rho}(x) = \rho_0(x)\, G(x)$$
 
-$$\tilde{\rho}_\xi = \rho_0 \left( f_\xi + \frac{\rho_{0\xi}}{\rho_0} \right)$$
+Derivatives follow from the product rule, with the derivatives of $G$ taken from those of $f_i$ and $w_i$:
 
-$$\tilde{\rho}_{\xi\zeta} = \rho_0 \left( f_{\xi\zeta} + \frac{\rho_\xi \rho_\zeta}{\rho_0^2} + \frac{\rho_{0\xi\zeta}}{\rho_0} - \frac{\rho_{0\xi}\rho_{0\zeta}}{\rho_0^2} \right)$$
+$$\tilde{\rho}_\xi = \rho_{0\xi}\, G + \rho_0\, G_\xi, \qquad \tilde{\rho}_{\xi\zeta} = \rho_{0\xi\zeta}\, G + \rho_{0\xi}\, G_\zeta + \rho_{0\zeta}\, G_\xi + \rho_0\, G_{\xi\zeta}$$
+
+The logarithm is always taken of the positive ratio $\rho/\rho_0$, so negative data work with a negative reference. A value query needs only $\rho_0$ itself; a derivative query needs the derivatives of $\rho_0$ up to the same order.
 
 ### Blending for C² Continuity
 
@@ -64,6 +69,7 @@ with smooth weight $w_i(x)$ that transitions from 1 at node $x_i$ to 0 at distan
 
 ```julia
 using FastInterpolations
+using FastInterpolations.Experimental
 
 # Define grid and data
 x = range(0.0, 1.0, 20)
@@ -78,48 +84,43 @@ val = itp((0.5, 0.3))
 grad = itp((0.5, 0.3); deriv = (DerivOp(1), DerivOp(0)))
 ```
 
-### With Custom Reference Function
+### Log Reference: Constant
+
+With a constant reference $\rho_0 = c$ the transform interpolates $\ln(\rho/c)$, so results keep the sign of the data and exponential decay becomes linear. Any nonzero $c$ with the sign of the data works and is used as given; its magnitude cancels exactly.
 
 ```julia
-# Define reference density
-ref = ConstantRef(1.0)  # simple constant reference
+x = range(0.0, π, 20)
+y = range(0.0, π, 20)
+data = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]   # strictly positive
 
-# Build PHS with log-transform
-itp = phs_interp((x, y), data; 
-    reference_interp = ref, 
-    stencil_size = 8, 
-    degree = 3)
-
-# Stored data is log(ρ/ρ₀); evaluation returns ρ
-val = itp((0.5, 0.3))  # ≈ ρ(0.5, 0.3), not log(ρ)
+itp = phs_interp((x, y), data; log_reference = 1.0)
+val = itp((0.5, 0.3))   # ≈ data at (0.5, 0.3), not its logarithm
 ```
 
-### Custom Reference with Analytical Derivatives
+### Log Reference: Function
 
-Create a callable reference function supporting the interface `ref(q)` and `ref(q; deriv=(DerivOp(...), ...))`:
+A reference function pays off when it knows structure the grid cannot resolve, for example an analytic promolecular density with exact nuclear cusps. A reference sampled on the same grid adds no information, so arrays are not accepted.
+
+The reference is called the way FastInterpolations interpolants are: `ref(q)` returns $\rho_0$ at an `NTuple` point, and derivative queries call `ref(q; deriv = ops)`, which returns the partial derivative selected by the per-axis `DerivOp` tuple `ops` (read the orders with `deriv_order`; total order up to 2). Any interpolant works directly:
 
 ```julia
-struct MyReference
-    # ... state ...
-end
-
-(ref::MyReference)(q; deriv=nothing) = begin
-    if deriv === nothing
-        # return value
-        return ρ₀(q)
-    else
-        # return derivatives based on deriv tuple
-        # deriv = (DerivOp(n₁), DerivOp(n₂), DerivOp(n₃))
-        # means ∂^(n₁+n₂+n₃)ρ₀/∂x^n₁ ∂y^n₂ ∂z^n₃
-        ...
-    end
-end
-
-itp = phs_interp((x, y, z), rho_data;
-    reference_interp = MyReference(),
-    stencil_size = 8,
-    degree = 3)
+ref = cubic_interp((x_fine, y_fine), ρ₀_fine)   # reference built from finer data
+itp = phs_interp((x, y), data; log_reference = ref)
 ```
+
+An analytic reference supplies its derivatives through the same keyword:
+
+```julia
+struct MyReference end
+function (ref::MyReference)(q; deriv = nothing)
+    deriv === nothing && return ρ₀(q)
+    # deriv = (DerivOp(n₁), DerivOp(n₂)) asks for ∂^(n₁+n₂)ρ₀ / ∂x^n₁ ∂y^n₂
+    return ∂ρ₀(q, map(deriv_order, deriv))
+end
+itp = phs_interp((x, y), data; log_reference = MyReference())
+```
+
+A function without the `deriv` keyword is enough for value queries only.
 
 ## Parameters and Tuning
 
@@ -128,8 +129,7 @@ itp = phs_interp((x, y, z), rho_data;
 | `stencil_size` | 8 | Stencil nodes per axis (total = stencil_size^N). Increase for smoother but slower interpolant. |
 | `degree` | 3 | PHS degree: 1, 3, 5, … (odd only). Higher → smoother, larger condition number. |
 | `blend_factor` | 1.0 | Blend range = blend_factor × max_grid_spacing. Increase for wider blending. |
-| `reference_interp` | nothing | Optional custom reference function for log-transform. Use `ConstantRef(val)` for constant reference. |
-| `reference_data` | nothing | Pre-computed reference values on grid (avoids re-evaluating `reference_interp` at every grid node). |
+| `log_reference` | nothing | Log-transform reference ρ₀: a nonzero constant (used as given, same sign as the data) or a callable ρ₀(q), as described above. |
 
 Measured accuracy/speed trade-offs for these parameters are collected in [PHS Performance and Tuning](phs_performance.md).
 
@@ -177,12 +177,12 @@ The accuracy and timing tables for this example are in [PHS Performance and Tuni
 
 PHS is a local radial-basis method rather than a piecewise polynomial, so parts of the common API do not apply or are not implemented yet:
 
-- **Uniform grids only.** The stencil geometry is built from one spacing per axis, so results are only correct when every axis is equally spaced. Non-uniform axes are accepted without error but the interpolant then no longer reproduces its own data (tracked as a `@test_broken` pin).
+- **Uniform grids only.** The stencil geometry is built from one spacing per axis, so results are only correct when every axis is equally spaced. Non-uniform vector axes are rejected with an `ArgumentError`.
 - **No boundary conditions.** Continuity comes from stencil blending, not from end conditions; there is no `bc` keyword.
-- **Search and hints.** Uniform grids locate the base node in O(1); non-uniform grids use a binary search. `search` is only used for out-of-domain checks and `hint` is ignored.
-- **Derivatives** use the standard `deriv` keyword. The `gradient`/`hessian`/`laplacian` helpers do not support PHS yet.
+- **Search and hints.** Range grids locate the base node in O(1); vector grids use a binary search. `search` is only used for out-of-domain checks and `hint` is ignored.
+- **Derivatives** use the standard `deriv` keyword. The `gradient`/`hessian`/`laplacian`/`jacobian` helpers do not support PHS yet.
 - **Not implemented:** adjoint operators, `integrate`, complex-valued data, the 1-D bare-vector constructor, `GriddedQuery`/`GridIdx` queries, and `ClampExtrap`/`WrapExtrap` (use `NoExtrap` or `FillExtrap`).
-- **Known issue:** first derivatives evaluated exactly on a grid node are inaccurate. This and the items above are tracked as `@test_broken` pins in `test/test_phs_broken_pins.jl`.
+- **Known issues:** first derivatives evaluated exactly on a grid node are inaccurate, and with `log_reference` second derivatives are limited to blend neighbourhoods of 27 candidate nodes (`blend_factor ≤ 1` in 3-D; wider blends raise an `ArgumentError`). These and the items above are tracked as `@test_broken` pins in `test/test_phs_broken_pins.jl`.
 
 ## References
 

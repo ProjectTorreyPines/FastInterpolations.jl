@@ -48,6 +48,9 @@ include("vector_calculus.jl")
 # Method traits: constructor/adjoint dispatch mappings (shared by AD extensions)
 include("method_traits.jl")
 
+# Experimental submodule: re-exports features outside the SemVer contract (PHS)
+include("experimental.jl")
+
 # Custom show methods (depends on all interpolant types and DerivativeView)
 include("core/show.jl")
 
@@ -85,16 +88,16 @@ export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
 export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs  # ND cubic types + strategies
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
-export phs_interp, phs_interp!, PHSInterpolantND, PHSLogTransform, ConstantRef  # Polyharmonic spline ND
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
 export PchipInterp, CardinalInterp, AkimaInterp, CubicHermiteInterp  # Hermite family ND methods
 export GridIdx
 export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND
+export jacobian, jacobian!, value_jacobian  # Jacobian of vector-valued ND data
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 
 # Search policy types (user-facing algorithm selection)
-export AbstractSearchPolicy, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch
+export AbstractSearchPolicy, BinarySearch, LinearSearch, LinearBinarySearch, LinearGallopSearch, AutoSearch
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair

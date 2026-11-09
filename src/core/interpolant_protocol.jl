@@ -24,6 +24,12 @@
 @inline _itp_extrap(itp::AbstractInterpolant1D) = itp.extrap
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
+# Batch loop entry shared by every 1D family: the batch callables below call this, and it
+# forwards to the family loop. One family-agnostic method to specialize by query/output
+# storage (the GPU extension), where the family loops are each typed by family.
+@inline _itp_batch_loop!(output, itp::AbstractInterpolant1D, xq, extrap, op, searcher) =
+    _itp_vector_loop!(output, itp, xq, extrap, op, searcher)
+
 # ── N=1 tuple-grid collapse: kwarg unwrapping ──
 # A 1-axis ND constructor `foo_interp((x,), y; ...)` and the 1D tuple-query shims
 # below both forward to the genuine 1D path. Per-axis kwargs arrive ND-style as
@@ -154,9 +160,9 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Number}
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
-    output = Vector{_promote_eltype(itp, Tq, deriv)}(undef, length(xq))
+    output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), xq)
     searcher = _resolve_search(grid, xq, search, hint)
-    _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
+    _itp_batch_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
 end
 
@@ -176,7 +182,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     searcher = _resolve_search(grid, xq, search, hint)
-    _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
+    _itp_batch_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
 end
 
@@ -199,7 +205,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     output = _alloc_query_output(_promote_eltype(itp, Tq, deriv), q)
     searcher = _resolve_search(grid, q, search, hint)
-    _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
+    _itp_batch_loop!(output, itp, q, extrap_eff, deriv, searcher)
     return output
 end
 
@@ -215,7 +221,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     grid = _itp_grid(itp)
     extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     searcher = _resolve_search(grid, q, search, hint)
-    _itp_vector_loop!(output, itp, q, extrap_eff, deriv, searcher)
+    _itp_batch_loop!(output, itp, q, extrap_eff, deriv, searcher)
     return output
 end
 

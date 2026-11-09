@@ -421,9 +421,9 @@ end
 
 Lock-free cache lookup on an immutable snapshot.
 Uses 2-pass algorithm with verification:
-- Pass 1: objectid hint match → verify with isequal + `_verify_cache_match`
-  (catches in-place mutation AND BC mismatch)
-- Pass 2: isequal + `_verify_cache_match` fallback (different object, same content)
+- Pass 1: objectid hint match → verify with isequal + `_verify_build_context` +
+  `_verify_cache_match` (catches in-place mutation, BigFloat precision, AND BC mismatch)
+- Pass 2: same verification fallback (different object, same content)
 
 The `bc_config` argument is the user-supplied BC for the lookup. It is passed to
 `_verify_cache_match` so exclusive periodic caches can additionally check that
@@ -454,7 +454,7 @@ Pass 1 verifies content even on objectid match to detect in-place mutation.
     @inbounds for i in 1:count
         entry = store[i]
         if entry.id === id
-            if isequal(entry.x, x) && _verify_cache_match(entry.cache, bc_config)
+            if isequal(entry.x, x) && _verify_build_context(entry.cache) && _verify_cache_match(entry.cache, bc_config)
                 return entry.cache
             end
         end
@@ -464,13 +464,21 @@ Pass 1 verifies content even on objectid match to detect in-place mutation.
     # This handles: different object with same content (cache hit)
     @inbounds for i in 1:count
         entry = store[i]
-        if isequal(entry.x, x) && _verify_cache_match(entry.cache, bc_config)
+        if isequal(entry.x, x) && _verify_build_context(entry.cache) && _verify_cache_match(entry.cache, bc_config)
             return entry.cache
         end
     end
 
     return nothing
 end
+
+# Build-context verification. Float16/32/64 encode precision in the type, so they never
+# share a bank; BigFloat's precision is a runtime global that `isequal` ignores, so
+# each entry is matched against the precision it was built at (`inv_d` is always
+# computed, hence carries it). Entries for different precisions coexist in one bank.
+@inline _verify_build_context(::CubicSplineCache) = true
+@inline _verify_build_context(c::CubicSplineCache{BigFloat}) =
+    precision(first(c.thomas.inv_d)) == precision(BigFloat)
 
 # BC-aware cache match verification. Default is `true` (objectid + isequal
 # already adequate for non-periodic and inclusive caches). Exclusive periodic

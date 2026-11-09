@@ -20,6 +20,16 @@
 #                                            → cached_vector.jl
 #                                            → ... → periodic_axis.jl
 
+"""
+    _RawFields
+
+Sentinel selecting a raw inner constructor: fields are stored as given, already normalized
+or validated by an earlier construction. Rebuilds a type around moved arrays (Adapt) or
+around device storage, where the normalizing constructor would copy, normalize or read
+elements on the host.
+"""
+struct _RawFields end
+
 # ─────────────────────────────────────────────────────────────────────────────
 # _CachedRange — normalized AbstractRange
 # ─────────────────────────────────────────────────────────────────────────────
@@ -65,7 +75,27 @@ struct _CachedRange{T, Tinv, Tag <: _AbstractAxisTag} <: AbstractRange{T}
     len::Int
     domain_lo::T
     domain_hi::T
+    function _CachedRange{T, Tinv, Tag}(lo, hi, h, inv_h, len::Integer, domain_lo, domain_hi) where {T, Tinv, Tag <: _AbstractAxisTag}
+        # A narrower `_idx_type(T)` must hold every cell index with half its range to spare: past
+        # 2^24 points a Float32 grid cannot represent its own nodes, so the uncapped exclusive-end
+        # search can overshoot the last cell by rounding. `Int` grids skip the check at compile time.
+        Ti = _idx_type(T)
+        Ti === Int || len <= typemax(Ti) ÷ 2 || _throw_range_length(T, len)
+        return new{T, Tinv, Tag}(lo, hi, h, inv_h, len, domain_lo, domain_hi)
+    end
 end
+
+# Integer type a range search converts the cell index to before rebuilding the cell's left
+# edge `lo + (idx − 1)·h`. Int32 on a Float32/Float16 grid: GPUs emulate the Int64 → float
+# conversion, and a 32-bit coordinate cannot resolve more cells than Int32 counts. `Int`
+# (a no-op) otherwise.
+@inline _idx_type(::Type) = Int
+@inline _idx_type(::Type{<:Union{Float16, Float32}}) = Int32
+@noinline _throw_range_length(::Type{T}, len) where {T} = throw(
+    ArgumentError(
+        "a $T range grid holds at most $(typemax(_idx_type(T)) ÷ 2) points, got $len (a $T coordinate cannot resolve that many cells); use a Float64 grid"
+    )
+)
 
 # Construction factory — the single home of domain-bracket construction: build a
 # `_CachedRange` from raw geometry, deriving `domain_lo`/`domain_hi` from the tag
@@ -76,12 +106,13 @@ end
 # `typeof(tag)` (constant-folded under specialization); `T`/`Tinv` are inferred from
 # the value arguments, so call sites carry no type parameters. The raw 7-arg inner
 # ctor stays for explicit-domain rebuilds (e.g. the asymmetric bracket in
-# `_to_float_adding_endpoint`).
-@inline function _cached_range(tag::_AbstractAxisTag, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv, typeof(tag)}(lo, hi, h, inv_h, len, lo, hi)
+# `_to_float_adding_endpoint`). `len::Integer` → `Int`: a range's `length` follows its
+# integer type (`big(0):big(16)`, `big.(0:16) ./ 16` report a `BigInt` length).
+@inline function _cached_range(tag::_AbstractAxisTag, lo::T, hi::T, h::T, inv_h::Tinv, len::Integer) where {T, Tinv}
+    return _CachedRange{T, Tinv, typeof(tag)}(lo, hi, h, inv_h, Int(len), lo, hi)
 end
-@inline function _cached_range(::_WidenedDomain, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv, _WidenedDomain}(lo, hi, h, inv_h, len, prevfloat(lo), nextfloat(hi))
+@inline function _cached_range(::_WidenedDomain, lo::T, hi::T, h::T, inv_h::Tinv, len::Integer) where {T, Tinv}
+    return _CachedRange{T, Tinv, _WidenedDomain}(lo, hi, h, inv_h, Int(len), prevfloat(lo), nextfloat(hi))
 end
 
 # Identity passthrough — re-wrapping would discard the cached fields.
@@ -132,6 +163,12 @@ struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector
         x_max = @inbounds inner[1] + Tg(period)
         @inbounds inner[end] < x_max || _throw_excl_axis_period_too_small(period, x_max, inner[end])
         _validate_exclusive_period(inner, period)
+        return new{Tg, X, Tp}(inner, period, x_max)
+    end
+
+    # Raw: `x_max` and the validation come from the caller (device inners, whose endpoints
+    # the host reads once; kernel-argument rebuilds).
+    function _ExclusivePeriodicAxis{Tg, X, Tp}(::_RawFields, inner::X, period::Tp, x_max::Tg) where {Tg, X <: AbstractVector{Tg}, Tp}
         return new{Tg, X, Tp}(inner, period, x_max)
     end
 end

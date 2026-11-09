@@ -34,6 +34,7 @@ For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help o
 | [**Series Interpolant**](@ref series_interpolant) | Multiple y-series on shared x-grid | 10-120× faster than separate interpolants |
 | [**Memory & Allocation**](@ref memory_allocation) | Tight loops, real-time systems | Zero-allocation patterns |
 | [**Optimization (Optim.jl)**](@ref optimization_guide) | Minimization over interpolated surfaces | Analytical `gradient!`/`hessian!` for Optim.jl |
+| [**GPU Arrays**](@ref gpu_arrays) | Large batches, particle pushers on GPUs | Linear 1D/ND interpolants on CUDA, Metal, … arrays |
 
 ## Quick Decision Guide
 

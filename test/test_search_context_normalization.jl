@@ -55,7 +55,7 @@
             # the same Searcher type as the 2-step resolve_policy+to_searcher chain.
             for grid in (x_vec, x_range)
                 for query in (xq_scalar, xq_sorted)
-                    for policy in (AutoSearch(), BinarySearch(), LinearBinarySearch(), LinearSearch())
+                    for policy in (AutoSearch(), BinarySearch(), LinearBinarySearch(), LinearSearch(), LinearGallopSearch())
                         for hint in (nothing, Ref(1))
                             resolved = _resolve_search_policy(grid, query, policy, hint)
                             expected = _to_searcher(resolved, hint)
@@ -68,7 +68,7 @@
         end
 
         @testset "Range grid → DirectSearch (all policies)" begin
-            for policy in (AutoSearch(), BinarySearch(), LinearBinarySearch(), LinearSearch())
+            for policy in (AutoSearch(), BinarySearch(), LinearBinarySearch(), LinearSearch(), LinearGallopSearch())
                 for hint in (nothing, Ref(1))
                     searcher = _resolve_search(x_range, xq_scalar, policy, hint)
                     @test searcher isa Searcher{DirectSearch}
@@ -143,6 +143,7 @@
             @test @inferred(_resolve_search(x_vec, 0.5, BinarySearch(), nothing)) isa Searcher{BinarySearch, NoHint}
             @test @inferred(_resolve_search(x_vec, 0.5, LinearBinarySearch(), nothing)) isa Searcher{LinearBinarySearch{8}, RefHint}
             @test @inferred(_resolve_search(x_vec, 0.5, LinearSearch(), Ref(1))) isa Searcher{LinearSearch, RefHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, LinearGallopSearch(), nothing)) isa Searcher{LinearGallopSearch{8}, RefHint}
         end
 
         @testset "_resolve_search_policy is inferrable" begin

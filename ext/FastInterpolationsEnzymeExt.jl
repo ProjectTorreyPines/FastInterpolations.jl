@@ -322,7 +322,7 @@ function EnzymeRules.reverse(
         kwargs...
     ) where {N}
     adj, deriv_op = tape
-    f_bar = adj(dret.val; deriv = deriv_op)
+    f_bar = _adj_seed(adj, dret.val; deriv = deriv_op)
     data.dval .+= f_bar
     return (nothing, nothing, nothing)
 end
@@ -341,6 +341,7 @@ end
 
 const _adjoint_func_from_itp = FastInterpolations._adjoint_func_from_itp
 const _adjoint_kwargs_from_itp = FastInterpolations._adjoint_kwargs_from_itp
+const _adj_seed = FastInterpolations._adj_seed
 
 # Trait: data-sized mutable buffer inside shadow struct for accumulating data_bar.
 # Linear/Constant: .data is same size as input data.
@@ -558,7 +559,7 @@ function EnzymeRules.reverse(
         dg_i = Δgrad[i]
         iszero(dg_i) && continue
         ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
-        buf .+= adj(dg_i; deriv = ops_i)
+        buf .+= _adj_seed(adj, dg_i; deriv = ops_i)
     end
     return (nothing, nothing)
 end
@@ -599,16 +600,16 @@ function EnzymeRules.reverse(
             dh_ii = ΔH[i, i]
             iszero(dh_ii) && continue
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            buf .+= adj(dh_ii; deriv = ops)
+            buf .+= _adj_seed(adj, dh_ii; deriv = ops)
         end
         # Off-diagonal (symmetry)
         for i in 1:N, j in (i + 1):N
             dh_ij = ΔH[i, j] + ΔH[j, i]
             iszero(dh_ij) && continue
             ops = ntuple(k -> (k == i || k == j) ? DerivOp(1) : EvalValue(), Val(N))
-            buf .+= adj(dh_ij; deriv = ops)
+            buf .+= _adj_seed(adj, dh_ij; deriv = ops)
         end
-        ΔH .= zero(eltype(ΔH))
+        fill!(ΔH, zero(eltype(ΔH)))   # `.=` would broadcast a vector-valued zero across ΔH
     end
     return (nothing, nothing)
 end
@@ -646,7 +647,7 @@ function EnzymeRules.reverse(
     buf = _data_field(shadow)
     for i in 1:N
         ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-        buf .+= adj(Δlap; deriv = ops)
+        buf .+= _adj_seed(adj, Δlap; deriv = ops)
     end
     return (nothing, nothing)
 end

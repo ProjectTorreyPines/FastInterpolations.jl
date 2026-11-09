@@ -569,12 +569,26 @@ end
     return q
 end
 
-# Branchless per-axis ClampExtrap: one `min/max` clamp (vs the `_oob_state` classify + 2
-# branches) — removes the boundary-OOB misprediction hump. Clamp to the real endpoints
-# `first/last` (geometry, matching `_clamp_to_grid`); the widened `domain_lo/hi` are for OOB
-# *classification* only (Fill/NoExtrap). `min/max` promote → symmetric for a Dual query/grid.
+# Per-axis ClampExtrap, branchless: an OOB query becomes the physical endpoint `first/last`
+# (geometry, matching `_clamp_to_grid`), so ∂ w.r.t. q along that axis is 0. Dispatch on whether
+# `_extract_primal` strips q.
 @inline _handle_axis_extrap(q, axis::AbstractVector, ::ClampExtrap) =
-    _clamp(q, first(axis), last(axis))
+    _clamp_axis(q, _extract_primal(q), axis)
+
+# Not stripped (Float, Int, BigFloat, plain Unitful, …): the 2-op `_clamp`; an in-domain tie
+# returns an equal value (`-0.0` at `lo == 0` becomes `0.0`). On a `_WidenedDomain` axis it also
+# snaps the ≤1-ulp sliver inside the domain bracket onto `first/last` (≈ slope × ulp).
+@inline _clamp_axis(q::T, ::T, axis::AbstractVector) where {T} = _clamp(q, first(axis), last(axis))
+
+# Stripped (Dual, nested Dual, `Quantity{<:Dual}` via the Unitful extension): a `max` tie at `lo`
+# returns the constant `lo`, dropping ∂. Classify the primal on `_domain_bounds` (like `_oob_state`)
+# and select, so an in-domain query keeps its value and partials, as under the batch InBounds
+# promotion. `oftype` keeps both arms q's type.
+@inline function _clamp_axis(q, qp, axis::AbstractVector)
+    lo, hi = _domain_bounds(axis)
+    qc = ifelse(_lt(qp, _extract_primal(lo)), oftype(q, first(axis)), q)
+    return ifelse(_gt(qp, _extract_primal(hi)), oftype(q, last(axis)), qc)
+end
 
 # FillExtrap keeps the branchy `_oob_state` clamp: Fill needs `_oob_state` anyway for the
 # `_try_fill_oob` decision, and the compiler CSEs it with this coordinate classify (so

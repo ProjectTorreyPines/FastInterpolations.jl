@@ -30,6 +30,7 @@ const PROFILE = true          # Enable/disable the CPU profiling run
 # Dependencies
 # ============================================================
 using FastInterpolations
+using FastInterpolations.Experimental
 using DelimitedFiles
 using LinearAlgebra
 using Pickle
@@ -361,7 +362,7 @@ grids = (x_grid, y_grid, z_grid)
 println("\nBuilding Polyharmonic spline (PHS-3, stencil_size=8, blend_factor=1.0, log-density transform)...")
 time_phs = @elapsed itp_phs = phs_interp(
     grids, rho_3d; stencil_size = 8, degree = 3,
-    reference_interp = ref_rho0
+    log_reference = ref_rho0
 )
 @printf "  Built in %.4f seconds\n" time_phs
 

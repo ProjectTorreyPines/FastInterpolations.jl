@@ -36,16 +36,20 @@ end
 
 Create an N-dimensional polyharmonic spline interpolant.
 
+Experimental: load with `using FastInterpolations.Experimental`; the API and behaviour
+may change in any release. Inputs it cannot evaluate correctly raise an `ArgumentError`.
+
 # Arguments
 - `grids`: `NTuple{N, AbstractVector}` — one grid vector per dimension. Each axis must be
-    uniformly spaced: the stencil geometry uses a single spacing per axis, so non-uniform
-    axes are accepted but give inaccurate results.
-- `data`:  `AbstractArray{Tv, N}` — data values at grid nodes
+    uniformly spaced: ranges are accepted as is, other vectors must match their mean
+    spacing up to rounding.
+- `data`:  `AbstractArray{Tv, N}` — real data values at grid nodes
 
 # Keyword Arguments
 - `stencil_size::Int = 8`:
     Number of stencil nodes per axis (total = stencil_size^N).
-    Reduce for high dimensions (e.g. 4 for N≥4).
+    Reduce for high dimensions (e.g. 4 for N≥4). The stencil must not span more nodes
+    than an axis has.
 - `degree::Int = 3`:
     PHS radial function degree (odd positive integer: 1, 3, 5, …).
     Higher degree → smoother interpolant, larger condition number.
@@ -53,28 +57,20 @@ Create an N-dimensional polyharmonic spline interpolant.
     Blend range = blend_factor × max_grid_spacing.
     Larger values → wider blending neighbourhood → smoother but more expensive.
     Default 1.0 provides good balance (3× faster than 2.0, ~2× error increase).
+    Values that leave cell centres outside every blend radius are rejected (in 4-D and
+    above this includes the default; pass e.g. 2.0).
 - `extrap=NoExtrap()`:
-    Extrapolation mode (scalar or per-axis tuple).
+    Extrapolation mode (scalar or per-axis tuple): `NoExtrap`, `FillExtrap` or `InBounds`.
 - `search=AutoSearch()`:
     Search policy (scalar or per-axis tuple; used for OOB checking).
-- `reference_interp=nothing`:
-    If provided, enables the log-density smoothing transform:
-    `data` is stored as `log(ρ/ρ₀)` where ρ₀ values come from `reference_data`
-    (if given) or from evaluating `reference_interp` at each grid node.
-    Evaluation returns ρ̃ = ρ₀ * exp(f) with correct derivative transforms.
-- `reference_data=nothing`:
-    Pre-computed ρ₀ values at all grid nodes (same shape as `data`).
-    When provided alongside `reference_interp`, avoids evaluating `reference_interp`
-    at every grid node during construction — useful when `reference_interp` is a
-    nested PHS (expensive per-node) but the raw ρ₀ array is already available.
-    Example:
-    ```julia
-    # itp_rho0 is a log-space PHS — accurate derivatives but slow to query 592K nodes
-    itp_rho0 = phs_interp(grids, rho0; reference_interp = ConstantRef(1.0))
-    # Pass rho0 directly so construction stays O(N·log N); eval uses itp_rho0 for ∂ρ₀
-    itp_phs  = phs_interp(grids, rho; reference_interp = itp_rho0,
-                          reference_data = rho0)
-    ```
+- `log_reference=nothing`:
+    Enables the log transform: `data` is stored as `log(ρ/ρ₀)` and evaluation returns
+    `ρ₀ · exp(f)` with matching derivatives. `ρ₀` is a nonzero constant, used as given
+    and with the sign of the data, or a callable `ρ₀(q)` on an `NTuple{N}` point.
+    Value queries only call `ρ₀(q)`; derivative queries also call `ρ₀(q; deriv = ops)`,
+    as for a FastInterpolations interpolant, so a callable reference answers them
+    through the `deriv` keyword. Every `data/ρ₀` must be positive and finite. Arrays are not accepted: a reference sampled on the data grid adds no
+    information.
 
 # Returns
 `PHSInterpolantND{Tg, Tv, N, degree}` — callable interpolant.
@@ -99,19 +95,23 @@ function phs_interp(
         blend_factor::Real = 1.0,
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        reference_interp = nothing,
-        reference_data = nothing,
+        log_reference = nothing,
     ) where {N, Tv_raw}
     isodd(degree) && degree >= 1 || throw(ArgumentError("PHS degree must be odd and ≥ 1, got $degree"))
-    stencil_size >= 1 || throw(ArgumentError("stencil_size must be ≥ 1, got $stencil_size"))
 
     _validate_nd_grids(grids, data)
+    _phs_check_raw_eltypes(grids, data)
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
+    _phs_check_float_types(Tg, Tv)
+    _phs_check_uniform_axes(grids_typed)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     grids_c = _convert_cache_axes(grids_typed, ntuple(_ -> NoBC(), Val(N)), Tg)
     searches = _resolve_search_nd(search, Val(N))
     extrap_vals = _resolve_extrap(extrap, ntuple(_ -> NoBC(), N), Val(N), Tv)
+    _phs_check_extraps(extrap_vals)
+    _phs_check_stencil_size(stencil_size, grids_c, Tg)
+    _phs_check_blend_factor(blend_factor, grids_c, Tg)
 
     blend_a, blend_r_idx = _phs_blend_params(grids_c, blend_factor)
 
@@ -121,25 +121,8 @@ function phs_interp(
 
     stencil_phys_offsets = [ntuple(d -> Tg(off[d]) * hs[d], Val(N)) for off in stencil_offsets]
 
-    # Optionally apply log-density smoothing transform
-    transform, data_store = if reference_interp === nothing
-        nothing, Array{Tv}(data_typed)
-    else
-        # Determine ρ₀ at each grid node.
-        # `reference_data` lets the caller bypass per-node evaluation of `reference_interp`
-        # (useful when reference_interp is a nested PHS — expensive at 592K+ nodes).
-        rho0_nodes = if reference_data !== nothing
-            # Pre-computed ρ₀ array supplied — use directly (fast path)
-            size(reference_data) == size(data_typed) ||
-                throw(DimensionMismatch("reference_data size $(size(reference_data)) must match data size $(size(data_typed))"))
-            Tv.(reference_data)
-        else
-            # Evaluate reference_interp at each grid node (may be slow for nested PHS)
-            Tv[reference_interp(ntuple(d -> grids_c[d][idx[d]], N)) for idx in CartesianIndices(size(data_typed))]
-        end
-        log_data = Array{Tv}(log.(data_typed ./ rho0_nodes))
-        PHSLogTransform{N, typeof(reference_interp)}(reference_interp), log_data
-    end
+    # Optional log transform: store log(ρ/ρ₀) and keep the reference for evaluation
+    transform, data_store = _resolve_phs_log_reference(log_reference, grids_c, data_typed, Tv, Tg)
 
     blend_a3 = blend_a^3
     # Use maxthreadid() to account for interactive thread pools
@@ -185,6 +168,8 @@ Evaluate the PHS interpolant at a single N-tuple query point.
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N}
+    _phs_check_deriv_order(ops)
+    _phs_check_log_hessian(itp.transform, itp.blend_r_idx, ops)
     _phs_check_domain(itp, query)
     # Handle out-of-bounds (fills FillExtrap, etc.)
     oob = _try_fill_oob(query, itp.grids, itp.extraps, ops, first(itp.data))
@@ -197,8 +182,12 @@ end
 @inline function (itp::PHSInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         kw...,  # absorb search/hint passed by AbstractInterpolantND protocol
     ) where {Tg, Tv, N}
+    # Validate a call-time override like the other interpolants (only InBounds passes);
+    # PHS has no in-domain fast path, so the stored extrapolation still applies.
+    _resolve_extrap_override_nd(itp, extrap)
     return _phs_callable_impl(itp, query, _phs_resolve_ops(deriv, Val(N)))
 end
 
@@ -219,9 +208,12 @@ function _phs_batch_impl!(
         queries,
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N}
+    _phs_check_deriv_order(ops)
+    _phs_check_log_hessian(itp.transform, itp.blend_r_idx, ops)
     nq = _query_length(queries)
     length(out) == nq || _throw_query_output_mismatch(nq, length(out))
     _query_validate(queries)
+    _validate_nd_domain(itp.grids, queries, itp.extraps)  # NoExtrap: DomainError before any eval
 
     @inbounds for k in 1:nq
         q = _extract_query_point(queries, k, Val(N))
@@ -239,8 +231,10 @@ function (itp::PHSInterpolantND{Tg, Tv, N})(
         out::AbstractVector,
         queries::Union{Tuple{Vararg{AbstractVector, N}}, AbstractVector};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         kw...,  # absorb search/hint forwarded by AbstractInterpolantND protocol
     ) where {Tg, Tv, N}
+    _resolve_extrap_override_nd(itp, extrap)  # validates the override, as in the scalar callable
     return _phs_batch_impl!(itp, out, queries, _phs_resolve_ops(deriv, Val(N)))
 end
 

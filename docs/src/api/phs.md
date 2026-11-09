@@ -1,5 +1,8 @@
 # Polyharmonic Spline API
 
+!!! warning "Experimental"
+    PHS lives in `FastInterpolations.Experimental` and is loaded with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
+
 ## Overview
 
 ### One-shot (construction + evaluation)
@@ -23,8 +26,8 @@
 
 | Function | Description |
 |----------|-------------|
-| `phs_interp(grids, data; reference_interp=ConstantRef(ρ₀))` | Interpolate `log(data/ρ₀)`, return `data` scale |
-| `phs_interp(grids, data; reference_interp=itp₀, reference_data=ρ₀)` | Reference from another interpolant, nodes pre-evaluated |
+| `phs_interp(grids, data; log_reference = c)` | Interpolate `log(data/c)` for a nonzero constant `c` with the sign of `data`, return `data` scale |
+| `phs_interp(grids, data; log_reference = ρ₀)` | Interpolate `log(data/ρ₀)` for a callable `ρ₀(q)`, such as an interpolant; derivative queries call `ρ₀(q; deriv = ops)` |
 
 See [Polyharmonic Splines (PHS)](../interpolation/phs.md) for the method, tuning guidance, and worked examples.
 
@@ -33,19 +36,13 @@ See [Polyharmonic Splines (PHS)](../interpolation/phs.md) for the method, tuning
 ## Functions
 
 ```@docs
-phs_interp
-phs_interp!
+FastInterpolations.Experimental
+FastInterpolations.phs_interp
+FastInterpolations.phs_interp!
 ```
 
 ## Interpolant Type
 
 ```@docs
-PHSInterpolantND
-```
-
-## Log-transform Types
-
-```@docs
-PHSLogTransform
-ConstantRef
+FastInterpolations.PHSInterpolantND
 ```

@@ -217,6 +217,56 @@ end
     end
 end
 
+@testitem "Duck grid: Quantity{Dual} query at a grid endpoint stays in-domain" begin
+    using ForwardDiff, Unitful
+    using ForwardDiff: Dual, value, partials
+
+    # An endpoint query is in-domain. ForwardDiff orders Duals by their partials on a value tie
+    # (`Dual(4, 1) > 4`), so the domain check compares the primal, which through a `Quantity`
+    # wrapper needs the Unitful extension. Without it an outward seed reads as OOB: Clamp drops ∂,
+    # Fill returns the fill value, NoExtrap throws. Reference: the same Dual on the unitless twin.
+    s = u"s"
+    x = collect(0.0:4.0)
+    y1 = 2.0 .* x .+ 1.0
+    dN = [2a + 3b for a in x, b in x]
+    same(a, b) = a isa Dual && isapprox(value(a), value(b); rtol = 1.0e-12) &&
+        isapprox(partials(a)[1], partials(b)[1]; atol = 1.0e-12)
+
+    @testset "$(nameof(typeof(ex)))" for ex in (ClampExtrap(), FillExtrap(-99.0), NoExtrap(), ExtendExtrap())
+        p1, q1 = linear_interp(x, y1; extrap = ex), linear_interp(x .* s, y1; extrap = ex)
+        pN, qN = linear_interp((x, x), dN; extrap = ex), linear_interp((x .* s, x .* s), dN; extrap = ex)
+        for e in (first(x), last(x)), seed in (1.0, -1.0)
+            d = Dual(e, seed)
+            @test same(q1(d * s), p1(d))
+            @test same(q1([d * s])[1], p1([d])[1])
+            @test same(qN((d * s, 1.5s)), pN((d, 1.5)))
+            @test same(qN(([d * s], [1.5s]))[1], pN(([d], [1.5]))[1])
+        end
+    end
+
+    @testset "nested Dual inside the Quantity" begin
+        flat(v::Real) = [v]
+        flat(v::Dual) = vcat(flat(value(v)), (flat(p) for p in partials(v))...)
+        ti, to = typeof(ForwardDiff.Tag(sin, Float64)), typeof(ForwardDiff.Tag(cos, Float64))
+        p1, q1 = linear_interp(x, y1; extrap = ClampExtrap()), linear_interp(x .* s, y1; extrap = ClampExtrap())
+        pN = linear_interp((x, x), dN; extrap = ClampExtrap())
+        qN = linear_interp((x .* s, x .* s), dN; extrap = ClampExtrap())
+        for e in (first(x), last(x)), (si, so) in ((1.0, 1.0), (-1.0, 1.0), (1.0, -1.0))
+            dd = Dual{to}(Dual{ti}(e, si), so)
+            @test flat(q1(dd * s)) ≈ flat(p1(dd))
+            @test flat(qN((dd * s, 1.5s))) ≈ flat(pN((dd, 1.5)))
+        end
+    end
+
+    @testset "AD at the last node" begin
+        itp = linear_interp(x .* s, y1)                      # default NoExtrap
+        @test ForwardDiff.derivative(t -> itp(t * s), last(x)) ≈ 2.0
+        itpN = linear_interp((x .* s, x .* s), dN; extrap = ClampExtrap())
+        @test ForwardDiff.gradient(v -> itpN((v[1] * s, v[2] * s)), [4.0, 4.0]) ≈ [2.0, 3.0]
+        @test @inferred(itpN((Dual(4.0, 1.0) * s, 1.5s))) isa Dual
+    end
+end
+
 # ========================================
 # Phase 1 — axis machinery + witness homogeneity
 # ========================================

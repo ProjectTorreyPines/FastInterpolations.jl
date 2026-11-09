@@ -9,7 +9,7 @@ Factory functions provide a **single entry point** for configuring search polici
 
 | Factory | Keyword | Options | Purpose |
 |:--------|:--------|:--------|:--------|
-| [`Search`](@ref) | `search=` | `:auto`, `:binary`, `:linear`, `:linear_binary` | Interval lookup strategy |
+| [`Search`](@ref) | `search=` | `:auto`, `:binary`, `:linear`, `:linear_binary`, `:linear_gallop` | Interval lookup strategy |
 | [`Extrap`](@ref) | `extrap=` | `:none`, `:clamp`, `:fill`, `:extend`, `:wrap` | Out-of-domain behavior |
 | [`Side`](@ref) | `side=` | `:nearest`, `:left`, `:right` | Constant interpolation side |
 
@@ -30,10 +30,12 @@ Controls how interpolants find the correct grid interval for a query point.
 Search(:auto)            # AutoSearch() — adapts per query type (default, recommended)
 Search(:binary)          # BinarySearch() — O(log n), stateless
 Search(:linear_binary)   # LinearBinarySearch{8}() — linear walk with binary fallback
+Search(:linear_gallop)   # LinearGallopSearch{8}() — linear walk with gallop fallback (opt-in)
 Search(:linear)          # LinearSearch() — expert only, no fallback (see warning below)
 
-# LinearBinarySearch supports a keyword argument
+# LinearBinarySearch and LinearGallopSearch support a keyword argument
 Search(:linear_binary; linear_window=4)   # LinearBinarySearch{4}()
+Search(:linear_gallop; linear_window=4)   # LinearGallopSearch{4}()
 ```
 
 !!! tip "Most users don't need to call `Search()` at all"
@@ -42,7 +44,7 @@ Search(:linear_binary; linear_window=4)   # LinearBinarySearch{4}()
 !!! warning "`:linear` is for experts only"
     `LinearSearch()` has **no binary fallback** — it degrades to O(n) for non-monotonic or distant queries. Use `:linear_binary` (or just the default `:auto`) instead. See [Search Policies](@ref search_policies) for details.
 
-!!! note "Keywords are only for `:linear_binary`"
+!!! note "Keywords are only for `:linear_binary` and `:linear_gallop`"
     Passing keywords to other policies raises an `ArgumentError`:
     ```julia
     Search(:binary; linear_window=8)  # ERROR: ArgumentError

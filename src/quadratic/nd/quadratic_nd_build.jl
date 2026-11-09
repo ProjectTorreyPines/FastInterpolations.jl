@@ -8,7 +8,7 @@
 # Key features:
 # - Tg/Tv type separation (grid vs value types)
 # - Bit-encoding build-up algorithm for 2^N partials (shared with cubic)
-# - Memory-efficient reshape trick for ND→1D slicing
+# - Each 1D line is solved in place through a view (no line buffers)
 # - Uses quadratic recurrence (_fill_slopes!) instead of Thomas tridiagonal
 #
 # Partials layout (2^N, n₁, n₂, ..., nₙ):
@@ -26,7 +26,7 @@ Compute slopes (first derivatives) for a 1D data slice using quadratic
 spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
 
 # Algorithm
-1. Compute secant slopes: s[i] = (y[i+1] - y[i]) / h[i]
+1. Secant slopes s[i] = (y[i+1] - y[i]) / h[i], read via `_quadratic_secant` (no buffer)
 2. BC-dispatched recurrence via `_fill_slopes!`:
    - Left BC:  d[1] from BC, forward recurrence d[i+1] = 2*s[i] - d[i]
    - Right BC: d[n] from BC, backward recurrence d[i] = 2*s[i] - d[i+1]
@@ -37,7 +37,7 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
 - `grid::AbstractVector{Tg}`: Grid points for this dimension
 - `bc::QuadraticBC`: Boundary condition (Left, Right, or MinCurvFit)
 """
-@with_pool pool function _slope_1d_quadratic!(
+function _slope_1d_quadratic!(
         d_out::AbstractVector{Tv},
         values::AbstractVector{Tv},
         grid::AbstractVector{Tg},
@@ -47,26 +47,21 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     @assert n == length(grid) "values and grid must have same length"
     @assert n >= 2 "Need at least 2 points"
 
-    secant = acquire!(pool, Tv, n - 1)
-
-    # 1. Compute secant slopes — `grid` carries cached `h`/`inv_h` when wrapped,
-    #    raw `Vector` falls back to on-the-fly diff via `_get_inv_h(::AbstractVector, i)`.
-    _compute_quadratic_secants!(secant, values, grid)
-
-    # 2. Normalize BC values to Tv (lazy normalization — Tv is known here)
+    # 1. Normalize BC values to Tv (lazy normalization — Tv is known here)
     # This ensures _fill_slopes! always receives Tv-typed values,
     # making convert(Tv, bc.val) an identity operation.
     bc_typed = _normalize_bc(bc, first(values))
 
-    # 3. Fill slopes via BC-dispatched recurrence
-    _fill_slopes!(d_out, secant, grid, bc_typed, grid, values)
+    # 2. BC-dispatched recurrence over secants read on the fly — `grid` carries cached
+    #    `h`/`inv_h` when wrapped, raw `Vector` falls back to on-the-fly diff.
+    _fill_slopes!(d_out, nothing, grid, values, bc_typed)
 
     return d_out
 end
 
 # Dispatch wrappers for non-QuadraticBC types (lazy normalization pattern).
 # Convert AbstractBC → QuadraticBC at the point where Tv is known, then delegate
-# to the core @with_pool method. Matches cubic's pattern in _deriv_1d!.
+# to the core method. Matches cubic's pattern in _deriv_1d!.
 @inline function _slope_1d_quadratic!(
         d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
         grid::AbstractVector{Tg}, ::ZeroCurvBC
@@ -126,76 +121,30 @@ end
 # ========================================
 
 """
-    _differentiate_nd_along_dim_quadratic!(out, data, grid, bc, d)
+    _differentiate_lines_quadratic!(out, data, grid, bc, ::Val{D})
 
-Compute ∂f/∂xₐ for N-dimensional array along dimension `d` using quadratic recurrence.
-
-Uses the same "reshape to 3D" trick as the cubic version:
-- Reshape N-D array to (before × nₐ × after)
-- Apply `_slope_1d_quadratic!` to each 1D slice
-
-# Arguments
-- `out::AbstractArray{Tv,N}`: Output array (same shape as data)
-- `data::AbstractArray{Tv,N}`: Input N-D array
-- `grid::AbstractVector{Tg}`: Grid points along dimension d
-- `bc::QuadraticBC`: Boundary condition
-- `d::Int`: Dimension to differentiate along (1 ≤ d ≤ N)
+Write ∂f/∂x_D of the N-D array `data` into `out`. Each 1D line along `D` goes to
+`_slope_1d_quadratic!` as a view and is solved in place: the sweep reads `y[i]`, `y[i+1]`
+and writes `d[i]` once, so it needs no line buffer (cubic's tridiagonal solve does).
+`D` is static, so the line views are concretely typed.
 """
-@with_pool pool function _differentiate_nd_along_dim_quadratic!(
+function _differentiate_lines_quadratic!(
         out::AbstractArray{Tv, N},
         data::AbstractArray{Tv, N},
-        grid::AbstractVector{Tg},
+        grid::AbstractVector,
         bc::AbstractBC,
-        d::Int
-    ) where {Tv, Tg, N}
-    @boundscheck begin
-        1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
-        size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
-        size(data, d) == length(grid) || throw(
-            DimensionMismatch(
-                "size(data, $d)=$(size(data, d)) must match length(grid)=$(length(grid))"
-            )
+        ::Val{D}
+    ) where {Tv, N, D}
+    before = CartesianIndices(ntuple(i -> axes(data, i), Val(D - 1)))
+    after = CartesianIndices(ntuple(i -> axes(data, D + i), Val(N - D)))
+    @inbounds for Ia in after, Ib in before
+        _slope_1d_quadratic!(
+            view(out, Tuple(Ib)..., :, Tuple(Ia)...),
+            view(data, Tuple(Ib)..., :, Tuple(Ia)...),
+            grid,
+            bc
         )
     end
-
-    n_d = size(data, d)
-
-    # Compute reshape dimensions
-    shape_before = 1
-    @inbounds for i in 1:(d - 1)
-        shape_before *= size(data, i)
-    end
-    shape_after = 1
-    @inbounds for i in (d + 1):N
-        shape_after *= size(data, i)
-    end
-
-    # Reshape to 3D views (no allocation, just pointer arithmetic)
-    data_3d = reshape(data, shape_before, n_d, shape_after)
-    out_3d = reshape(out, shape_before, n_d, shape_after)
-
-    # Acquire workspace buffers
-    line = acquire!(pool, Tv, n_d)
-    dline = acquire!(pool, Tv, n_d)
-
-    # Iterate over all 1D slices
-    @inbounds for j in 1:shape_after
-        for i in 1:shape_before
-            # Extract 1D slice along dimension d
-            for k in 1:n_d
-                line[k] = data_3d[i, k, j]
-            end
-
-            # Differentiate using quadratic recurrence
-            _slope_1d_quadratic!(dline, line, grid, bc)
-
-            # Write back
-            for k in 1:n_d
-                out_3d[i, k, j] = dline[k]
-            end
-        end
-    end
-
     return out
 end
 
@@ -275,7 +224,7 @@ end
         effective_bc = _get_effective_bc_quadratic(bcs[D], p_src, grids[D])
         src_view = selectdim(partials, 1, p_src)
         dst_view = selectdim(partials, 1, p_dst)
-        _differentiate_nd_along_dim_quadratic!(dst_view, src_view, grids[D], effective_bc, D)
+        _differentiate_lines_quadratic!(dst_view, src_view, grids[D], effective_bc, Val(D))
     end
     if D < N
         _build_nd_partials_dim_quadratic!(partials, grids, bcs, Val(D + 1), Val(N))

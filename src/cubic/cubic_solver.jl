@@ -143,7 +143,7 @@ function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
         h_i = _get_h(xi, i)
         dl[i - 1] = h_im1
         d_diag[i] = 2 * (h_im1 + h_i)
-        du[i - 1] = h_i
+        du[i - 1] = h_im1   # A[i-1, i] = h_{i-1} (symmetric: == dl[i-1])
     end
 
     h_nm1 = _get_h(xi, n - 1)

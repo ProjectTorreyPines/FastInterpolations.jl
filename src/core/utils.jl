@@ -628,9 +628,10 @@ Whether grid eltype `Tg` may participate in the autocache pool. Contract: the
 pool is keyed by linear `isequal` scans (never `hash`), so `isequal(a, b)` on
 two grids must imply interchangeable factorizations. ForwardDiff Duals compare
 primal AND partials (safe); Unitful compares across unit rescale, but banks
-are segregated by exact eltype so cross-unit hits cannot occur. A type whose
-`isequal` ignores factorization-relevant state must opt out with a `false`
-method (none known today — escape hatch).
+are segregated by exact eltype so cross-unit hits cannot occur. BigFloat's
+precision is global state outside the type; the pool matches it per entry
+(`_verify_build_context`). A type whose `isequal` ignores factorization-relevant
+state must opt out with a `false` method (none known today — escape hatch).
 """
 @inline _grid_bankable(::Type{Tg}) where {Tg} = true
 

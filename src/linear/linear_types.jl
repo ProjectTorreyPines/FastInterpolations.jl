@@ -85,7 +85,20 @@ struct LinearInterpolant{
         yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
+
+    # Raw: fields stored as-is (already normalized by a previous construction or by the
+    # one-shot resolvers) — `_rebuild` around moved storage, GPU one-shot evaluation.
+    function LinearInterpolant(
+            ::_RawFields, x::AbstractVector, y::AbstractVector, ev::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        return new{eltype(x), eltype(y), typeof(x), typeof(y), E, P}(x, y, ev, search)
+    end
 end
+
+# Storage protocol (core/device_support.jl).
+_storage(itp::LinearInterpolant) = (grids = (itp.x,), values = (itp.y,), extraps = (itp.extrap,))
+_rebuild(itp::LinearInterpolant, s) =
+    LinearInterpolant(_RawFields(), only(s.grids), only(s.values), only(s.extraps), itp.search_policy)
 
 # Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`
 # insurance is an idempotent passthrough.

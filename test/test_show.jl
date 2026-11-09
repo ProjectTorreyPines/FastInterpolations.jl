@@ -563,6 +563,8 @@
         @test FI._format_search(LinearBinarySearch(linear_window = 0)) == "LinearBinarySearch{0}"
         @test FI._format_search(LinearBinarySearch()) == "LinearBinarySearch{8}"
         @test FI._format_search(LinearBinarySearch(linear_window = 4)) == "LinearBinarySearch{4}"
+        @test FI._format_search(LinearGallopSearch()) == "LinearGallopSearch{8}"
+        @test FI._format_search(LinearGallopSearch(linear_window = 4)) == "LinearGallopSearch{4}"
         @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)

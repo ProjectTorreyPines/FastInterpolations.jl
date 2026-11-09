@@ -1,17 +1,17 @@
 # ========================================
 # Quadratic Spline Coefficient Computation
 # ========================================
-# Functions to compute spline coefficients (s, d, a) from grid and values.
+# Functions to compute spline coefficients (d, a) from grid and values.
 #
 # Mathematical model:
 #   S_i(x) = a_i*(x - x_i)² + d_i*(x - x_i) + y_i
 #
-# Coefficient computation:
-#   1. s[i] = (y[i+1] - y[i]) / h[i]  (secant slopes)
-#   2. Fill d[] via BC-dependent recurrence:
-#      - Left BC:  d[1] from BC, forward  recurrence d[i+1] = 2*s[i] - d[i]
-#      - Right BC: d[n] from BC, backward recurrence d[i] = 2*s[i] - d[i+1]
-#   3. a[i] = (s[i] - d[i]) / h[i]  (quadratic coefficients)
+# Coefficient computation — one sweep (MinCurvFit: one extra pass for d[1]):
+#   s[i] = (y[i+1] - y[i]) / h[i]  (secant slopes, read via `_quadratic_secant` — no buffer)
+#   d[] via BC-dependent recurrence:
+#     - Left BC:  d[1] from BC, forward  recurrence d[i+1] = 2*s[i] - d[i]
+#     - Right BC: d[n] from BC, backward recurrence d[i] = 2*s[i] - d[i+1]
+#   a[i] = (s[i] - d[i]) / h[i]  (written by the same sweep)
 
 # ========================================
 # Type Alias for Quadratic BC
@@ -26,70 +26,116 @@ Supported boundary conditions for quadratic spline interpolation.
 const QuadraticBC = Union{Left, Right, MinCurvFit}
 
 # ========================================
-# Secant Computation
+# Secant Slopes
 # ========================================
 
 """
-    _compute_quadratic_secants!(s, y, spacing)
+    _quadratic_secant(Tc, x, y, i)
 
-Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
-
-# Arguments
-- `s::AbstractVector`: Output secant vector (length n-1)
-- `y::AbstractVector`: Values at grid points (length n)
-- `axis::AbstractVector{Tg}`: Wrapped or raw grid axis (read via `_get_inv_h(axis, i)`)
+Secant slope of cell `i`, `s[i] = (y[i+1] - y[i]) * inv_h[i]`, as a `Tc` value. The
+solver reads secants through this accessor instead of a buffer; `inv_h` comes from
+`_get_inv_h(x, i)`, so cached, Range and raw axes share one code path.
 """
-@inline function _compute_quadratic_secants!(s::AbstractVector{Tc}, y::AbstractVector, axis::AbstractVector{Tg}) where {Tc, Tg}
-    n = length(y) - 1
+@inline Base.@propagate_inbounds function _quadratic_secant(
+        ::Type{Tc},
+        x::AbstractVector,
+        y::AbstractVector,
+        i::Int
+    ) where {Tc}
+    return _quadratic_secant(Tc, x, y, i, _get_inv_h(x, i))
+end
+
+# `inv_h_i` supplied: a sweep that also needs `inv_h[i]` reads it once (on a raw axis it
+# is a division, and the stores between two reads keep the compiler from sharing it).
+@inline Base.@propagate_inbounds function _quadratic_secant(
+        ::Type{Tc},
+        x::AbstractVector,
+        y::AbstractVector,
+        i::Int,
+        inv_h_i
+    ) where {Tc}
     # Diffs lift into VALUE space (wrap-free for narrow eltypes); the [Y/X]
     # dimension enters via `inv_h`, never by converting y into it.
-    Tvs = _value_space_eltype(Tg, eltype(y))
-    @inbounds for i in 1:n
-        s[i] = _fielddiff(Tvs, y[i + 1], y[i]) * _get_inv_h(axis, i)
-    end
-    return s
+    Tvs = _value_space_eltype(eltype(x), eltype(y))
+    return convert(Tc, _fielddiff(Tvs, y[i + 1], y[i]) * inv_h_i)
 end
 
 # ========================================
 # Recurrence Functions
 # ========================================
 
+# Coefficient output of the slope sweep: `a[i] = (s[i] - d[i]) * inv_h[i]`, written in
+# the same loop as `d`. `a === nothing` → slopes only (ND partials).
+@inline _store_quadratic_coeff!(::Nothing, ::Int, _, _, _) = nothing
+@inline Base.@propagate_inbounds function _store_quadratic_coeff!(a::AbstractVector, i::Int, si, di, inv_h_i)
+    a[i] = (si - di) * inv_h_i  # [Y/X] * [1/X] → [Y/X²]
+    return nothing
+end
+
 """
-    _forward_recurrence!(d, s, d1)
+    _forward_recurrence!(d, a, x, y, d1)
 
-Fill slope array using forward recurrence from d[1].
-d[i+1] = 2*s[i] - d[i]
+Fill slope array using forward recurrence from d[1]:
+d[i+1] = 2*s[i] - d[i], with s[i] read through `_quadratic_secant`.
+With `a !== nothing`, the same sweep writes a[i] = (s[i] - d[i]) * inv_h[i].
 
-# Arguments
+# Arguments (outputs first, then inputs)
 - `d::AbstractVector`: Output slope array (length n)
-- `s::AbstractVector`: Secant slopes (length n-1)
+- `a`: Output coefficient array (length n-1), or `nothing` for slopes only
+- `x::AbstractVector`: Grid axis (length n)
+- `y::AbstractVector`: Values at grid points (length n)
 - `d1`: Initial slope d[1]
 """
-@inline function _forward_recurrence!(d::AbstractVector{Tc}, s::AbstractVector{Tc}, d1) where {Tc}
-    d[1] = d1
+@inline function _forward_recurrence!(
+        d::AbstractVector{Tc},
+        a,
+        x::AbstractVector,
+        y::AbstractVector,
+        d1
+    ) where {Tc}
     n = length(d)
+    di = convert(Tc, d1)
     @inbounds for i in 1:(n - 1)
-        d[i + 1] = 2 * s[i] - d[i]  # All Tv operations
+        inv_h_i = _get_inv_h(x, i)
+        si = _quadratic_secant(Tc, x, y, i, inv_h_i)
+        d[i] = di
+        _store_quadratic_coeff!(a, i, si, di, inv_h_i)
+        di = convert(Tc, 2 * si - di)  # All Tv operations
     end
+    @inbounds d[n] = di
     return d
 end
 
 """
-    _backward_recurrence!(d, s, dn)
+    _backward_recurrence!(d, a, x, y, dn)
 
-Fill slope array using backward recurrence from d[n].
-d[i] = 2*s[i] - d[i+1]
+Fill slope array using backward recurrence from d[n]:
+d[i] = 2*s[i] - d[i+1], with s[i] read through `_quadratic_secant`.
+With `a !== nothing`, the same sweep writes a[i] = (s[i] - d[i]) * inv_h[i].
 
-# Arguments
+# Arguments (outputs first, then inputs)
 - `d::AbstractVector`: Output slope array (length n)
-- `s::AbstractVector`: Secant slopes (length n-1)
+- `a`: Output coefficient array (length n-1), or `nothing` for slopes only
+- `x::AbstractVector`: Grid axis (length n)
+- `y::AbstractVector`: Values at grid points (length n)
 - `dn`: Final slope d[n]
 """
-@inline function _backward_recurrence!(d::AbstractVector{Tc}, s::AbstractVector{Tc}, dn) where {Tc}
+@inline function _backward_recurrence!(
+        d::AbstractVector{Tc},
+        a,
+        x::AbstractVector,
+        y::AbstractVector,
+        dn
+    ) where {Tc}
     n = length(d)
-    d[n] = dn
+    di = convert(Tc, dn)
+    @inbounds d[n] = di
     @inbounds for i in (n - 1):-1:1
-        d[i] = 2 * s[i] - d[i + 1]  # All Tv operations
+        inv_h_i = _get_inv_h(x, i)
+        si = _quadratic_secant(Tc, x, y, i, inv_h_i)
+        di = convert(Tc, 2 * si - di)  # All Tv operations
+        d[i] = di
+        _store_quadratic_coeff!(a, i, si, di, inv_h_i)
     end
     return d
 end
@@ -99,63 +145,64 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, spacing, bc, x, y)
+    _fill_slopes!(d, a, x, y, bc)
 
-Fill slope array d[] based on boundary condition type.
+Fill slope array d[] based on boundary condition type; with `a !== nothing`, the same
+sweep also writes the quadratic coefficients a[i] = (s[i] - d[i]) * inv_h[i].
 Dispatches at compile time to use optimal recurrence direction:
 - Left BC:  compute d[1], forward recurrence  → O(n)
 - Right BC: compute d[n], backward recurrence → O(n)
 
-The `x` and `y` parameters are needed for PolyFit{D} BCs which estimate
-derivatives from data. For other BC types, they are ignored.
+`x` and `y` supply the secants (`_quadratic_secant`) and, for PolyFit{D} BCs, the
+data the end derivative is estimated from.
 
 # Type Parameters
-- `Tv`: Value type for d, s (unconstrained)
-- `Tg`: Grid type for spacing, x
+- `Tc`: Slope eltype (value-derived, unconstrained)
+- `Tg`: Grid type
 """
 # Left(Deriv1): d[1] given directly, forward recurrence
 # convert() is a no-op when types match (optimized away at compile time)
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
-        bc::Left{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        bc::Left{<:Deriv1}
     ) where {Tc, Tg}
     d1 = convert(Tc, bc.bc.val)
-    return _forward_recurrence!(d, s, d1)
+    return _forward_recurrence!(d, a, x, y, d1)
 end
 
 # Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
 # κ ∈ [Y/X²] ≠ slope space — never pre-convert; κ·h lands in [Y/X].
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
-        bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        bc::Left{<:Deriv2}
     ) where {Tc, Tg}
-    d1 = s[1] - bc.bc.val * (_get_h(axis, 1) / 2)
-    return _forward_recurrence!(d, s, d1)
+    d1 = @inbounds(_quadratic_secant(Tc, x, y, 1)) - bc.bc.val * (_get_h(x, 1) / 2)
+    return _forward_recurrence!(d, a, x, y, d1)
 end
 
 # Right(Deriv1): d[n] given directly, backward recurrence
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
-        bc::Right{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        bc::Right{<:Deriv1}
     ) where {Tc, Tg}
     dn = convert(Tc, bc.bc.val)
-    return _backward_recurrence!(d, s, dn)
+    return _backward_recurrence!(d, a, x, y, dn)
 end
 
 # Right(Deriv2): compute d[n] from curvature, backward recurrence
 # d[n] = s[n-1] + (κ/2)*h[n-1]  (derived from a[n-1] = κ/2)
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
-        bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        bc::Right{<:Deriv2}
     ) where {Tc, Tg}
-    n_intervals = length(s)
-    dn = s[end] + bc.bc.val * (_get_h(axis, n_intervals) / 2)
-    return _backward_recurrence!(d, s, dn)
+    n_intervals = length(x) - 1
+    dn = @inbounds(_quadratic_secant(Tc, x, y, n_intervals)) + bc.bc.val * (_get_h(x, n_intervals) / 2)
+    return _backward_recurrence!(d, a, x, y, dn)
 end
 
 # MinCurvFit: minimize total curvature via closed-form optimization
 """
-    _fill_slopes!(d, s, spacing, ::MinCurvFit, x, y)
+    _fill_slopes!(d, a, x, y, ::MinCurvFit)
 
 Fill slope array using global curvature minimization.
 
@@ -173,21 +220,22 @@ For Complex values, the optimization minimizes |s[i] - d[i]|² which works
 element-wise on real and imaginary parts.
 
 # Complexity
-O(n) time, O(1) extra space (on-the-fly β computation).
+O(n) time, O(1) extra space (on-the-fly β computation): one pass for d[1],
+then the recurrence sweep.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg},
-        ::MinCurvFit, ::AbstractVector{Tg}, ::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        ::MinCurvFit
     ) where {Tc, Tg}
     n = length(d)
-    n_intervals = n - 1  # = length(s)
+    n_intervals = n - 1
 
     # Edge case: single segment (n=2)
     # For single segment, minimize a² = (s-d[1])²/h
     # This means d[1] = s[1] (making a = 0, zero curvature)
     if n == 2
-        d1 = @inbounds s[1]
-        _forward_recurrence!(d, s, d1)
+        d1 = @inbounds _quadratic_secant(Tc, x, y, 1)
+        _forward_recurrence!(d, a, x, y, d1)
         return d
     end
 
@@ -207,21 +255,23 @@ O(n) time, O(1) extra space (on-the-fly β computation).
 
     # Accumulator spaces: inv_h_sum ∈ [1/X], numerator ∈ [Y/X²] (s·inv_h),
     # β ∈ [Y/X] — value-witness zeros (Real: all plain 0.0, bit-identical).
+    s1 = @inbounds _quadratic_secant(Tc, x, y, 1)
     inv_h_sum = zero(_promote_eltype(_inv_op, Tg))
-    numerator = 0 * (first(s) * _get_inv_h(axis, 1))
-    β = 0 * first(s)
+    numerator = 0 * (s1 * _get_inv_h(x, 1))
+    β = 0 * s1
     sign = one(Tg)  # dimensionless ±1 — `one`, not `oneunit`
 
     @inbounds for i in 1:n_intervals
-        inv_h_i = _get_inv_h(axis, i)  # precomputed — no inv() needed
+        inv_h_i = _get_inv_h(x, i)
+        si = _quadratic_secant(Tc, x, y, i, inv_h_i)
         inv_h_sum += inv_h_i
-        numerator += sign * (s[i] - β) * inv_h_i  # Tg * Tv * Tg → Tv
-        β = 2 * s[i] - β  # Tv operations
+        numerator += sign * (si - β) * inv_h_i  # Tg * Tv * Tg → Tv
+        β = 2 * si - β  # Tv operations
         sign = -sign  # alternate: +1, -1, +1, ...
     end
 
     d1_optimal = inv(inv_h_sum) * numerator  # Tg * Tv → Tv (duck-safe: no /(Tv,Tg))
-    return _forward_recurrence!(d, s, d1_optimal)
+    return _forward_recurrence!(d, a, x, y, d1_optimal)
 end
 
 # ========================================
@@ -229,7 +279,7 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, spacing, bc::Left{PolyFit{D}}, x, y)
+    _fill_slopes!(d, a, x, y, bc::Left{PolyFit{D}})
 
 Fill slope array using generic polynomial fit at left endpoint.
 
@@ -240,17 +290,17 @@ QuadraticFit (D=2), CubicFit (D=3), etc.
 For Complex y values, materialize_bc returns Deriv1{ComplexF64} naturally.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, ::AbstractVector{Tg},
-        bc::Left{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        bc::Left{PolyFit{D}}
     ) where {D, Tc, Tg}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
     concrete_bc = materialize_bc(bc.bc, x, y, LeftSide())
     d1 = concrete_bc.val  # Already Tv type from polynomial fit on y values
-    return _forward_recurrence!(d, s, d1)
+    return _forward_recurrence!(d, a, x, y, d1)
 end
 
 """
-    _fill_slopes!(d, s, spacing, bc::Right{PolyFit{D}}, x, y)
+    _fill_slopes!(d, a, x, y, bc::Right{PolyFit{D}})
 
 Fill slope array using generic polynomial fit at right endpoint.
 
@@ -258,40 +308,13 @@ Materializes PolyFit{D} to Deriv1{Tv} using `materialize_bc`, then uses the
 estimated derivative directly.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector{Tc}, s::AbstractVector{Tc}, ::AbstractVector{Tg},
-        bc::Right{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector
+        d::AbstractVector{Tc}, a, x::AbstractVector{Tg}, y::AbstractVector,
+        bc::Right{PolyFit{D}}
     ) where {D, Tc, Tg}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
     concrete_bc = materialize_bc(bc.bc, x, y, RightSide())
     dn = concrete_bc.val  # Already Tv type from polynomial fit on y values
-    return _backward_recurrence!(d, s, dn)
-end
-
-# ========================================
-# Quadratic Coefficient Computation
-# ========================================
-
-"""
-    _compute_quadratic_coefficients!(a, d, s, spacing)
-
-Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
-
-# Arguments
-- `a::Vector{Tv}`: Output coefficient array (length n-1, value-derived)
-- `d::Vector{Tv}`: Slope array (length n, value-derived)
-- `s::Vector{Tv}`: Secant slopes (length n-1, value-derived)
-- `axis::AbstractVector{Tg}`: Wrapped or raw grid axis (read via `_get_inv_h(axis, i)`)
-
-# Type Parameters
-- `Tv`: Value type (unconstrained)
-- `Tg`: Grid type
-"""
-# `a` lives one `inv_h` power above `d`/`s` — no shared-eltype pin.
-@inline function _compute_quadratic_coefficients!(a::AbstractVector, d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg}) where {Tc, Tg}
-    @inbounds for i in eachindex(a)
-        a[i] = (s[i] - d[i]) * _get_inv_h(axis, i)  # [Y/X] * [1/X] → [Y/X²]
-    end
-    return a
+    return _backward_recurrence!(d, a, x, y, dn)
 end
 
 # ========================================
@@ -301,12 +324,14 @@ end
 """
     _compute_quadratic_coeffs!(d, a, x, y, bc)
 
-Fill pre-allocated coefficient arrays for quadratic spline.
-Uses AdaptiveArrayPools internally for temporary `secant` array.
+Fill pre-allocated coefficient arrays for quadratic spline in one sweep:
+secants are read through `_quadratic_secant` (no buffer) and `a` is written
+alongside `d`.
 
 # Arguments (outputs first, then inputs)
 - `d::AbstractVector`: Slope coefficients (length n, value-derived)
-- `a::AbstractVector`: Quadratic coefficients (length n-1, value-derived)
+- `a::AbstractVector`: Quadratic coefficients (length n-1, value-derived; one
+  `inv_h` power above `d`, so its eltype may differ)
 - `x::AbstractVector{Tg}`: x-coordinates (length n) — wrapped axis carries
   cached `h`/`inv_h`; raw `Vector` falls back to on-the-fly diff
 - `y::AbstractVector`: y-values (length n)
@@ -316,22 +341,14 @@ Uses AdaptiveArrayPools internally for temporary `secant` array.
 - `Tg`: Grid type
 - `Tv`: Value type (unconstrained)
 """
-@with_pool pool function _compute_quadratic_coeffs!(
+function _compute_quadratic_coeffs!(
         d::AbstractVector,
         a::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector,
         bc::QuadraticBC
     ) where {Tg}
-    nx = length(x)
-
-    Tcoeff = eltype(d)
-    secant = acquire!(pool, Tcoeff, nx - 1)
-
-    _compute_quadratic_secants!(secant, y, x)
-    _fill_slopes!(d, secant, x, bc, x, y)
-    _compute_quadratic_coefficients!(a, d, secant, x)
-
+    _fill_slopes!(d, a, x, y, bc)
     return nothing
 end
 
@@ -357,7 +374,7 @@ overload.
 - `d::Vector{Tv}`: Slope coefficients (value-derived)
 - `a::Vector{Tv}`: Quadratic coefficients (value-derived)
 
-Intermediate `secant` array is handled internally via AdaptiveArrayPools.
+Secants are read through `_quadratic_secant` — no intermediate buffer.
 
 For repeated interpolation on the same grid, use `QuadraticInterpolant`
 which stores precomputed coefficients.

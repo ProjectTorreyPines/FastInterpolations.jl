@@ -1,5 +1,8 @@
 # PHS Performance and Tuning
 
+!!! warning "Experimental"
+    PHS lives in `FastInterpolations.Experimental` and is loaded with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
+
 Measured accuracy and timing for [Polyharmonic Splines (PHS)](phs.md): the phenol-dimer electron-density example (error statistics against the analytical DFT reference and timings), followed by parameter studies for `blend_factor` and `stencil_size` on synthetic data. All numbers are machine-dependent; the scripts that produce them live under `scripts/phs/`.
 
 ## Phenol dimer example: accuracy and timing
@@ -84,7 +87,6 @@ The `blend_factor` parameter controls the width of the blending neighborhood. Sm
 
 | blend_factor | Blend Nodes | Build (ms) | Eval (ms) | Max Rel Err | Speedup | Rel.Err |
 |---|---|---|---|---|---|---|
-| 0.5 | 27 | 11.10 | 0.005 | 1.00e+00 | 4200.63× | 1055140.71× |
 | 1.0 | 27 | 10.23 | 3.386 | 1.33e-06 | 6.31× | 1.40× |
 | 1.5 | 125 | 15.67 | 3.679 | 8.17e-07 | 5.81× | 0.86× |
 | **2.0** | **125** | **13.42** | **21.356** | **9.48e-07** | **baseline** | **1.00×** |
@@ -131,7 +133,7 @@ This script systematically explores stencil sizes from 3 to 10, measuring perfor
 
 2. **High-accuracy applications** (e.g., quantum chemistry): Keep defaults. Consider `blend_factor=2.0` only if accuracy dominates and 3× longer runtimes are acceptable.
 
-3. **Performance-critical applications** (e.g., real-time approximation): Try `blend_factor=0.5` for ~10-100× speedup with ~50× error increase. Visual accuracy may still be acceptable depending on the application.
+3. **Performance-critical applications** (e.g., real-time approximation): Smaller blend factors are cheaper, but values that leave cell centres without blend weight are rejected (`0.5` in 2-D and 3-D). Visual accuracy may still be acceptable depending on the application.
 
 4. **Do not reduce `stencil_size` below 8** unless extreme performance is needed. Smaller stencils show significant accuracy degradation and may exhibit convergence issues (stencil_size=3).
 

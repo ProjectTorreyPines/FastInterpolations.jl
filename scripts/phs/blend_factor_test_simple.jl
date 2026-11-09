@@ -1,6 +1,7 @@
 #= Minimal Blend Factor Optimization Test =#
 
 using FastInterpolations
+using FastInterpolations.Experimental
 using Printf
 using Statistics
 
@@ -32,7 +33,7 @@ println("Test points: $(length(test_queries))")
 println()
 
 # Test different blend factors (using stencil_size=8 for consistency with production)
-blend_factors = [0.5, 1.0, 1.5, 2.0]
+blend_factors = [1.0, 1.5, 2.0]  # 3-D cell centres need blend_factor > √3/2
 results = Dict{Float64, Any}()
 
 # Warm up

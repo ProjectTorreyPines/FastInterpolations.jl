@@ -23,7 +23,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS, experimental)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
 
 ### Classical splines
 
@@ -45,7 +45,9 @@ One cubic Hermite basis, four choices of slope rule. All C¹-continuous, O(1) pe
 | `cardinal_interp` | `cardinal_adjoint` | Catmull-Rom with `tension`   | Animation, spline curves through control points |
 | `akima_interp`    | `akima_adjoint`    | Akima (5-point stencil)      | Noisy data, outlier-robust |
 
-### Polyharmonic Splines (PHS)
+### Polyharmonic Splines (PHS) — experimental
+
+> **Experimental:** load with `using FastInterpolations.Experimental`. Its API and behaviour may change in any release and are not covered by semantic versioning.
 
 Local radial-basis-function interpolant on uniform rectilinear grids, blended across neighbouring stencils for C² continuity. An optional log-density transform (interpolate ln(ρ/ρ₀) against a user-supplied reference ρ₀) keeps derivatives accurate near steep features such as nuclear cusps.
 
@@ -164,14 +166,14 @@ Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos
 
 Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl), [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl), and [Dierckx.jl](https://github.com/JuliaMath/Dierckx.jl) for **cubic spline interpolation**.
 <!-- BENCHMARK_VERSIONS_START -->
-> **Env:** Local · macOS 15.7.3 · Apple M1 Pro · Julia 1.13.0<br>
-> **Pkg:** FastInterpolations (v0.4.19) · Interpolations (v0.16.3) · DataInterpolations (v10.1.3) · Dierckx (v0.5.4)
+> **Env:** Local · macOS 15.7.3 · Apple M1 Pro · Julia 1.13.1<br>
+> **Pkg:** FastInterpolations (v0.4.20) · Interpolations (v0.16.3) · DataInterpolations (v10.1.3) · Dierckx (v0.5.4)
 <!-- BENCHMARK_VERSIONS_END -->
 
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)
 
 <!-- BENCHMARK_SPEEDUP_START -->
-**Speedup:** (2.4 ~ 17.3)× vs `Interpolations.jl` · (2.8 ~ 9.4)× vs `DataInterpolations.jl` · (14.9 ~ 19.8)× vs `Dierckx.jl`
+**Speedup:** (3.3 ~ 17.0)× vs `Interpolations.jl` · (3.8 ~ 9.4)× vs `DataInterpolations.jl` · (14.9 ~ 26.3)× vs `Dierckx.jl`
 <!-- BENCHMARK_SPEEDUP_END -->
 
 One-shot (construction + evaluation) time per call with fixed grid size $n=100$. `FastInterpolations.jl` is significantly faster even on the first call (cache-miss), and becomes even faster on subsequent calls (cache-hit).
@@ -179,7 +181,7 @@ One-shot (construction + evaluation) time per call with fixed grid size $n=100$.
 ## More Features
 
 ### Analytic Derivatives
-Exact 1st–3rd order derivatives from spline coefficients — no finite differences. ND interpolants support `gradient`, `hessian`, and `laplacian`.
+Exact 1st–3rd order derivatives from spline coefficients — no finite differences. ND interpolants support `gradient`, `hessian`, and `laplacian`, plus `jacobian` for vector-valued data.
 ```julia
 # 1D example
 cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1D: f'(x)

@@ -24,36 +24,31 @@ Evaluate cubic spline value using moment (z) formulation.
 - `Td`: Offset type for dL, dR (Tg, ForwardDiff.Dual for AD, or a unit-carrying grid type)
 
 # Formula
-    S(x) = zL*(dR³)/(6h) + zR*(dL³)/(6h)
-         + (yR/h - zR*h/6)*dL
-         + (yL/h - zL*h/6)*dR
+With `t = dL/h` and `u = 1 - t`:
 
-The computation is restructured to group common terms and leverage `muladd`
-for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations.
+    S(x) = u*yL + t*yR - (h²/6) * t*u * ((2 - t)*zL + (1 + t)*zR)
+
+i.e. the linear blend plus a moment correction that vanishes at both cell ends.
+Node-exact: at `dL == 0`, `t` and `t*u` are exact zeros, so `S == yL` exactly (and
+`S == yR` whenever `t` rounds to 1) under any FMA contraction. Value equality, not
+bits: adding the zero terms turns a `-0.0` node value into `+0.0`, as in the linear and
+Hermite kernels. `dR` is unused.
 
 # Operation counts (ARM64 native)
-    0 fdiv + 9 fmul + 4 fmadd + 1 fmsub = 14 FP ops
+    0 fdiv + 4 fmul + 6 fmadd/fmsub + 1 fsub = 11 FP ops
 """
 @inline function _cubic_kernel(
         ::EvalValue,
         zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Ti, dL::Td, dR::Td
+        h::Tg, inv_h::Ti, dL::Td, ::Td
     ) where {Tg, Ti, Tz, Tv, Td}
-    # Native (ARM64) instruction breakdown:
-    div6 = _inv_const(Tg, 6)                                   # (const-folded)
-    # inv_h passed as parameter (fdiv eliminated)
-
-    dL_cu = dL^3                                        # fmul, fmul
-    dR_cu = dR^3                                        # fmul, fmul
-
-    y_mix = muladd(yR, dL, yL * dR)                     # fmul, fmadd
-    z_mix1 = muladd(zL, dR_cu, zR * dL_cu)              # fmul, fmadd
-    z_mix2 = muladd(zR, dL, zL * dR)                    # fmul, fmadd
-
-    z_term = muladd(-h, z_mix2, inv_h * z_mix1) * div6  # fmul, fmsub, fmul
-    return muladd(inv_h, y_mix, z_term)                 # fmadd
+    t = dL * inv_h                                  # fmul
+    lin = _linear_value_blend(t, yL, yR)            # fmsub, fmadd (exact at t ∈ {0, 1})
+    tu = muladd(-t, t, t)                           # fmsub: t(1-t), exact 0 at t ∈ {0, 1}
+    zs = muladd(t, zR - zL, muladd(2, zL, zR))      # fsub, fmadd, fmadd: (2-t)zL + (1+t)zR
+    c = h * h * _inv_const(Tg, 6)                   # fmul, fmul
+    return muladd(-(c * tu), zs, lin)               # fmul, fmsub
 end
-# Total: 0 fdiv + 9 fmul + 4 fmadd + 1 fmsub = 14 FP ops
 
 """
     _cubic_kernel(::EvalDeriv1, zL, zR, yL, yR, h, inv_h, dL, dR)

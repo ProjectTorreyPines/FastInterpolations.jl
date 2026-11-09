@@ -11,7 +11,6 @@
 # - No dual cache — effective BC computed on the fly
 #
 # Dependencies (already included before this file):
-# - QuadraticBC, _fill_slopes!, _compute_quadratic_secants! (quadratic_solver.jl)
 # - _quadratic_kernel (quadratic_kernels.jl)
 # - _anchor_query, _QuadraticAnchoredQuery (quadratic_anchor.jl)
 # - QuadraticBC (quadratic_solver.jl)

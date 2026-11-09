@@ -6,6 +6,8 @@
 # phi_inv must always be precomputed (cannot be bypassed for a single query),
 # so these share the same construction cost as the persistent interpolant API.
 # Use phs_interp(grids, data) when evaluating at many points.
+# Keywords other than `deriv` go to the persistent constructor. Only the blend default
+# differs: 2.0 here, 1.0 in the persistent constructor.
 
 """
     phs_interp(grids, data, query::NTuple{N,Real}; kwargs...) -> scalar
@@ -18,17 +20,11 @@ function phs_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}};
-        stencil_size::Int = 8,
-        degree::Int = 3,
         blend_factor::Real = 2.0,
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        reference_interp = nothing,
-        reference_data = nothing,
+        kwargs...,
     ) where {Tv, N}
-    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
-    return itp(query; deriv)
+    return phs_interp(grids, data; blend_factor, kwargs...)(query; deriv)
 end
 
 """
@@ -44,17 +40,11 @@ function phs_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
-        stencil_size::Int = 8,
-        degree::Int = 3,
         blend_factor::Real = 2.0,
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        reference_interp = nothing,
-        reference_data = nothing,
+        kwargs...,
     ) where {Tv, N}
-    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
-    return itp(queries; deriv)
+    return phs_interp(grids, data; blend_factor, kwargs...)(queries; deriv)
 end
 
 """
@@ -68,15 +58,9 @@ function phs_interp!(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
-        stencil_size::Int = 8,
-        degree::Int = 3,
         blend_factor::Real = 2.0,
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        reference_interp = nothing,
-        reference_data = nothing,
+        kwargs...,
     ) where {Tv, N}
-    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
-    return itp(out, queries; deriv)
+    return phs_interp(grids, data; blend_factor, kwargs...)(out, queries; deriv)
 end

@@ -147,6 +147,20 @@ end
     return _cache_axis_pooled(pool, buf)
 end
 
+# `_match_axis_pooled(pool, x, Tg)` — the value-matched axis WITHOUT the h/inv_h cache, for
+# one-shot consumers that read each cell width only a few times (quadratic): there
+# `_get_inv_h(x, i)` on the raw axis computes the same `inv(x[i+1] - x[i])` in place, while
+# filling the cache costs an extra pass. A vector is copied into a pooled buffer only when
+# its eltype differs; Ranges and pre-wrapped axes keep `_cache_axis_pooled`.
+@inline _match_axis_pooled(_, x::Vector{Tg}, ::Type{Tg}) where {Tg} = x
+@inline function _match_axis_pooled(pool, x::AbstractVector, ::Type{Tg}) where {Tg}
+    buf = acquire!(pool, Tg, length(x))
+    copyto!(buf, x)
+    return buf
+end
+@inline _match_axis_pooled(pool, x::Union{AbstractRange, _CachedVector}, ::Type{Tg}) where {Tg} =
+    _cache_axis_pooled(pool, x, Tg)
+
 # ========================================
 # _get_h / _get_inv_h accessors (Vector hierarchy)
 # ========================================

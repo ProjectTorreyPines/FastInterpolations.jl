@@ -1654,17 +1654,6 @@ and its derivatives.
   Hessian:  ∂²ρ̃/∂xξ∂xζ = ∂²ρ₀/∂xξ∂xζ · G + ∂ρ₀/∂xξ · ∂G/∂xζ
                           + ∂ρ₀/∂xζ · ∂G/∂xξ + ρ₀ · ∂²G/∂xξ∂xζ
 """
-@inline _phs_eval_ref(ref, query, ops) = ref(query; deriv = ops)
-
-@inline function _phs_eval_ref_deriv1(ref, query, ax::Int, ::Val{N}, ::Type{Tg}) where {N, Tg}
-    return _phs_eval_ref_deriv1(ref, query, Val(ax), Val(N), Tg)
-end
-
-@inline function _phs_eval_ref_deriv1(ref, query, ::Val{ax}, ::Val{N}, ::Type{Tg}) where {N, Tg, ax}
-    ops = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), Val(N))
-    return Tg(_phs_eval_ref(ref, query, ops))
-end
-
 function _phs_eval_with_transform(
         itp::PHSInterpolantND{Tg, Tv, N, K},
         query::NTuple{N, <:Real},
@@ -1676,7 +1665,7 @@ function _phs_eval_with_transform(
     if total_deriv == 0
         ops_val = ntuple(_ -> EvalValue(), Val(N))
         G = Tg(_phs_eval_blended_G(itp, query, ops_val))
-        rho0 = Tg(ref(query))
+        rho0 = Tg(_phs_ref_value(ref, query))
         return Tv(rho0 * G)
     end
 
@@ -1684,7 +1673,7 @@ function _phs_eval_with_transform(
         ax_val = _phs_get_deriv1_axis_val(O)
         # Single fused pass: compute G and G_ξ together
         G, G_ξ = _phs_eval_blended_G_with_grad(itp, query, ax_val)
-        rho0 = Tg(ref(query))
+        rho0 = Tg(_phs_ref_value(ref, query))
         rho0_ξ = _phs_eval_ref_deriv1(ref, query, ax_val, Val(N), Tg)
         return Tv(rho0_ξ * G + rho0 * G_ξ)
     end
@@ -1695,9 +1684,9 @@ function _phs_eval_with_transform(
         # Single fused pass: compute G, G_ξ, G_ζ (= G_ξ for diagonal), G_ξζ together
         G, G_ξ, G_ζ, G_ξζ = _phs_eval_blended_G_with_hess(itp, query, ax1_val, ax2_val)
 
-        rho0 = Tg(ref(query))
+        rho0 = Tg(_phs_ref_value(ref, query))
         rho0_ξ = _phs_eval_ref_deriv1(ref, query, ax1_val, Val(N), Tg)
-        rho0_ξζ = Tg(_phs_eval_ref(ref, query, ops))
+        rho0_ξζ = Tg(_phs_ref_deriv(ref, query, ops))
 
         if ax1_val === ax2_val
             # Diagonal case: ρ̃_ξξ = ρ₀_ξξ·G + 2·ρ₀_ξ·G_ξ + ρ₀·G_ξξ
@@ -1722,7 +1711,7 @@ end
 # compiler will constant-fold since T is a type parameter of PHSInterpolantND.
 
 @inline _phs_eval_dispatch(itp, ::Nothing, query, ops) = _phs_eval_blended(itp, query, ops)
-@inline _phs_eval_dispatch(itp, ::Any, query, ops) = _phs_eval_with_transform(itp, query, ops)
+@inline _phs_eval_dispatch(itp, ::_PHSLogTransform, query, ops) = _phs_eval_with_transform(itp, query, ops)
 
 @inline function _phs_eval(
         itp::PHSInterpolantND,

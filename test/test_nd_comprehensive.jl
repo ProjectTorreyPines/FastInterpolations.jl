@@ -410,6 +410,14 @@
             # Attempting to override deriv should throw
             @test_throws ArgumentError dx((1.0, 0.5); deriv = DerivOp(0, 1))
         end
+
+        @testset "DerivativeView varargs (like itp(x, y))" begin
+            dx = deriv_view(itp, (1, 0))
+            @test dx(1.0, 0.5) == dx((1.0, 0.5))
+            dxy = deriv_view(itp, (1, 1))
+            @test dxy(1.0, 0.5) == dxy((1.0, 0.5))
+            @test_throws ArgumentError dx(1.0, 0.5; deriv = DerivOp(0, 1))
+        end
     end
 
     # ========================================

@@ -141,10 +141,13 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 # Horner form: F(t) = t · @evalpoly(t, c₁, c₂, c₃) — eliminates explicit t^3, t^4.
-@inline _IH00(t) = t * @evalpoly(t, 1, 0, -1, 1 / 2)
-@inline _IH10(t) = t * @evalpoly(t, 0, 1 / 2, -2 / 3, 1 / 4)
-@inline _IH01(t) = t * @evalpoly(t, 0, 0, 1, -1 / 2)
-@inline _IH11(t) = t * @evalpoly(t, 0, 0, -1 / 3, 1 / 4)
+# Coefficients are built at `t`'s precision (`c = one(t)`): a Float64 literal `2/3`
+# caps BigFloat at ~1e-17 and widens Float32 to Float64. Float64 folds to the same
+# constants (bit-identical).
+@inline _IH00(t) = (c = one(t); t * @evalpoly(t, c, 0, -c, c / 2))
+@inline _IH10(t) = (c = one(t); t * @evalpoly(t, 0, c / 2, -2c / 3, c / 4))
+@inline _IH01(t) = (c = one(t); t * @evalpoly(t, 0, 0, c, -c / 2))
+@inline _IH11(t) = (c = one(t); t * @evalpoly(t, 0, 0, -c / 3, c / 4))
 
 # --- 1D Hermite integral over [u0, u1] in local coordinates ---
 # Computes ∫_{u0}^{u1} P(x) dx where P is the cubic Hermite polynomial:

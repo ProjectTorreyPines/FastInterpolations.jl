@@ -145,6 +145,128 @@ end
 end
 
 # ========================================
+# All-Cardinal Cell Fold (no pool, no per-fiber setup)
+# ========================================
+# A non-periodic cardinal fiber is linear in its stencil values, with coefficients that
+# depend only on the axis and the query. Resolving them once per axis reduces each fiber to
+# a weighted sum, without the fiber loop's pool buffers, searches and repeated Hermite basis.
+# PCHIP and Akima slopes depend on the data nonlinearly and keep the fiber path.
+struct _CardinalCellAxis{W, T}
+    window::W
+    idx::Int
+    idx_R::Int
+    n::Int
+    w_M::T
+    w_L::T
+    w_R::T
+    w_P::T
+end
+
+# Kernel coefficients of `yL`, `yR` and the two slopes, where `s_L`/`s_R` are the slope per
+# unit secant numerator. The kernel is linear in its value arguments.
+@inline function _cardinal_kernel_coeffs(op::AbstractEvalOp, one_v, s_L, s_R, h, inv_h, dL)
+    z_v = zero(one_v)
+    z_s = zero(s_L)
+    return (
+        _hermite_kernel_1d(op, one_v, z_v, z_s, z_s, h, inv_h, dL),
+        _hermite_kernel_1d(op, z_v, one_v, z_s, z_s, h, inv_h, dL),
+        _hermite_kernel_1d(op, z_v, z_v, s_L, z_s, h, inv_h, dL),
+        _hermite_kernel_1d(op, z_v, z_v, z_s, s_R, h, inv_h, dL),
+    )
+end
+
+# The hot case: the unit-vector calls above would multiply by a literal zero, which IEEE
+# semantics keep the compiler from removing.
+@inline function _cardinal_kernel_coeffs(::EvalValue, one_v, s_L, s_R, h, inv_h, dL)
+    t = dL * inv_h
+    return (
+        _hermite_h00(t), _hermite_h01(t),
+        _hermite_h10(t) * s_L * h, _hermite_h11(t) * s_R * h,
+    )
+end
+
+# Mirrors `cardinal_interp` -> `_hermite_eval_at_point` for one fiber. Callers have already
+# applied extrapolation to `q`, so `q` is outside `x` only under `ExtendExtrap`, whose
+# two-sided clamped search keeps `idx` in range for every extrapolation mode here.
+@inline function _cardinal_cell_axis(
+        m::CardinalInterp, x_raw::AbstractVector, window, q, ::Val{Tfiber}, op, search, hint
+    ) where {Tfiber}
+    Tw = _promote_grid_float(eltype(x_raw), Tfiber)
+    x = _resolve_axis(x_raw, Tw)
+    Tsc = typeof(float(one(Tw)))
+    scale = one(Tsc) - convert(Tsc, _as_dimensionless(m.tension, eltype(x)))
+    xq = _resolve_grididx(q, x)
+    idx, idx_R, xL, _ = search_interval(_resolve_search(x, xq, search, hint), x, xq, ExtendExtrap())
+    n = _data_length(x)
+    xr = _raw(x)
+    inv_h = _get_inv_h(Tw, x, idx)
+    # One-sided secants at the grid ends, also covering n == 2.
+    s_L = scale * (idx == 1 ? inv_h : convert(typeof(inv_h), _get_inv_2cell(Tw, xr, idx)))
+    s_R = scale * (idx_R == n ? inv_h : convert(typeof(inv_h), _get_inv_2cell(Tw, xr, idx_R)))
+    c_L, c_R, c_sL, c_sR = _cardinal_kernel_coeffs(
+        op, one(Tsc), s_L, s_R, _get_h(Tw, x, idx), inv_h, xq - xL
+    )
+    # dyL = s_L * (yR - yM), dyR = s_R * (yP - yL); at a grid end yM = yL or yP = yR, folded
+    # here so the fold never reads a point outside the end cell's stencil.
+    w_M, w_L, w_R, w_P = promote(-c_sL, c_L - c_sR, c_R + c_sL, c_sR)
+    idx == 1 && (w_L += w_M)
+    idx_R == n && (w_R += w_P)
+    return _CardinalCellAxis(window, idx, idx_R, n, w_M, w_L, w_R, w_P)
+end
+
+# Stencil value along the next axis: raw data on axis 1, otherwise the fold of the remaining
+# axes converted to `Tr`, as the fiber path's `result` buffer does. `I` keeps its length M:
+# prepending while dropping the last placeholder gives inference a recursion that only
+# shrinks, where a growing index tuple would hit its recursion limit and lose inlining.
+@inline _cardinal_node(::Type, data, ::Tuple{}, I::Tuple) = @inbounds data[I...]
+@inline _cardinal_node(::Type{Tr}, data, axes::Tuple, I::Tuple) where {Tr} =
+    convert(Tr, _cardinal_fold(Tr, data, axes, I))
+
+@inline function _cardinal_fold(::Type{Tr}, data, axes::Tuple, I::Tuple) where {Tr}
+    return _cardinal_fold_step(Tr, data, last(axes), Base.front(axes), I)
+end
+
+# Every level of the recursion fans out into up to 4 calls. Fully inlining 4+ axes makes the
+# first call's compile time explode, so they keep this out-of-line boundary.
+@noinline _cardinal_fold(::Type{Tr}, data, axes::Tuple{Any, Any, Any, Any, Vararg}, I::Tuple) where {Tr} =
+    _cardinal_fold_step(Tr, data, last(axes), Base.front(axes), I)
+
+@inline function _cardinal_fold_step(
+        ::Type{Tr}, data, ax::_CardinalCellAxis, rest::Tuple, I::Tuple
+    ) where {Tr}
+    w = ax.window
+    J = Base.front(I)
+    @inbounds begin
+        y = muladd(
+            ax.w_L, _cardinal_node(Tr, data, rest, (w[ax.idx], J...)),
+            ax.w_R * _cardinal_node(Tr, data, rest, (w[ax.idx_R], J...))
+        )
+        ax.idx > 1 && (y = muladd(ax.w_M, _cardinal_node(Tr, data, rest, (w[ax.idx - 1], J...)), y))
+        ax.idx_R < ax.n && (y = muladd(ax.w_P, _cardinal_node(Tr, data, rest, (w[ax.idx_R + 1], J...)), y))
+    end
+    return y
+end
+
+@inline function _collapse_dims(
+        ::Type{Tr},
+        data::AbstractArray{Tv, M},
+        grids::Tuple{AbstractVector, Vararg{AbstractVector}},
+        methods::Tuple{CardinalInterp{<:Any, NoBC}, CardinalInterp{<:Any, NoBC}, Vararg{CardinalInterp{<:Any, NoBC}}},
+        extraps::Tuple{AbstractExtrap, Vararg{AbstractExtrap}},
+        q_eval::Tuple{Real, Vararg{Real}},
+        ops::Tuple{AbstractEvalOp, Vararg{AbstractEvalOp}},
+        searches::Tuple{AbstractSearchPolicy, Vararg{AbstractSearchPolicy}},
+        hints,
+        windows::NTuple{M, AbstractVector{Int}},
+    ) where {Tr, Tv, M}
+    # Fibers along axis 1 hold data; later axes hold results already promoted to `Tr`.
+    fibers = (Val(Tv), ntuple(_ -> Val(Tr), Val(M - 1))...)
+    hint_tuple = hints === nothing ? ntuple(_ -> nothing, Val(M)) : hints
+    axes = map(_cardinal_cell_axis, methods, grids, windows, q_eval, fibers, ops, searches, hint_tuple)
+    return _cardinal_fold(Tr, data, axes, ntuple(_ -> 0, Val(M)))
+end
+
+# ========================================
 # Cell-local window builder
 # ========================================
 #
